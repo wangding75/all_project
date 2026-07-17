@@ -1,0 +1,18 @@
+# Ignore Android/Gradle build artifacts and cache
+.gradle/
+**/build/
+**/local.properties
+.idea/
+*.iml
+*.log
+
+# Ignore large reverse engineering dumps/outputs
+reversing_work/
+
+# Ignore target and test APKs
+apks/
+
+# Ignore third-party tools except custom scripts and screenshots
+tools/*
+!tools/activation_bypass.js
+!tools/screen.png
