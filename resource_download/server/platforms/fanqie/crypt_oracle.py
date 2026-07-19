@@ -25,10 +25,13 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_JS = REPO_ROOT / "tools" / "setup" / "fanqie_crypt_oracle.js"
 
-ADB = os.environ.get("ADB", r"D:\install\Netease\MuMu\nx_main\adb.exe")
-DEV = os.environ.get("ADB_DEVICE", "127.0.0.1:16384")
-FRIDA_HOST = os.environ.get("FRIDA_HOST", "127.0.0.1:27042")
-PKG = os.environ.get("FANQIE_PKG", "com.dragon.read")
+from app.config import get_settings
+
+_settings = get_settings()
+ADB = os.environ.get("ADB", _settings.adb_path)
+DEV = os.environ.get("ADB_DEVICE", _settings.adb_device)
+FRIDA_HOST = os.environ.get("FRIDA_HOST", _settings.frida_host)
+PKG = os.environ.get("FANQIE_PKG", _settings.fanqie_pkg)
 AGENT_SRC = os.environ.get("AGENT_SRC", "/data/local/tmp/sys_hlpd")
 AGENT_BIN = os.environ.get("AGENT_BIN", "/data/local/tmp/sys_hlpd")
 AGENT_NAME = Path(AGENT_BIN).name

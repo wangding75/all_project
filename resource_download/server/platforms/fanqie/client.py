@@ -21,10 +21,13 @@ HERE = Path(__file__).resolve().parent
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CFG_PATH = REPO_ROOT / "data" / "config" / "fanqie_config.json"
 
-ADB = os.environ.get("ADB", r"D:\install\Netease\MuMu\nx_main\adb.exe")
-DEV = os.environ.get("ADB_DEVICE", "127.0.0.1:16384")
-FRIDA_HOST = os.environ.get("FRIDA_HOST", "127.0.0.1:27042")
-PKG = "com.dragon.read"
+from app.config import get_settings
+
+_settings = get_settings()
+ADB = os.environ.get("ADB", _settings.adb_path)
+DEV = os.environ.get("ADB_DEVICE", _settings.adb_device)
+FRIDA_HOST = os.environ.get("FRIDA_HOST", _settings.frida_host)
+PKG = os.environ.get("FANQIE_PKG", _settings.fanqie_pkg)
 
 _CFG: dict[str, Any] = {}
 _CFG_LOCK = threading.Lock()
