@@ -1,0 +1,4 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="account_sdk_settings">{&quot;bd_ticket_guard_config&quot;:{&quot;ticket_guard_config_version&quot;:&quot;20260710.1&quot;},&quot;share_token_config&quot;:{},&quot;is_account_sdk_settings&quot;:true,&quot;access_token_guard_config&quot;:{&quot;enable&quot;:false},&quot;auth_expiation_config&quot;:{&quot;enable&quot;:true},&quot;fix_mix_mode_in_query&quot;:false,&quot;sec_user_id_guard_config&quot;:{},&quot;common_config&quot;:{},&quot;ticket_guard_config&quot;:{&quot;enable&quot;:false}}</string>
+</map>

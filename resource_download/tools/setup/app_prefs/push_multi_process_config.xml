@@ -1,0 +1,65 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="ttpush_alv_white_list">[]</string>
+    <string name="push_channels_json_array">[21,15]</string>
+    <int name="default_notification_status" value="-1" />
+    <long name="last_hw_dialog_show_time" value="1784381430900" />
+    <string name="permission_boot_settings">{&quot;sys_dialog_show_timeout&quot;:3000,&quot;auth_kill_event_interval&quot;:3600000,&quot;cancel_dialog_on_touch_out_side&quot;:false,&quot;disable_dialog_back_btn&quot;:true,&quot;loop_detect_result_timeout&quot;:2000,&quot;loop_detect_result_interval&quot;:500,&quot;scenes_request_interval&quot;:0,&quot;app_request_interval&quot;:0}</string>
+    <int name="red_badge_launch_times" value="2" />
+    <boolean name="need_control_miui_flares_v2" value="true" />
+    <int name="ali_push_type" value="-1" />
+    <boolean name="enable_hw_analytics" value="false" />
+    <boolean name="ttpush_enable_restrict_update_token" value="true" />
+    <boolean name="app_widget_provider_polaris_enable" value="true" />
+    <boolean name="allow_push_daemon_monitor" value="false" />
+    <boolean name="enable_monitor_channel_create" value="false" />
+    <boolean name="app_widget_provider_privacy" value="true" />
+    <string name="pull_redbadge_strategy">strategy_default</string>
+    <boolean name="is_use_start_foreground_notification" value="true" />
+    <string name="clear_notification_config">{&quot;clear_all_notification_after_launch&quot;:false,&quot;enable_notification_clear&quot;:true}</string>
+    <string name="red_badge_last_time_paras">{&quot;launch&quot;:1784381721320,&quot;leave&quot;:1784381721329,&quot;badge&quot;:0}</string>
+    <int name="check_sign_v2" value="1" />
+    <boolean name="pass_though_new_activity" value="true" />
+    <boolean name="enable_gif_permission_page" value="false" />
+    <boolean name="need_kill_all_if_main_process_died" value="false" />
+    <string name="depths_device_id">8ca66bf356ad32e17a8184efc217625a4a0943a81a138e8538800f457cfaa1e7</string>
+    <boolean name="is_desktop_red_badge_show" value="true" />
+    <boolean name="app_widget_provider_login_state" value="false" />
+    <int name="red_badge_show_times" value="0" />
+    <boolean name="enable_redbadge_auto_dismiss" value="false" />
+    <string name="default_notification_permission_rationale">true</string>
+    <string name="red_badge_last_last_time_paras">{&quot;launch&quot;:1784381433340,&quot;leave&quot;:1784381565182,&quot;badge&quot;:0}</string>
+    <long name="ttpush_update_sender_interval" value="10800000" />
+    <string name="delay_start_child_process_settings">{&quot;need_disable_channel&quot;:[],&quot;delay_start_child_process_mode&quot;:3}</string>
+    <string name="opt_push_click_session_id">{&quot;opt_push_click_session_id&quot;:true,&quot;min_delay_time_in_mill&quot;:5000,&quot;max_delay_time_in_mill&quot;:10000}</string>
+    <int name="local_pull_api_strategy" value="0" />
+    <string name="app_widget_provider_disable_widget_name">[]</string>
+    <boolean name="allow_close_boot_receiver" value="true" />
+    <int name="notification_small_icon_style" value="0" />
+    <boolean name="remove_auto_boot_v2" value="false" />
+    <string name="sys_dialog_show_history">{&quot;sys_dialog_show_index&quot;:{&quot;google&quot;:2,&quot;host&quot;:2}}</string>
+    <boolean name="app_widget_provider_is_tags_visible" value="true" />
+    <boolean name="allow_off_alive" value="false" />
+    <string name="app_widget_provider_recent_video">null</string>
+    <boolean name="remove_umeng_autoboot" value="true" />
+    <long name="ttpush_update_token_interval" value="86400000" />
+    <string name="ssids">{&quot;clientudid&quot;:&quot;d4a7f6f6-249b-4715-8a86-24bac25f2d92&quot;,&quot;device_id&quot;:&quot;3612332575188896&quot;,&quot;install_id&quot;:&quot;3612332575192992&quot;}</string>
+    <string name="app_widget_provider_x_tt_token"></string>
+    <boolean name="enable_cached_android_id" value="true" />
+    <string name="not_allow_alive_when_no_main_process_list"></string>
+    <boolean name="enable_honor_business_notification_dialog" value="true" />
+    <string name="permission_boot_push_strategy_history">{&quot;accum_show_count&quot;:{&quot;General_v2&quot;:1,&quot;8662&quot;:1},&quot;last_show_timestamp&quot;:{&quot;General_v2&quot;:1784381709,&quot;8662&quot;:1784381709,&quot;pop_up&quot;:1784381709}}</string>
+    <boolean name="allow_push_job_service" value="true" />
+    <string name="permission_boot_channel_clear_config">{&quot;channel_name_show_map&quot;:{},&quot;enable_permission_channel_clear&quot;:true,&quot;request_code_white_list&quot;:[],&quot;channel_name_white_list&quot;:[]}</string>
+    <int name="wakeup_support_strategy" value="1" />
+    <boolean name="enable_monitor_association_start" value="false" />
+    <boolean name="app_widget_provider_clear_vdex" value="true" />
+    <boolean name="allow_spread_out_message" value="false" />
+    <string name="push_statistics_settings">{&quot;max_sp_count&quot;:15,&quot;enable_statistics_process&quot;:[&quot;main&quot;],&quot;loop_gap_in_mill&quot;:2000,&quot;api_request_timeout_in_mill&quot;:1000,&quot;network_detect_mode&quot;:1,&quot;enable_statistics&quot;:false,&quot;bg_loop_interval&quot;:300,&quot;fg_loop_interval&quot;:300}</string>
+    <string name="desktop_red_badge_args">{&quot;max_show_times&quot;:10,&quot;query_waiting_duration&quot;:30,&quot;strategy&quot;:&quot;strategy_default&quot;}</string>
+    <boolean name="enable_pass_through_redbadge_show" value="false" />
+    <boolean name="app_widget_provider_full_mode" value="true" />
+    <string name="component_process_info">{&quot;component_info&quot;:&quot;{\&quot;:push\&quot;:\&quot;com.dragon.read.push.opt.ListenMainProcessService,com.bytedance.bdauditsdkbase.stub.p1.StubService,com.bytedance.bdauditsdkbase.stub.p1.StubService1,com.bytedance.bdauditsdkbase.stub.p1.StubService2,com.bytedance.bdauditsdkbase.stub.p1.StubService3,com.bytedance.bdauditsdkbase.stub.p1.StubService4,com.bytedance.bdauditsdkbase.stub.p1.StubService5,com.bytedance.bdauditsdkbase.stub.p1.StubService6,com.bytedance.bdauditsdkbase.stub.p1.StubService7,com.bytedance.bdauditsdkbase.stub.p1.StubService8,com.bytedance.bdauditsdkbase.stub.p1.StubService9,com.bytedance.bdauditsdkbase.stub.p1.StubService10,com.ss.android.message.NotifyService,com.ss.android.message.log.LogService,com.ss.android.newmedia.redbadge.RedBadgePushProcessService,com.bytedance.common.process.service.CrossProcessServiceForPush,com.bytedance.common.wschannel.server.WsChannelService,com.bytedance.notification.activity.PushBannerActivity,com.phoenix.read.alliance.provider4\&quot;,\&quot;:pushservice\&quot;:\&quot;com.bytedance.bdauditsdkbase.stub.p3.StubService,com.bytedance.bdauditsdkbase.stub.p3.StubService1,com.xiaomi.push.service.XMPushService,com.xiaomi.push.service.XMJobService,com.bytedance.common.process.service.CrossProcessServiceForPushService,com.huawei.hms.support.api.push.service.HmsMsgService,com.xiaomi.push.service.receivers.PingReceiver\&quot;}&quot;,&quot;update_version_code&quot;:70533}</string>
+    <boolean name="enable_report_client_feature" value="false" />
+    <string name="client_intelligence_settings">{&quot;feature_collect_time_out_in_mill&quot;:2000,&quot;local_push&quot;:{&quot;enable_client_intelligence_local_push&quot;:false},&quot;client_intelligence_push_show_mode&quot;:0,&quot;enable_client_intelligence_push_show&quot;:false,&quot;allow_collect_client_feature&quot;:false,&quot;client_intelligence_push_show_sub_mode&quot;:0,&quot;enable_feature_report&quot;:false}</string>
+</map>

@@ -1,80 +1,68 @@
-# 番茄小说下载与解密工具
+# resource_download
 
-本仓库包含一个用于从番茄小说（fanqienovel.com）下载小说章节内容并保存为 Markdown 格式的 Python 脚本。它能够自动处理网页端的**自定义字体加密（Anti-Scraping Font Encryption）**，将乱码字符还原为正确的汉字。
+多平台内容下载中转（**方案 2**：托管服务端 + 瘦客户端）。  
+当前主路径：**红果，复用 [zhangbaio/hongguo](https://github.com/zhangbaio/hongguo)**。
 
-## 核心原理
+权威计划见 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md)。  
+红果接入说明见 [`docs/hongguo_reuse.md`](./docs/hongguo_reuse.md)。
 
-番茄小说网页端为了防爬虫，采用了“字体反爬”技术：
-1. **字符替换**：网页 HTML 源码中的部分常用汉字被替换为了 Unicode 的**私有使用区（PUA，范围通常在 U+E000 - U+F8FF 之间）**中的乱码字符。
-2. **自定义字体渲染**：网页通过加载自定义的 `.woff2` 格式字体文件，将这些乱码字符的字形（Glyph）映射到正确的汉字字形上，从而在浏览器中显示为正常的文字。
+## 目录
 
-本工具的解密逻辑如下：
-1. **抓取页面**：请求小说章节或书籍主页，从 HTML 源码中提取 `window.__INITIAL_STATE__` 全局状态数据，其中包含了章节文本（包含 PUA 乱码）和自定义字体的 CSS。
-2. **下载并解析字体**：从 CSS 中提取 `.woff2` 字体文件的 URL 并下载，使用 `fontTools` 库解析字体的 `cmap` 映射表，获取 PUA 码点到字形名称（如 `gid58670`）的映射。
-3. **字形还原**：基于已知且稳定的字形 ID 到真实字符的映射表（`FONT_MAP`），将字形名称转换为对应的真实字符，从而构建出最终的 `PUA 乱码字符 -> 真实汉字` 映射字典。
-4. **内容还原**：遍历下载的小说文本，将所有的 PUA 加密乱码批量替换为明文汉字，最后保存为本地 Markdown 文件。
+```text
+server/                 # 中转服务端（FastAPI）
+  app/                  # API / 鉴权 / 任务
+  platforms/hongguo/    # 适配 vendor/hongguo（主路径）
+  platforms/fanqie/     # 遗留/后置
+  run.py
+vendor/hongguo/         # 上游 clone（config.json 自备，勿提交）
+scripts/                # e2e_hongguo / e2e_fanqie
+docs/
+data/
+```
 
-## 环境要求
+## 快速开始（红果主路径）
 
-- Python 3.10+
-- 网络环境（能够访问 `fanqienovel.com`）
+### 0. 准备上游
 
-## 安装与运行
+```powershell
+git clone --depth 1 https://github.com/zhangbaio/hongguo.git vendor/hongguo
+# 配置 config.json + 签名环境（Frida / SIGN_SERVER），先在 vendor 内用 offline_dl 验证
+```
 
-### 1. 安装依赖
+### 1. 启动本仓服务端
 
-在终端中执行以下命令安装所需的第三方库（`fonttools` 用于解析字体文件，`brotli` 用于解压 woff2 字体）：
+需要 **Python 3.10+**（推荐 `py -3.14`）。
 
-```bash
+```powershell
+cd server
+py -3.14 -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install requests pycryptodome
+python run.py
 ```
 
-### 2. 运行脚本
+默认：`http://127.0.0.1:8000`，`X-API-Key: dev-key-change-me`。  
+OpenAPI：`/docs`
 
-你可以通过命令行传入番茄小说**书籍主页**或**某一章节页**的 URL 来进行下载。
+### 2. 脚本验收
 
-#### 下载整本小说（免费章节）
-
-传入书籍主页的链接，例如：
-```bash
-python download.py https://fanqienovel.com/page/7123456789012345678 -o ./output
+```powershell
+$env:API_BASE="http://127.0.0.1:8000"
+$env:API_KEY="dev-key-change-me"
+python scripts/smoke_health.py
+python scripts/e2e_hongguo.py --search "剧名" --range 1-1
 ```
 
-#### 下载单章小说
+## 里程碑
 
-传入特定章节的链接，例如：
-```bash
-python download.py https://fanqienovel.com/reader/7123456789012345678 -o ./output
-```
+| 级别 | 范围 |
+|------|------|
+| **MVP-H** | 复用 hongguo + relay + e2e 出 MP4 |
+| **MVP-F** | 番茄 App 会话 |
+| 之后 | 客户端 UI、订阅配额 |
 
-### 命令行参数说明
+## 说明
 
-| 参数 | 缩写 | 默认值 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `url` | - | 必填 | 番茄小说的书籍页或章节页 URL |
-| `--output` | `-o` | `.` | 下载的小说保存目录 |
-| `--delay` | `-d` | `1.0` | 章节之间的下载间隔（秒），避免请求过快被目标服务器封锁 IP |
-| `--cookie` | `-c` | `""` | 网页端登录后的 Cookie 字符串，用于下载付费/VIP章节 |
-
-### 如何下载付费/VIP章节（使用 Cookie）
-
-如果您拥有番茄小说的 VIP 账号（或已通过看广告解锁了部分章节），可以在脚本中传入您的登录 `Cookie`，以解锁付费章节下载。
-
-#### 1. 获取您的 Cookie
-1. 在电脑浏览器（如 Chrome、Edge）中打开 [番茄小说官网](https://fanqienovel.com) 并登录您的账号。
-2. 按 `F12` 键打开开发者工具，切换到 **Network (网络)** 标签页。
-3. 刷新页面或随便点击一个章节，在左侧网络请求列表中点击任意 `fanqienovel.com` 域名下的请求（如 `page` 或 `reader`）。
-4. 在右侧的 **Headers (标头)** 栏中，向下滚动找到 **Request Headers (请求标头)**，找到其中的 `Cookie` 字段。
-5. 复制 `Cookie:` 后面的那一长串字符串。
-
-#### 2. 使用 Cookie 运行脚本
-将复制的 Cookie 传入 `-c` 参数（使用双引号包裹以防特殊字符导致命令行报错）：
-```bash
-python download.py https://fanqienovel.com/page/7123456789012345678 -o ./output -c "你的Cookie字符串"
-```
-
-## 局限性说明
-
-1. **付费/VIP 章节限制**：如果不提供有效的 `-c/--cookie` 参数，脚本在遇到付费或需要登录观看的 VIP 章节时会默认跳过。
-2. **反爬策略更新风险**：如果番茄小说未来更新了字形 ID 的名称或更改了解密映射逻辑，脚本中的静态字形映射表（`FONT_MAP`）可能需要重新生成和更新。
-
+- 会话与签名在服务端；用户客户端不贴源站 Cookie。  
+- 仅供个人学习研究，请遵守平台条款与版权法。

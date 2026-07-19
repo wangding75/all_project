@@ -1,0 +1,51 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+server/.venv/
+# 上游会话与下载产物（vendor 源码可本地 clone，config 勿提交）
+vendor/hongguo/config.json
+vendor/hongguo/downloads/
+vendor/hongguo/**/__pycache__/
+data/jobs/*
+!data/jobs/.gitkeep
+data/outputs/*
+!data/outputs/.gitkeep
+data/e2e_downloads/
+tmp/
+*.egg-info/
+.dist/
+build/
+dist/
+.idea/
+.vscode/
+*.log
+
+# 运行期生成的动态会话配置目录（包含敏感 token，勿提交）
+data/config/
+
+# 调试与注入二进制文件（大文件，勿提交）
+tools/setup/frida-server*
+
+# 进程与脚本宿主临时目录
+System.Management.Automation.Internal.Host.InternalHost/
+
+# ==========================================
+# 忽略根目录下所有的临时文件和下载小说目录，仅加白项目必要文件与目录
+# ==========================================
+/*
+!/data/
+!/docs/
+!/scripts/
+!/server/
+!/tools/
+!/vendor/
+!/.gitignore
+!/README.md
+!/DEVELOPMENT_PLAN.md
+!/design_plan.md
+!/business_landing_architecture.md
+!/requirements.txt
+!/download.py
+!/.env.example

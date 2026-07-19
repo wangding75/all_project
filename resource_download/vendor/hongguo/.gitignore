@@ -1,0 +1,94 @@
+# ===== 凭证 / 密钥（绝不提交）=====
+config.json
+apikeys.json
+apikeys.json.tmp
+.env.ps1
+deploy/frp_token.txt
+deploy/frpc.toml
+deploy/id_hongguo
+deploy/id_hongguo.pub
+deploy/*.log
+deploy/*.out
+deploy/*.err
+*.pem
+*.key
+*_token.txt
+certs/
+**/*-wg.conf
+**/wireguard.conf
+**/c8750f0d.0
+
+# ===== 版权二进制（字节 APK / native 库 / 第三方工具）=====
+*.apk
+base.apk
+unidbg/base.apk
+unidbg/libs/
+**/frida-server*
+*.xz
+*.so
+*.dll
+*.dat
+deploy/dist/
+
+# ===== 抓包数据 / 下载产物（含 token / 个人数据 / 大文件）=====
+capture/out/
+capture/*.flow
+capture/*.log
+capture/urls*.log
+downloads/
+*.flow
+*.jsonl
+*.mp4
+*.heic
+
+# ===== Python / 编辑器 / 缓存 =====
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.idea/
+.vscode/
+.claude/
+*.tmp
+
+# 抓包样本/调试数据(非代码)
+capture/*.json
+capture/*.txt
+deploy/*.tar.gz
+
+capture/jadx_spade/
+capture/apk/
+capture/*.dex
+tools/jadx/
+tools/ghidra_12.1_PUBLIC/
+tools/jdk21/
+capture/*.mp4
+capture/*.h265
+
+# ===== 大文件: 内存dump / 压缩包 / 下载的工具(绝不进git, 曾撑爆历史) =====
+capture/*.bin
+capture/*.gz
+capture/dl/
+tools/*.zip
+tools/ghidra_proj/
+.codex_*.json
+
+# ===== 临时数据 dump(脚本输出, 非代码) =====
+rec.json
+
+# 逆向二进制依赖物(unidbg 签名器用,不入库)
+capture/fq_oversea/
+capture/ms_cert/
+capture/**/*.bin
+
+# 部署环境变量(真实密钥, 不入库)
+deploy/.env
+deploy/data/
+
+# 设备指纹池(生成的设备身份, 不入库)
+devices.json
+
+# 红果签名逆向敏感物(license/设备状态/RE二进制, 勿提交)
+capture/cronet/
+capture/msstate/

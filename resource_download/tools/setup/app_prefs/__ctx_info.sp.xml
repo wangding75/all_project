@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="key_settings_time_hybrid_monitor" value="0" />
+    <string name="key_ctx_info_setting_id">eyJlIjoiRzY3T3BHanNIbFM1N3NGRjU1VVI1Zz09IiwidiI6ODgxMzc1OX0=</string>
+    <long name="key_settings_time_bytedanceadsdk" value="0" />
+    <long name="key_settings_time_kite_sdk" value="0" />
+    <long name="key_settings_time" value="1784381698" />
+    <long name="key_settings_time_Bullet" value="1784381700" />
+    <string name="key_ctx_info_bytedanceadsdk">eyJlIjoiS2tiYk5McFBkZHU4Mkw2eitrdFNwUT09IiwidiI6ODQ0NjA1NH0=</string>
+    <string name="key_ctx_info_hybrid_monitor">eyJlIjoicURWVnY5RHFkL2lPUWhLOXJDRFdkQT09IiwidiI6NjI5MzU2MH0=</string>
+    <string name="key_ctx_info">eyJlIjoic05kcDR1RmRRV3pESlFRd0hJNnRKQT09IiwidiI6ODg2ODU4MX0=</string>
+    <long name="key_settings_time_setting_id" value="0" />
+    <string name="key_ctx_info_Bullet">eyJlIjoiWW9PR3RJV0NER1A2dzBPM2h3TFVVQT09IiwidiI6ODg2NjU5Mn0=</string>
+    <string name="key_ctx_info_kite_sdk">eyJlIjoiRDdxMytWc0Y1bDY2eXdMbThXV3d5dz09IiwidiI6ODY5NDYwNn0=</string>
+</map>

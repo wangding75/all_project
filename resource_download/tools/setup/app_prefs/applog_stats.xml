@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="session_interval" value="30000" />
+    <int name="content_encode_method" value="0" />
+    <long name="last_config_time" value="1784381453188" />
+    <string name="device_id">3612332575188896</string>
+    <long name="batch_event_interval" value="20000" />
+    <string name="key_task_session"></string>
+    <long name="latest_forground_session_time" value="1784381702528" />
+    <long name="app_log_last_config_time" value="1784381461045" />
+    <long name="fetch_interval" value="21600000" />
+    <int name="http_monitor_port" value="1024" />
+    <string name="install_id">3612332575192992</string>
+    <int name="last_config_version" value="70533" />
+    <int name="is_first_req_after_install" value="0" />
+    <string name="dr_channel">vivo_8662_64</string>
+    <string name="device_token">AAA27YSZTFC44LBEGBZEL4UIVR43T75BDTBJALCRJJVTWACXJKPLY4HQAQFK6AFGBMTAYM3VYXS7CNR4MDU7WCRGFFOY5OZR5ZJ7E65ITX5LNSN656GDVBCMO7L37XAGB33ZVDWCKLH3A4BGCGIRMXQ</string>
+    <int name="send_launch_timely" value="1" />
+    <string name="klink_egdi"></string>
+    <string name="stats_value">{&quot;session_id&quot;:&quot;082408f5-3868-4b90-94b1-9afbcc8de324&quot;,&quot;cnt_success&quot;:0,&quot;cnt_failure&quot;:0}</string>
+    <string name="real_time_events">[&quot;realtime_click&quot;,&quot;realtime_report&quot;,&quot;tobsdk_livesdk_click_ecom_card&quot;,&quot;tobsdk_livesdk_order_submit_success&quot;,&quot;tobsdk_livesdk_click_product&quot;,&quot;tobsdk_livesdk_commodity_duration&quot;,&quot;tobsdk_livesdk_click_add_to_cart&quot;,&quot;tobsdk_livesdk_product_entrance_click&quot;,&quot;tobsdk_livesdk_follow&quot;,&quot;tobsdk_livesdk_order_submit&quot;,&quot;enter_category&quot;,&quot;community_page_init&quot;,&quot;read_profile_enter&quot;,&quot;enter_undertake_landing_page&quot;]</string>
+    <int name="app_log_last_config_version" value="70533" />
+</map>
