@@ -17,6 +17,7 @@ import urllib3
 
 urllib3.disable_warnings()
 
+HERE = Path(__file__).resolve().parent
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CFG_PATH = REPO_ROOT / "data" / "config" / "fanqie_config.json"
 
