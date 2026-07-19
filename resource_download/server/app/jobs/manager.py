@@ -82,15 +82,17 @@ class JobManager:
             return self._jobs.get(job_id)
 
     def resolve_file(self, file_id: str) -> Path | None:
-        # file_id 格式: {job_id}/{filename} 或 仅用 job 下相对名查询
         for record in self._jobs.values():
             for f in record.files:
                 if f.file_id == file_id:
                     path = Path(f.path) if f.path else None
                     if path and path.is_file():
                         return path
-        # 直接按 outputs 下相对路径
-        candidate = self.settings.outputs_dir / file_id
+        # 路径安全校验：防止路径穿越攻击
+        outputs_root = self.settings.outputs_dir.resolve()
+        candidate = (outputs_root / file_id).resolve()
+        if not candidate.is_relative_to(outputs_root):
+            return None
         if candidate.is_file():
             return candidate
         return None
