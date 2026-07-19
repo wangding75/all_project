@@ -11,7 +11,7 @@ import re
 import time
 import urllib.request
 
-HEADERS = {
+_BASE_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -20,12 +20,11 @@ HEADERS = {
 }
 
 
-def set_cookie(cookie: str | None) -> None:
-    """设置或清除请求 Cookie（可选，用于网页登录态）。"""
+def make_headers(cookie: str | None = None) -> dict[str, str]:
+    h = dict(_BASE_HEADERS)
     if cookie:
-        HEADERS["Cookie"] = cookie
-    else:
-        HEADERS.pop("Cookie", None)
+        h["Cookie"] = cookie
+    return h
 
 
 # 字体 glyph ID → 真实字符 映射表
@@ -107,16 +106,16 @@ FONT_MAP = {
 }
 
 
-def fetch_url(url: str) -> str:
+def fetch_url(url: str, cookie: str | None = None) -> str:
     """发起 HTTP GET 请求，返回响应文本。"""
-    req = urllib.request.Request(url, headers=HEADERS)
+    req = urllib.request.Request(url, headers=make_headers(cookie))
     with urllib.request.urlopen(req, timeout=30) as resp:
         return resp.read().decode("utf-8")
 
 
-def fetch_bytes(url: str) -> bytes:
+def fetch_bytes(url: str, cookie: str | None = None) -> bytes:
     """发起 HTTP GET 请求，返回响应字节。"""
-    req = urllib.request.Request(url, headers=HEADERS)
+    req = urllib.request.Request(url, headers=make_headers(cookie))
     with urllib.request.urlopen(req, timeout=30) as resp:
         return resp.read()
 
@@ -141,7 +140,7 @@ def extract_initial_state(html: str) -> dict:
     return json.loads(html[start:end])
 
 
-def build_font_mapping(html: str) -> dict:
+def build_font_mapping(html: str, cookie: str | None = None) -> dict:
     """从页面的自定义字体中构建 PUA → 真实字符 的映射表。
 
     工作原理：
@@ -167,7 +166,7 @@ def build_font_mapping(html: str) -> dict:
         return {}
 
     font_url = font_url_match.group(1)
-    font_data = fetch_bytes(font_url)
+    font_data = fetch_bytes(font_url, cookie=cookie)
     font = TTFont(io.BytesIO(font_data))
     cmap = font.getBestCmap()
 
@@ -196,19 +195,19 @@ def parse_url(url: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
-def get_book_info_from_reader(item_id: str) -> tuple[str, dict]:
+def get_book_info_from_reader(item_id: str, cookie: str | None = None) -> tuple[str, dict]:
     """从章节页面获取 bookId 和字体映射。"""
-    html = fetch_url(f"https://fanqienovel.com/reader/{item_id}")
+    html = fetch_url(f"https://fanqienovel.com/reader/{item_id}", cookie=cookie)
     state = extract_initial_state(html)
-    font_mapping = build_font_mapping(html)
+    font_mapping = build_font_mapping(html, cookie=cookie)
     return state["reader"]["chapterData"]["bookId"], font_mapping
 
 
-def get_chapter_list(book_id: str) -> tuple[str, list[dict], dict]:
+def get_chapter_list(book_id: str, cookie: str | None = None) -> tuple[str, list[dict], dict]:
     """获取小说目录，返回 (书名, 章节列表, 字体映射)。"""
-    html = fetch_url(f"https://fanqienovel.com/page/{book_id}")
+    html = fetch_url(f"https://fanqienovel.com/page/{book_id}", cookie=cookie)
     state = extract_initial_state(html)
-    font_mapping = build_font_mapping(html)
+    font_mapping = build_font_mapping(html, cookie=cookie)
 
     book_name = state["page"]["bookName"]
     chapters = []
@@ -240,14 +239,14 @@ def html_to_markdown(html_content: str) -> str:
     return text.strip()
 
 
-def download_chapter(item_id: str, font_mapping: dict) -> tuple[str, str]:
+def download_chapter(item_id: str, font_mapping: dict, cookie: str | None = None) -> tuple[str, str]:
     """下载单个章节，返回 (标题, markdown内容)。"""
-    html = fetch_url(f"https://fanqienovel.com/reader/{item_id}")
+    html = fetch_url(f"https://fanqienovel.com/reader/{item_id}", cookie=cookie)
     state = extract_initial_state(html)
 
     # 如果传入的字体映射为空（比如从目录页开始下载），则从第一章的 HTML 动态构建并更新
     if not font_mapping:
-        new_mapping = build_font_mapping(html)
+        new_mapping = build_font_mapping(html, cookie=cookie)
         if new_mapping:
             font_mapping.update(new_mapping)
             print(f"(已构建 {len(new_mapping)} 个字符的字体映射)...", end=" ", flush=True)

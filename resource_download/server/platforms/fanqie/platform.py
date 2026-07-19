@@ -74,9 +74,8 @@ class FanqiePlatform(BasePlatform):
         cookie = kwargs.get("cookie") or get_settings().fanqie_cookie or None
 
         def _load() -> DetailResponse:
-            web_ssr.set_cookie(cookie)
             book_id = _normalize_book_id(item_id)
-            book_name, chapters, _font = web_ssr.get_chapter_list(book_id)
+            book_name, chapters, _font = web_ssr.get_chapter_list(book_id, cookie=cookie)
             segments = [
                 SegmentInfo(
                     id=str(ch["item_id"]),
@@ -111,9 +110,8 @@ class FanqiePlatform(BasePlatform):
         mode = options.get("mode", "web")
 
         def _run() -> list[Path]:
-            web_ssr.set_cookie(cookie)
             book_id = _normalize_book_id(item_id)
-            book_name, chapters, font_mapping = web_ssr.get_chapter_list(book_id)
+            book_name, chapters, font_mapping = web_ssr.get_chapter_list(book_id, cookie=cookie)
             selected = _parse_range(range_spec, len(chapters))
 
             work_dir = output_dir / web_ssr.sanitize_filename(book_name)
@@ -181,7 +179,7 @@ class FanqiePlatform(BasePlatform):
                             skipped += 1
                             parts.append(f"\n\n## {title}\n\n（App解密下载失败: {e}）\n")
                     else:
-                        title, content = web_ssr.download_chapter(str(ch["item_id"]), font_mapping)
+                        title, content = web_ssr.download_chapter(str(ch["item_id"]), font_mapping, cookie=cookie)
                         parts.append(f"\n\n## {title}\n\n{content}\n")
                         done += 1
 
