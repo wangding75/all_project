@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,5 +37,6 @@ class Settings(BaseSettings):
         return self.data_dir / "outputs"
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
