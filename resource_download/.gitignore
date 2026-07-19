@@ -50,3 +50,4 @@ System.Management.Automation.Internal.Host.InternalHost/
 !/requirements.txt
 !/download.py
 !/.env.example
+!/ui

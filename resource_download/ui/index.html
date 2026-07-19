@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>全能短剧/小说资源下载器 Desktop</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- 1. 顶部无边框 Windows 标题栏 -->
+  <header class="app-titlebar">
+    <div class="titlebar-brand">
+      <span class="icon-logo">🚀</span>
+      <span>全能短剧/小说资源下载器</span>
+      <span class="titlebar-version">v2.1.0</span>
+    </div>
+    <div class="titlebar-controls">
+      <button class="win-btn btn-min" title="最小化" onclick="if(window.pywebview) pywebview.api.minimize()">—</button>
+      <button class="win-btn btn-max" title="最大化" onclick="if(window.pywebview) pywebview.api.toggle_maximized()">□</button>
+      <button class="win-btn btn-close" title="关闭" onclick="if(window.pywebview) pywebview.api.close()">✕</button>
+    </div>
+  </header>
+
+  <!-- 2. 应用主外壳 (Sidebar + Main Content) -->
+  <div class="app-container">
+    <!-- 左侧固定边栏 (240px) -->
+    <aside class="app-sidebar">
+      <div>
+        <!-- VIP 状态与卡密兑换卡片 -->
+        <div class="vip-status-card">
+          <div class="vip-user-info">
+            <div class="vip-avatar">👑</div>
+            <div class="vip-details">
+              <span class="vip-name">VIP 会员</span>
+              <span class="vip-expire">有效期至: 2026-08-19</span>
+            </div>
+          </div>
+          <button class="btn-redeem-key" id="btnRedeemKey">
+            <span>🔑</span>
+            <span>卡密兑换</span>
+          </button>
+        </div>
+
+        <!-- 平台切换器 -->
+        <div class="platform-switcher">
+          <div class="platform-tab active" data-platform="hongguo">🔴 红果短剧</div>
+          <div class="platform-tab" data-platform="fanqie">🍅 番茄小说</div>
+        </div>
+
+        <!-- 核心导航菜单 -->
+        <nav class="sidebar-nav">
+          <div class="nav-item active" data-page="page-search">
+            <span>🔍 资源搜索</span>
+          </div>
+          <div class="nav-item" data-page="page-jobs">
+            <span>📥 下载任务</span>
+            <span class="nav-badge" id="jobCountBadge">3</span>
+          </div>
+          <div class="nav-item" data-page="page-library">
+            <span>📚 本地资源</span>
+          </div>
+          <div class="nav-item" data-page="page-settings">
+            <span>⚙️ 系统设置</span>
+          </div>
+        </nav>
+      </div>
+
+      <!-- 侧边栏底部面板 -->
+      <div class="sidebar-footer">
+        <div class="server-status">
+          <span class="status-dot" id="serverStatusDot"></span>
+          <span id="serverStatusText">检测服务中...</span>
+        </div>
+        <button class="theme-toggle-btn" id="themeToggleBtn">
+          ☀️ 切换浅色主题
+        </button>
+      </div>
+    </aside>
+
+    <!-- 右侧主页面容器 -->
+    <main class="app-main">
+      <!-- 子页面 1: 🔍 资源搜索 (图一图二双栏布局) -->
+      <section class="subpage active" id="page-search">
+        <div class="search-page-container">
+          <!-- 左栏：搜索列表区 (对照图一) -->
+          <div class="search-left-panel">
+            <div class="search-input-group">
+              <input type="text" class="input-control" id="inputSearchQuery" placeholder="输入关键词、短剧/小说链接或ID..." autocomplete="off">
+              <button class="btn-primary" id="btnSearch">搜索</button>
+              <button class="btn-secondary" id="btnLoad">载入</button>
+            </div>
+            
+            <div class="search-results-list" id="searchResultsList">
+              <div class="search-empty-state" id="searchEmptyState" style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
+                <div style="font-size: 48px; margin-bottom: 12px;">🔍</div>
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 6px;">请输入关键词开始搜索</div>
+                <div style="font-size: 12px; opacity: 0.7;">支持输入短剧名称、小说标题、红果/番茄链接或资源 ID</div>
+              </div>
+            </div>
+
+            <button class="btn-load-more" id="btnLoadMore" style="display: none;">
+              <span>↻</span>
+              <span>加载更多资源...</span>
+            </button>
+          </div>
+
+          <!-- 右栏：详情与参数配置区 (初始隐藏，选中资源后呈现) -->
+          <div class="search-right-panel" id="searchRightPanel" style="display: none;">
+            <!-- a. 资源简介 (封面、描述、来源、状态、集数/章节数) -->
+            <div class="detail-hero-card">
+              <div class="hero-banner-wrapper">
+                <span class="hero-tag-badge" id="detailSourceBadge">🔴 红果短剧 · 独播</span>
+                <img src="" id="detailBannerImg" alt="海报 Banner">
+              </div>
+              <div class="hero-body">
+                <h2 class="hero-title" id="detailTitle">资源名称</h2>
+                <div class="hero-meta-list">
+                  <span>📺 状态: <strong id="detailEpCount">--</strong></span>
+                  <span>来源: <strong id="detailPlatformLabel">--</strong></span>
+                  <span>ID: <strong class="hero-meta-id" id="detailId">--</strong></span>
+                </div>
+                <p class="hero-synopsis" id="detailSynopsis">
+                  【资源描述】暂无...
+                </p>
+              </div>
+            </div>
+
+            <!-- b. 视频清晰度选择 (仅短剧显示，小说自动隐藏) -->
+            <div class="config-card" id="cardQualityWrapper">
+              <label class="config-label">🎬 视频清晰度选择 (短剧专属)</label>
+              <select class="input-control" id="selectQuality">
+                <option value="1080p" selected>1080p 超清 (推荐)</option>
+                <option value="720p">720p 标清</option>
+              </select>
+            </div>
+
+            <!-- c. 剧集/章节列表与分页 (可选中打勾) -->
+            <div class="config-card">
+              <label class="config-label">🎼 剧集/章节列表 (支持勾选与分页)</label>
+              <div class="episode-pagination" id="epiPagination"></div>
+              <div class="episode-chip-grid" id="epiChipGrid"></div>
+            </div>
+
+            <!-- d. 双独立下载动作按纽 -->
+            <div class="download-buttons-group">
+              <button class="btn-create-job-full" id="btnDownloadAll">
+                <span>🚀</span>
+                <span>下载全部 (默认全集)</span>
+              </button>
+              <button class="btn-secondary" id="btnDownloadSelected" style="padding: 14px 0; font-size: 14px; font-weight: 700; border-color: var(--color-hongguo); color: var(--color-hongguo);">
+                <span>🎯</span>
+                <span id="lblBtnDownloadSelected">下载指定剧集/章节</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 子页面 2: 📥 下载任务 -->
+      <section class="subpage" id="page-jobs">
+        <div class="jobs-page-container">
+          <!-- 统计概览卡片 -->
+          <div class="jobs-stats-card">
+            <div class="jobs-stats-list">
+              <div class="jobs-stat-item">
+                <span class="jobs-stat-label">正在下载</span>
+                <span class="jobs-stat-val" style="color: var(--color-hongguo);">2</span>
+              </div>
+              <div class="jobs-stat-item">
+                <span class="jobs-stat-label">已完成</span>
+                <span class="jobs-stat-val" style="color: var(--color-success);">1</span>
+              </div>
+              <div class="jobs-stat-item">
+                <span class="jobs-stat-label">总传输速度</span>
+                <span class="jobs-stat-val">4.8 MB/s</span>
+              </div>
+              <div class="jobs-stat-item">
+                <span class="jobs-stat-label">磁盘剩余容量</span>
+                <span class="jobs-stat-val">128.4 GB</span>
+              </div>
+            </div>
+            <div class="jobs-actions-group">
+              <button class="btn-secondary">▶️ 全部开始</button>
+              <button class="btn-secondary">⏸️ 全部暂停</button>
+              <button class="btn-secondary">🗑️ 清空已完成</button>
+              <button class="btn-primary" id="btnOpenOutputDir">📂 打开下载目录</button>
+            </div>
+          </div>
+
+          <!-- 任务卡片列表 -->
+          <div class="jobs-list" id="jobsList">
+            <!-- 任务 1 (进行中) -->
+            <div class="job-item-card">
+              <img src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=120" class="job-item-thumb" alt="封面">
+              <div class="job-item-info">
+                <div class="job-item-header">
+                  <span class="job-item-title">🔴 霸总的秘密情人 (80集全)</span>
+                  <span class="job-item-speed">⚡ 3.2 MB/s</span>
+                </div>
+                <div class="job-progress-bar-bg">
+                  <div class="job-progress-bar-fill" style="width: 65%;"></div>
+                </div>
+                <div class="job-item-footer">
+                  <span>状态: 正在下载... (52/80集)</span>
+                  <div class="job-controls">
+                    <button class="btn-secondary">⏸️ 暂停</button>
+                    <button class="btn-secondary">✕ 取消</button>
+                    <button class="btn-secondary">📂 目录</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 任务 2 (解密中) -->
+            <div class="job-item-card">
+              <img src="https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=120" class="job-item-thumb" alt="封面">
+              <div class="job-item-info">
+                <div class="job-item-header">
+                  <span class="job-item-title">🍅 宇宙职业选手 (全本)</span>
+                  <span class="job-item-speed" style="color: var(--color-fanqie);">⚡ 1.6 MB/s</span>
+                </div>
+                <div class="job-progress-bar-bg">
+                  <div class="job-progress-bar-fill" style="width: 90%; background: var(--color-fanqie-gradient);"></div>
+                </div>
+                <div class="job-item-footer">
+                  <span>状态: Frida 字体解密合并中... (810/900章)</span>
+                  <div class="job-controls">
+                    <button class="btn-secondary">⏸️ 暂停</button>
+                    <button class="btn-secondary">✕ 取消</button>
+                    <button class="btn-secondary">📂 目录</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 任务 3 (已完成) -->
+            <div class="job-item-card">
+              <img src="https://images.unsplash.com/photo-1514565131-fce0801e5785?w=120" class="job-item-thumb" alt="封面">
+              <div class="job-item-info">
+                <div class="job-item-header">
+                  <span class="job-item-title">🔴 都市龙神兵王 (120集全)</span>
+                  <span class="job-item-speed" style="color: var(--color-success);">✅ 完成</span>
+                </div>
+                <div class="job-progress-bar-bg">
+                  <div class="job-progress-bar-fill" style="width: 100%; background: var(--color-success);"></div>
+                </div>
+                <div class="job-item-footer">
+                  <span>状态: ✅ 已完成 (120/120集 - 1.4 GB)</span>
+                  <div class="job-controls">
+                    <button class="btn-primary" style="padding: 4px 10px; font-size: 11px;">▶️ 播放</button>
+                    <button class="btn-secondary">📂 目录</button>
+                    <button class="btn-secondary">🗑️ 删除</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 子页面 3: 📚 本地资源 -->
+      <section class="subpage" id="page-library">
+        <div class="library-page-container">
+          <!-- 过滤与搜索行 -->
+          <div class="library-filter-bar">
+            <div class="filter-tabs-group">
+              <div class="filter-tab-pill active">全部 (12)</div>
+              <div class="filter-tab-pill">🔴 短剧视频 (8)</div>
+              <div class="filter-tab-pill">🍅 小说文本 (4)</div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" class="input-control" placeholder="搜索本地文件名..." style="width: 200px;">
+              <button class="btn-primary">📂 打开所在文件夹</button>
+            </div>
+          </div>
+
+          <!-- 资源网格 Grid -->
+          <div class="library-grid">
+            <!-- 资源 1 -->
+            <div class="media-card-item">
+              <div class="media-thumb-wrapper">
+                <span class="media-type-tag">🔴 MP4</span>
+                <img src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=300" alt="封面">
+              </div>
+              <div class="media-body">
+                <div>
+                  <div class="media-title">霸总的秘密情人.mp4</div>
+                  <div class="media-meta">大小: 1.2 GB | 80集全 | 1080p</div>
+                </div>
+                <div class="media-actions">
+                  <button class="btn-primary">▶️ 播放视频</button>
+                  <button class="btn-secondary">📂 目录</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 资源 2 -->
+            <div class="media-card-item">
+              <div class="media-thumb-wrapper">
+                <span class="media-type-tag" style="background: var(--color-fanqie);">🍅 TXT</span>
+                <img src="https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=300" alt="封面">
+              </div>
+              <div class="media-body">
+                <div>
+                  <div class="media-title">宇宙职业选手.txt</div>
+                  <div class="media-meta">大小: 4.8 MB | 900章全本</div>
+                </div>
+                <div class="media-actions">
+                  <button class="btn-secondary" style="border-color: var(--color-fanqie); color: var(--color-fanqie);">📖 阅读小说</button>
+                  <button class="btn-secondary">📂 目录</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 资源 3 -->
+            <div class="media-card-item">
+              <div class="media-thumb-wrapper">
+                <span class="media-type-tag">🔴 MP4</span>
+                <img src="https://images.unsplash.com/photo-1514565131-fce0801e5785?w=300" alt="封面">
+              </div>
+              <div class="media-body">
+                <div>
+                  <div class="media-title">都市龙神兵王.mp4</div>
+                  <div class="media-meta">大小: 1.4 GB | 120集全 | 1080p</div>
+                </div>
+                <div class="media-actions">
+                  <button class="btn-primary">▶️ 播放视频</button>
+                  <button class="btn-secondary">📂 目录</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 子页面 4: ⚙️ 系统设置 -->
+      <section class="subpage" id="page-settings">
+        <div class="settings-page-container">
+          <!-- 卡片 1: 基础服务配置 -->
+          <div class="settings-card">
+            <h3 class="settings-card-title">🖥️ 基础服务配置</h3>
+            
+            <div class="form-group">
+              <label class="form-label">API 服务端地址</label>
+              <input type="text" class="input-control" id="settingApiBase" value="http://127.0.0.1:8000">
+              <span class="form-hint">桌面端所连接的本地/远端 FastAPI 后端服务基础 URL。</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">API Key (鉴权密钥)</label>
+              <div class="form-row-inline">
+                <input type="password" class="input-control" id="settingApiKey" value="dev-key-change-me">
+                <button class="btn-secondary" style="white-space: nowrap;">重置为默认</button>
+              </div>
+              <span class="form-hint">本地 MVP 开发测试密钥，免配置即可直连本地后端。</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">默认下载保存目录</label>
+              <div class="form-row-inline">
+                <input type="text" class="input-control" id="settingOutputDir" value="D:\github\all_project\resource_download\data\outputs">
+                <button class="btn-secondary" style="white-space: nowrap;">浏览...</button>
+              </div>
+              <span class="form-hint">所有下载完成的短剧 MP4 视频与小说 TXT 文本存放路径。</span>
+            </div>
+          </div>
+
+          <!-- 卡片 2: 下载偏好配置 (保留) -->
+          <div class="settings-card">
+            <h3 class="settings-card-title">⚙️ 下载偏好配置</h3>
+
+            <div class="form-group">
+              <label class="form-label">默认下载范围</label>
+              <div>
+                <span style="display: inline-block; padding: 4px 10px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); font-size: 12px; font-weight: 600; color: var(--color-hongguo);">全集下载 (默认下载全部)</span>
+              </div>
+              <span class="form-hint">新建下载任务时免填范围，自动默认抓取该资源的全集/全本。</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">红果短剧默认视频画质</label>
+              <select class="input-control" style="max-width: 280px;">
+                <option value="1080p" selected>1080p 超清 (推荐)</option>
+                <option value="720p">720p 标清</option>
+              </select>
+              <span class="form-hint">解析红果短剧时优先使用的全局分辨率。</span>
+            </div>
+          </div>
+
+          <!-- 卡片 3: 客户端升级与版本 (保留) -->
+          <div class="settings-card">
+            <h3 class="settings-card-title">🚀 客户端升级与版本</h3>
+
+            <div class="form-group">
+              <label class="form-label">当前客户端版本</label>
+              <div class="form-row-inline" style="align-items: center;">
+                <span style="font-size: 14px; font-weight: 700; color: var(--text-primary);">v2.1.0-desktop</span>
+                <button class="btn-primary" id="btnCheckUpdate" style="padding: 6px 14px; font-size: 12px;">🔍 检查更新</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" checked style="accent-color: var(--color-hongguo);">
+                <span>启动时自动检测版本更新</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 底部动作按纽 -->
+          <div class="settings-footer-actions">
+            <button class="btn-primary" id="btnSaveSettings">保存系统配置</button>
+            <button class="btn-secondary">恢复默认配置</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 3. 卡密兑换全局 Modal 弹窗 -->
+  <div class="modal-overlay" id="modalRedeemKey">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">🔑 VIP 卡密兑换</h3>
+        <button class="modal-close" id="btnModalClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-hint">请输入发卡网获取的 16 位卡密序列号 (如 VIP-30D-XXXX-XXXX):</p>
+        <input type="text" class="input-control" id="inputCardKey" placeholder="VIP-XXXX-XXXX-XXXX" autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" id="btnModalSubmit">立即兑换</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 引入全局 JS 逻辑 -->
+  <script src="app.js"></script>
+</body>
+</html>
