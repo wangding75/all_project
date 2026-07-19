@@ -32,13 +32,13 @@
 
 ### 已知 Bug（代码评审发现，**必须先修**）
 
-| 优先级 | Bug | 文件 | 说明 |
-|--------|-----|------|------|
-| 🔴 P0 | `HERE` 未定义 | `platforms/fanqie/client.py:106` | App 模式 `init_frida()` 使用 `HERE` 但未定义，运行即 `NameError` |
-| 🔴 P1 | 路径穿越漏洞 | `jobs/manager.py:93` | `file_id` 直接拼接路径，需加 `resolve()` + `is_relative_to()` 校验 |
-| 🟠 P2 | 全局 HEADERS 并发竞争 | `platforms/fanqie/web_ssr.py:14` | 多并发任务 Cookie 互相覆盖 |
-| 🟠 P2 | `get_settings()` 未缓存 | `app/config.py:39` | 每次请求重新读 .env，需加 `@lru_cache` |
-| 🟡 P3 | 缺 `requests` 依赖声明 | `server/requirements.txt` | `fanqie/client.py` import requests 但未声明 |
+| 优先级 | Bug | 文件 | 说明 | 状态 |
+|--------|-----|------|------|------|
+| 🔴 P0 | `HERE` 未定义 | `platforms/fanqie/client.py:106` | App 模式 `init_frida()` 使用 `HERE` 但未定义 | ✅ 已修复 (`f7b83e2`) |
+| 🔴 P1 | 路径穿越漏洞 | `jobs/manager.py:93` | `file_id` 直接拼接路径，需加 `resolve()` + `is_relative_to()` 校验 | ✅ 已修复 (`0163e2c`) |
+| 🟠 P2 | 全局 HEADERS 并发竞争 | `platforms/fanqie/web_ssr.py:14` | 多并发任务 Cookie 互相覆盖 | ✅ 已修复 (`15cc3a0`) |
+| 🟠 P2 | `get_settings()` 未缓存 | `app/config.py:39` | 每次请求重新读 .env，需加 `@lru_cache` | ✅ 已修复 (`16b7e75`) |
+| 🟡 P3 | 缺 `requests` 依赖声明 | `server/requirements.txt` | `fanqie/client.py` import requests 但未声明 | ✅ 已修复 (`9ee43fc`) |
 
 ---
 
@@ -46,8 +46,8 @@
 
 | 里程碑 | 目标 | 验收标准 | 状态 |
 |--------|------|----------|------|
-| **MVP-H** | 红果主链路打通 | `e2e_hongguo.py` 出可播 MP4 | 🔧 进行中 |
-| **MVP-F** | 番茄 App 会话打通 | `e2e_fanqie.py` App 模式出书 | ⏳ 待开始 |
+| **MVP-H** | 红果主链路打通 | `e2e_hongguo.py` 出可播 MP4 | ✅ 已完成 |
+| **MVP-F** | 番茄 App 会话打通 | `e2e_fanqie.py` App 模式出书 | ✅ 已完成 |
 | **Client** | 薄客户端 UI | UI 复现脚本所有功能 | ⏳ 后置 |
 | **商业化** | VIP + 卡密 + Redroid | 参见 business_landing_architecture.md | ⏳ 规划中 |
 
@@ -151,13 +151,13 @@ python offline_dl.py <series_id> --range 1-1
 
 ### 编码任务
 
-| Task | 描述 | 验收 |
-|------|------|------|
-| H-1 | `vendor/hongguo` 独立运行出 MP4 | 手动验证 |
-| H-2 | `smoke_health.py` 验证 hongguo 接入 | health 返回 hongguo |
-| H-3 | `e2e_hongguo.py` 全链路跑通 | MP4 > 0 字节且可播 |
-| H-4 | 签名宕机时错误明确，不影响番茄链路 | 502 含提示信息 |
-| H-5 | 编写 `docs/hongguo_setup.md` | 他人可复现 |
+| Task | 描述 | 验收 | 状态 |
+|------|------|------|------|
+| H-1 | `vendor/hongguo` 独立运行出 MP4 | 手动验证 | ✅ 已完成 |
+| H-2 | `smoke_health.py` 验证 hongguo 接入 | health 返回 hongguo | ✅ 已完成 |
+| H-3 | `e2e_hongguo.py` 全链路跑通 | MP4 > 0 字节且可播 | ✅ 已完成 |
+| H-4 | 签名宕机时错误明确，不影响番茄链路 | 502 含提示信息 | ✅ 已完成 (`c846caf`) |
+| H-5 | 编写 `docs/hongguo_setup.md` | 他人可复现 | ✅ 已完成 (`cc17ebb`) |
 
 ### 验收命令
 
@@ -171,7 +171,7 @@ python scripts/e2e_hongguo.py --search "剧名" --range 1-1
 
 ---
 
-## 五、MVP-F：番茄 App 会话（下一阶段，预计 3~5 天）
+## 五、MVP-F：番茄 App 会话（已完成）
 
 ### 前置条件
 
@@ -181,14 +181,14 @@ python scripts/e2e_hongguo.py --search "剧名" --range 1-1
 
 ### 编码任务
 
-| Task | 描述 | 文件 |
-|------|------|------|
-| F-1 | 修复 `HERE` 变量（= Task 1） | `fanqie/client.py` |
-| F-2 | 独立验证 `FanqieCryptOracle.attach()` | 临时测试脚本 |
-| F-3 | `e2e_fanqie.py` App 模式全链路跑通 | E2E 脚本 |
-| F-4 | Web SSR 模式回归不受影响 | `e2e_fanqie.py` 默认 mode=web |
-| F-5 | ADB 路径统一到 `config.py`，消除两处硬编码 | `config.py` + `client.py` + `crypt_oracle.py` |
-| F-6 | 编写 `docs/fanqie_app_setup.md` | 他人可复现 |
+| Task | 描述 | 文件 | 状态 |
+|------|------|------|------|
+| F-1 | 修复 `HERE` 变量（= Task 1） | `fanqie/client.py` | ✅ 已完成 (`f7b83e2`) |
+| F-2 | 独立验证 `FanqieCryptOracle.attach()` | 临时测试脚本 | ✅ 已完成 |
+| F-3 | `e2e_fanqie.py` App 模式全链路跑通 | E2E 脚本 | ✅ 已完成 |
+| F-4 | Web SSR 模式回归不受影响 | `e2e_fanqie.py` 默认 mode=web | ✅ 已完成 |
+| F-5 | ADB 路径统一到 `config.py`，消除两处硬编码 | `config.py` + `client.py` + `crypt_oracle.py` | ✅ 已完成 (`b296e4c`) |
+| F-6 | 编写 `docs/fanqie_app_setup.md` | 他人可复现 | ✅ 已完成 (`8bd2608`) |
 
 ### 验收命令
 
@@ -280,25 +280,25 @@ python scripts/e2e_fanqie.py --id "<BOOK_ID>" --range 1-3 --options "{\"mode\":\
 ## 十、立即执行顺序
 
 ```
-今天（Bug 修复）
-  Task 1  修复 HERE 变量（P0）
-  Task 2  修复路径穿越漏洞（P1）
-  Task 3  修复全局 HEADERS 并发竞争（P2）
-  Task 4  缓存 get_settings()（P2）
-  Task 5  补充 requirements.txt（P3）
+Bug 修复（✅ 已完成）
+  Task 1  修复 HERE 变量（P0）                      ✅ (f7b83e2)
+  Task 2  修复路径穿越漏洞（P1）                    ✅ (0163e2c)
+  Task 3  修复全局 HEADERS 并发竞争（P2）            ✅ (15cc3a0)
+  Task 4  缓存 get_settings()（P2）                 ✅ (16b7e75)
+  Task 5  补充 requirements.txt（P3）              ✅ (9ee43fc)
 
-本周（MVP-H）
-  H-1  vendor/hongguo 独立验证
-  H-2  smoke_health 验证接入
-  H-3  e2e_hongguo 全链路跑通  ← MVP-H 核心目标
-  H-4  签名后端错误隔离
-  H-5  hongguo_setup.md 文档
+MVP-H：红果主链路（✅ 已完成）
+  H-1  vendor/hongguo 独立验证                      ✅
+  H-2  smoke_health 验证接入                        ✅
+  H-3  e2e_hongguo 全链路跑通                       ✅ (MVP-H 核心目标)
+  H-4  签名后端错误隔离                             ✅ (c846caf)
+  H-5  hongguo_setup.md 文档                        ✅ (cc17ebb)
 
-下周（MVP-F）
-  F-1 ~ F-6  番茄 App 会话链路  ← MVP-F 核心目标
+MVP-F：番茄 App 会话（✅ 已完成）
+  F-1 ~ F-6  番茄 App 会话链路                      ✅ (b296e4c / 8bd2608)
 
-之后（按需）
-  质量改善 Q-1 ~ Q-6
-  薄客户端 UI（阶段 5）
-  商业化（阶段 6）
+后续演进（按需）
+  质量改善 Q-1 ~ Q-6                               ⏳ 待开工
+  薄客户端 UI（阶段 5）                            ⏳ 后置
+  商业化（阶段 6）                                  ⏳ 规划中
 ```
