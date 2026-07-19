@@ -1,0 +1,304 @@
+# DEV_ROADMAP — 执行开发路线图
+
+> **本文是权威执行文档，后续开发按此文档推进。**
+>
+> - 决策背景：[DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)
+> - 商业化蓝图（规划中）：[business_landing_architecture.md](./business_landing_architecture.md)
+> - 历史设计存档：[design_plan.md](./design_plan.md)
+>
+> 最后更新：2026-07-19
+
+---
+
+## 一、当前代码状态（截至 2026-07-19）
+
+### 已完成
+
+| 模块 | 内容 |
+|------|------|
+| `server/app/main.py` | FastAPI 入口 + lifespan 目录初始化 |
+| `server/app/config.py` | pydantic-settings 配置（.env 驱动） |
+| `server/app/models.py` | 统一 DTO（PlatformName / JobStatus / JobResponse 等） |
+| `server/app/auth.py` | X-API-Key 鉴权依赖 |
+| `server/app/api/router.py` | 完整 REST 路由（health/search/detail/jobs/files） |
+| `server/app/jobs/manager.py` | 进程内 JobManager（asyncio + JSON 持久化） |
+| `server/platforms/base.py` | BasePlatform 抽象接口 |
+| `server/platforms/registry.py` | 平台注册表（懒加载） |
+| `server/platforms/fanqie/` | Web SSR + App 模式（字体解密/Frida 解密/client） |
+| `server/platforms/hongguo/` | bridge + platform（复用 vendor/hongguo） |
+| `scripts/e2e_fanqie.py` | 番茄端到端验收脚本 |
+| `scripts/e2e_hongguo.py` | 红果端到端验收脚本 |
+| `scripts/smoke_health.py` | 健康检查脚本 |
+
+### 已知 Bug（代码评审发现，**必须先修**）
+
+| 优先级 | Bug | 文件 | 说明 |
+|--------|-----|------|------|
+| 🔴 P0 | `HERE` 未定义 | `platforms/fanqie/client.py:106` | App 模式 `init_frida()` 使用 `HERE` 但未定义，运行即 `NameError` |
+| 🔴 P1 | 路径穿越漏洞 | `jobs/manager.py:93` | `file_id` 直接拼接路径，需加 `resolve()` + `is_relative_to()` 校验 |
+| 🟠 P2 | 全局 HEADERS 并发竞争 | `platforms/fanqie/web_ssr.py:14` | 多并发任务 Cookie 互相覆盖 |
+| 🟠 P2 | `get_settings()` 未缓存 | `app/config.py:39` | 每次请求重新读 .env，需加 `@lru_cache` |
+| 🟡 P3 | 缺 `requests` 依赖声明 | `server/requirements.txt` | `fanqie/client.py` import requests 但未声明 |
+
+---
+
+## 二、里程碑总览
+
+| 里程碑 | 目标 | 验收标准 | 状态 |
+|--------|------|----------|------|
+| **MVP-H** | 红果主链路打通 | `e2e_hongguo.py` 出可播 MP4 | 🔧 进行中 |
+| **MVP-F** | 番茄 App 会话打通 | `e2e_fanqie.py` App 模式出书 | ⏳ 待开始 |
+| **Client** | 薄客户端 UI | UI 复现脚本所有功能 | ⏳ 后置 |
+| **商业化** | VIP + 卡密 + Redroid | 参见 business_landing_architecture.md | ⏳ 规划中 |
+
+---
+
+## 三、第一步：修复 Bug（今天先做，预计 0.5 天）
+
+### Task 1 — 修复 `HERE` 未定义（P0）
+
+**文件**：`server/platforms/fanqie/client.py`
+
+在文件顶部 import 区域末尾添加：
+
+```python
+HERE = Path(__file__).resolve().parent
+```
+
+---
+
+### Task 2 — 修复路径穿越漏洞（P1）
+
+**文件**：`server/app/jobs/manager.py` — `resolve_file` 方法
+
+```python
+def resolve_file(self, file_id: str) -> Path | None:
+    for record in self._jobs.values():
+        for f in record.files:
+            if f.file_id == file_id:
+                path = Path(f.path) if f.path else None
+                if path and path.is_file():
+                    return path
+    # 路径安全校验：防止路径穿越攻击
+    outputs_root = self.settings.outputs_dir.resolve()
+    candidate = (outputs_root / file_id).resolve()
+    if not candidate.is_relative_to(outputs_root):
+        return None
+    if candidate.is_file():
+        return candidate
+    return None
+```
+
+---
+
+### Task 3 — 修复全局 HEADERS 并发竞争（P2）
+
+**文件**：`server/platforms/fanqie/web_ssr.py`
+
+```python
+# 改前：全局可变字典（线程不安全）
+HEADERS = {"User-Agent": "..."}
+def set_cookie(cookie): ...
+
+# 改后：工厂函数，每次返回独立副本
+_BASE_HEADERS = {"User-Agent": "..."}
+
+def make_headers(cookie: str | None = None) -> dict:
+    h = dict(_BASE_HEADERS)
+    if cookie:
+        h["Cookie"] = cookie
+    return h
+```
+
+同步更新 `fetch_url`、`fetch_bytes`、`download_chapter` 等所有调用方传入 `make_headers(cookie)`。
+
+---
+
+### Task 4 — 缓存 `get_settings()`（P2）
+
+**文件**：`server/app/config.py`
+
+```python
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()
+```
+
+---
+
+### Task 5 — 补充 `requests` 依赖（P3）
+
+**文件**：`server/requirements.txt`，添加：
+
+```
+requests>=2.31
+```
+
+---
+
+## 四、MVP-H：红果主链路（当前阶段，预计 2~5 天）
+
+### 环境前置（人工）
+
+```powershell
+git clone --depth 1 https://github.com/zhangbaio/hongguo.git vendor/hongguo
+# 在 vendor 内先独立跑通，确认签名 OK
+cd vendor/hongguo
+python offline_dl.py <series_id> --range 1-1
+```
+
+### 编码任务
+
+| Task | 描述 | 验收 |
+|------|------|------|
+| H-1 | `vendor/hongguo` 独立运行出 MP4 | 手动验证 |
+| H-2 | `smoke_health.py` 验证 hongguo 接入 | health 返回 hongguo |
+| H-3 | `e2e_hongguo.py` 全链路跑通 | MP4 > 0 字节且可播 |
+| H-4 | 签名宕机时错误明确，不影响番茄链路 | 502 含提示信息 |
+| H-5 | 编写 `docs/hongguo_setup.md` | 他人可复现 |
+
+### 验收命令
+
+```powershell
+$env:API_BASE = "http://127.0.0.1:8000"
+$env:API_KEY  = "dev-key-change-me"
+
+python scripts/smoke_health.py
+python scripts/e2e_hongguo.py --search "剧名" --range 1-1
+```
+
+---
+
+## 五、MVP-F：番茄 App 会话（下一阶段，预计 3~5 天）
+
+### 前置条件
+
+- MVP-H 已验收通过
+- MuMu 模拟器已安装番茄小说 (`com.dragon.read`)
+- `tools/setup/fanqie_crypt_oracle.js` 已部署
+
+### 编码任务
+
+| Task | 描述 | 文件 |
+|------|------|------|
+| F-1 | 修复 `HERE` 变量（= Task 1） | `fanqie/client.py` |
+| F-2 | 独立验证 `FanqieCryptOracle.attach()` | 临时测试脚本 |
+| F-3 | `e2e_fanqie.py` App 模式全链路跑通 | E2E 脚本 |
+| F-4 | Web SSR 模式回归不受影响 | `e2e_fanqie.py` 默认 mode=web |
+| F-5 | ADB 路径统一到 `config.py`，消除两处硬编码 | `config.py` + `client.py` + `crypt_oracle.py` |
+| F-6 | 编写 `docs/fanqie_app_setup.md` | 他人可复现 |
+
+### 验收命令
+
+```powershell
+python scripts/e2e_fanqie.py --id "https://fanqienovel.com/page/<BOOK_ID>" --range 1-3
+python scripts/e2e_fanqie.py --id "<BOOK_ID>" --range 1-3 --options "{\"mode\":\"app\"}"
+```
+
+---
+
+## 六、双平台稳定与质量改善（预计 1~2 天）
+
+### 代码质量任务
+
+| Task | 描述 | 优先级 |
+|------|------|--------|
+| Q-1 | 引入 `logging`，替换所有 `print()` | 🟠 |
+| Q-2 | `JobManager` 限制最大历史 Job 数（防内存泄漏） | 🟠 |
+| Q-3 | 启动时扫描 `jobs/*.json` 恢复历史 Job 到内存 | 🟡 |
+| Q-4 | 统一 HTTP 客户端为 `httpx`（移除 `requests`） | 🟡 |
+| Q-5 | `download()` 拆分 web/app 两个私有方法 | 🟡 |
+| Q-6 | 添加 pytest 单元测试骨架 | 🟡 |
+
+### 文档任务
+
+| Task | 描述 |
+|------|------|
+| D-1 | `scripts/README.md` 补充完整示例（两平台各 ≥1 条） |
+| D-2 | `docs/hongguo_setup.md` 完整配置步骤 |
+| D-3 | `docs/fanqie_app_setup.md` 完整配置步骤 |
+
+---
+
+## 七、薄客户端 UI（后置，阶段 5，预计 3~7 天）
+
+**前提**：双平台脚本链路已稳定，E2E 可重复。
+
+### 技术栈选型（开工时二选一锁死）
+
+| 方案 | 优点 | 缺点 |
+|------|------|------|
+| **PyWebView** | 原生 WebView，前端 HTML/CSS/JS，轻量 | Windows 打包依赖复杂 |
+| **PySide6** | Qt 控件成熟稳定，原生体验好 | UI 代码量更大 |
+
+### 功能范围
+
+- 平台切换（红果 / 番茄）
+- 搜索 + 详情（含封面、集数/章节列表）
+- 任务队列（创建 / 进度轮询 / 下载文件）
+- 设置页（API_BASE / API_KEY / 下载目录）
+
+> UI 不新增服务端能力，仅复现脚本已能完成的操作。
+
+---
+
+## 八、商业化（阶段 6，规划中）
+
+详见 [business_landing_architecture.md](./business_landing_architecture.md)。
+
+主要工作：
+
+1. SQLite → PostgreSQL 数据库
+2. 用户注册 / 登录 / JWT 鉴权（替换 API Key）
+3. 卡密体系（预生成 + 核销 + VIP 有效期）
+4. Redroid 容器池（Linux 云端多节点签名）
+5. `slowapi` 限流 + 配额管理
+
+---
+
+## 九、技术债与规范
+
+### 已认可的技术债（MVP 期间可接受）
+
+| 债项 | 描述 | 何时还 |
+|------|------|--------|
+| 进程内 JobManager | 无法多进程/多机扩展 | 商业化阶段换 Celery/RQ |
+| JSON 文件持久化 | 重启后内存状态丢失 | 稳定期引入 SQLite |
+| 单并发 Frida 连接 | 多任务并发可能冲突 | 文档说明限制，暂不处理 |
+
+### 质量门槛（不可妥协）
+
+1. 每平台至少 1 条脚本可跑的 E2E，并写进 `scripts/README.md`
+2. 密钥 / token / Cookie **不提交 git**（`.gitignore` 已配置）
+3. 生产环境 API Key 必须在 `.env` 覆盖，禁止默认值
+4. 服务端完成标准以**脚本 E2E 为准**，非 UI
+
+---
+
+## 十、立即执行顺序
+
+```
+今天（Bug 修复）
+  Task 1  修复 HERE 变量（P0）
+  Task 2  修复路径穿越漏洞（P1）
+  Task 3  修复全局 HEADERS 并发竞争（P2）
+  Task 4  缓存 get_settings()（P2）
+  Task 5  补充 requirements.txt（P3）
+
+本周（MVP-H）
+  H-1  vendor/hongguo 独立验证
+  H-2  smoke_health 验证接入
+  H-3  e2e_hongguo 全链路跑通  ← MVP-H 核心目标
+  H-4  签名后端错误隔离
+  H-5  hongguo_setup.md 文档
+
+下周（MVP-F）
+  F-1 ~ F-6  番茄 App 会话链路  ← MVP-F 核心目标
+
+之后（按需）
+  质量改善 Q-1 ~ Q-6
+  薄客户端 UI（阶段 5）
+  商业化（阶段 6）
+```

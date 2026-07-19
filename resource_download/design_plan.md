@@ -1,9 +1,18 @@
-# 多平台内容下载器 — 架构设计与实现方案
+# 多平台内容下载器 — 早期设计文稿（历史存档）
 
-> **开发排期与架构定稿以 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md) 为准。**  
-> 本文保留 UI/视觉与早期设想；若与「方案 2 中转服务端 + 瘦客户端」冲突，以 `DEVELOPMENT_PLAN.md` 覆盖。
+> **⚠️ 本文档已部分过时（存档保留），请勿以此指导当前开发。**
+>
+> - **权威开发计划**：[`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md)（已定稿）
+> - **执行开发计划**：[`DEV_ROADMAP.md`](./DEV_ROADMAP.md)（最新，按此开发）
+>
+> **本文各节状态：**
+> - §一「UI 规范」— 可参考，尚未过时
+> - §二「架构选型」— **⛔ 已废弃**，早期本机一体化方案已被 HTTP 中转服务端取代
+> - §三「文件结构」— **⛔ 已废弃**，与当前仓库结构不符
+> - §四「红果解密」— **⚠️ 已更新**，当前复用 `vendor/hongguo`，需 Frida 签名后端，非纯离线
+> - §五「番茄方案」— 可参考，Web SSR 链路已落地
 
-本项目旨在开发一个扩展性强、视觉精美的桌面端内容下载器。不仅复刻 `Fanqie-novel-Downloader` 桌面客户端的全部核心功能（搜索、书架、历史记录、设置、下载队列），还将集成“红果短剧”下载功能，并提供插件化架构以支持未来集成其他平台（如其他小说或视频平台）。
+本项目旨在开发一个扩展性强、视觉精美的桌面端内容下载器，集成番茄小说和红果短剧下载功能，并提供插件化架构支持未来扩展。
 
 ---
 
@@ -28,70 +37,50 @@
 ### 1.2 页面布局与导航
 - **无边框窗口**：提供自定义的顶部标题栏，包含应用名称、最小化/关闭按钮以及平台切换器（番茄小说 / 红果短剧）。
 - **Tab 导航栏**：搜索 🔍、书架 📚、历史 🕐、设置 ⚙、下载队列 ⬇（右上角角标实时显示进行中的任务数）。
-- **双栏式搜索面**：
-  - 左侧：搜索输入框（支持关键词、链接或ID）、搜索/载入按钮、列表形式展示的搜索结果。
-  - 右侧：选中内容的详情卡片（展示封面图、名称、作者/版权方、评分、简介、[批量下载] 按钮以及目录列表）。
 
 ---
 
-## 二、架构选型与通信
+## 二、架构选型（⛔ 已废弃 — 仅作历史参考）
 
-为避免复杂的 Tauri-Rust 链编译和开发成本，同时保持原生级窗口体验与前后端分离的清晰架构，本项目采用：
+> **⛔ 以下为早期「本机一体化」方案，已被 HTTP 中转服务端架构取代。**
+> 当前实际架构：前端 UI（或脚本）→ HTTP API（FastAPI 服务端）→ 平台插件（hongguo / fanqie）。
 
-- **桌面窗口外壳**：`PyWebView` 4.x
-- **前端技术**：纯原生 `HTML5 + CSS3 (Vanilla) + Vanilla JS`（免去打包构建，支持极速启动与资源轻量化）
-- **前后端通信**：异步 `WebSocket`（基于 `asyncio` + `websockets`）
-- **下载核心**：Python `asyncio` + `httpx[http2]`
-- **打包分发**：`PyInstaller`（单文件打包发布，用户无需安装 Python 环境）
+> **⚠️ 以下目录结构为早期设计稿，与当前仓库实际结构不符，请以 README.md 为准。**
 
----
+当前实际结构：
 
-## 三、项目文件结构
-
-```
-novel_download/
-│
-├── app/                           # 桌面外壳与服务
-│   ├── main.py                    # 启动入口（创建 PyWebView 窗口 + 启动 WebSocket 服务）
-│   ├── api_bridge.py              # 前端通信路由器（处理搜索、下载等动作）
-│   └── websocket_server.py        # asyncio WebSocket 服务，推送下载进度
-│
-├── frontend/                      # 前端资源
-│   ├── index.html                 # 客户端主页面
-│   ├── style.css                  # 全局样式（深色玻璃态、橙色高亮）
-│   └── app.js                     # 视图状态切换与 WebSocket 监听逻辑
-│
-├── core/                          # 平台无关核心层
-│   ├── base_platform.py           # 抽象基类，规范各平台插件的行为
-│   ├── http_client.py             # 统一异步 HTTP 客户端（处理 JA3 指纹、代理、限流重试）
-│   ├── models.py                  # 规范化数据模型（Book, Chapter, VideoEpisode 等）
-│   ├── download_queue.py          # 异步多任务并发下载队列管理器
-│   └── config.py                  # 配置管理类（本地路径、Cookie、代理设置）
-│
-├── exporters/                     # 导出模块
-│   ├── txt.py                     # 小说 TXT 导出
-│   └── epub.py                    # 小说标准 EPUB 电子书制作
-│
-├── platforms/                     # 平台插件（插件式架构）
-│   │
-│   ├── fanqie/                    # ── 番茄小说平台
-│   │   ├── __init__.py            #   注册插件
-│   │   ├── web_ssr.py             #   Web SSR 方案（通过 window.__INITIAL_STATE__ 和字体 cmap 解析解密）
-│   │   ├── official_api.py        #   官方 App API 方案
-│   │   ├── signing/               #   App 接口签名层（Argus / Ladon 签名）
-│   │   └── decryptor.py           #   AES-256-CBC + PKCS7 + Gzip 章节密文离线解密
-│   │
-│   └── hongguo/                   # ── 红果短剧平台（参考 zhangbaio/hongguo 实现）
-│       ├── __init__.py            #   注册插件
-│       ├── client.py              #   短剧 API（搜索、详情、榜单、最新上架）
-│       ├── spade_decrypt.py       #   ★ 纯离线 spade_a 字节变换解密算法
-│       └── video.py               #   音视频样本解析、AES-128-CTR 解密与 ffmpeg 重封装
-│
-├── requirements.txt
-└── build.spec                     # 打包配置文件
+```text
+resource_download/
+├── server/             # 中转服务端（FastAPI）← 主战场
+│   ├── app/            # API / 鉴权 / 任务队列
+│   ├── platforms/      # hongguo（主路径）+ fanqie
+│   └── run.py
+├── vendor/hongguo/     # 上游 clone（勿提交 config.json）
+├── scripts/            # e2e_hongguo / e2e_fanqie / smoke
+├── client/             # 暂空，阶段 5 再建
+└── data/               # jobs / outputs（.gitignore）
 ```
 
 ---
+
+## 四、红果短剧 — 下载与解密核心机制（⚠️ 已更新）
+
+> **⚠️ 当前实现复用 `vendor/hongguo`（zhangbaio/hongguo），需要 Frida 签名后端，非纯离线。**
+> 下方「纯离线」描述为早期版本，spade_a 算法已内置于 vendor 中，无需单独实现。
+
+**当前实际链路（vendor/hongguo 复用）：**
+
+```text
+FastAPI → platforms/hongguo/bridge.py → vendor/hongguo/hongguo.py
+                                              ↓
+                                    Frida 签名后端（MuMu/Redroid）
+                                              ↓
+                                    解密 MP4 → data/outputs/
+```
+
+**历史参考：早期设计的纯离线链路**
+
+~~参考 `zhangbaio/hongguo` 的逆向成果，红果短剧的解密与下载完全采用**纯离线、无需 App、无需 Frida 运行**的纯算法流程。~~
 
 ## 四、红果短剧 — 下载与解密核心机制
 

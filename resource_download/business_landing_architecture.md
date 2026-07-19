@@ -1,8 +1,14 @@
 # 资源下载器全局商业化落地设计规范（中继网关/订阅卡密版）
 
+> **⚠️ 本文为商业化阶段规划蓝图，MVP-H / MVP-F 阶段尚未实施任何内容。**
+>
+> 对应里程碑：**阶段 6（硬化与发布）** 及之后，参见 [`DEV_ROADMAP.md`](./DEV_ROADMAP.md)。
+>
+> 当前（MVP-H）仍使用简单 API Key 鉴权，无数据库、无卡密、无 VIP 体系。
+
 本规范详细定义了资源下载器向个人商业化过渡的系统架构、数据库实体、基于 **方案 B (路由级依赖注入)** 的统一鉴权方案，以及设备层（Redroid）部署规范。
 
----
+
 
 ## 1. 业务流程与架构总览 (System Architecture)
 
@@ -127,8 +133,11 @@ from app.models import User
 # 安全上下文入口 (拦截提取 Authorization: Bearer <token>)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="v1/auth/login")
 
-SECRET_KEY = "COMMERCIAL_JWT_SECRET_SALT"
+# ⚠️ SECRET_KEY 必须从环境变量读取，严禁硬编码！
+# SECRET_KEY = "COMMERCIAL_JWT_SECRET_SALT"  # ← 禁止
+SECRET_KEY = os.environ["JWT_SECRET_KEY"]   # 生产: 随机 64+ 字符强密钥
 ALGORITHM = "HS256"
+
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     """拦截器 1：解析 Token，提取当前登录用户，不满足登录态返回 401"""

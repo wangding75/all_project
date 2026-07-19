@@ -44,6 +44,7 @@ System.Management.Automation.Internal.Host.InternalHost/
 !/.gitignore
 !/README.md
 !/DEVELOPMENT_PLAN.md
+!/DEV_ROADMAP.md
 !/design_plan.md
 !/business_landing_architecture.md
 !/requirements.txt

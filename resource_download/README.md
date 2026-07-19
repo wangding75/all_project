@@ -42,8 +42,11 @@ pip install requests pycryptodome
 python run.py
 ```
 
-默认：`http://127.0.0.1:8000`，`X-API-Key: dev-key-change-me`。  
-OpenAPI：`/docs`
+默认：`http://127.0.0.1:8000`，`X-API-Key: dev-key-change-me`。
+
+> **⚠️ 生产环境请在 `server/.env` 中设置 `api_key=<随机强密钥>`，默认值仅限本地开发！**
+
+
 
 ### 2. 脚本验收
 
