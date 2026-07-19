@@ -80,3 +80,52 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     version: str
     platforms: list[str]
+
+
+class VersionResponse(BaseModel):
+    latest_version: str = "v2.1.0"
+    has_update: bool = False
+    download_url: str = ""
+    release_notes: str = "最新纯白极简桌面端版本，支持红果短剧/番茄小说双平台与卡密兑换。"
+
+
+class RedeemRequest(BaseModel):
+    card_code: str
+
+
+class RedeemResponse(BaseModel):
+    success: bool = True
+    message: str = "🎉 卡密兑换成功！VIP 会员天数已增加 30 天。"
+    vip_expires_at: str = "2026-08-19"
+
+
+class FileItemResponse(BaseModel):
+    file_id: str
+    title: str
+    media_type: str = "video/mp4"
+    platform: str = "hongguo"
+    size_bytes: int = 0
+    size_human: str = "0 B"
+    created_at: str = ""
+
+
+class FileListResponse(BaseModel):
+    total: int = 0
+    items: list[FileItemResponse] = Field(default_factory=list)
+
+
+class FileOpenRequest(BaseModel):
+    action: str = "play"
+
+
+class FileOpenResponse(BaseModel):
+    success: bool = True
+    message: str = ""
+
+
+class JobsSummaryResponse(BaseModel):
+    active_jobs: int = 0
+    completed_jobs: int = 0
+    total_speed_human: str = "0.0 MB/s"
+    disk_free_human: str = "128.4 GB"
+
