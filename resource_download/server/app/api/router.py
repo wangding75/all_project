@@ -51,7 +51,10 @@ async def search(
         raise HTTPException(status_code=501, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return await impl.search(q, page=page)
+    try:
+        return await impl.search(q, page=page)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"search failed: {exc}") from exc
 
 
 @api_router.get("/v1/detail", response_model=DetailResponse)
