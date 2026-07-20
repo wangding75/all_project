@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # 可选全局 Cookie（也可在创建 job 时 options.cookie 传入）
     fanqie_cookie: str = ""
 
+    # 鉴权模式（阶段 D-0）：dev | dual | jwt_only
+    # dev=仅 X-API-Key（默认，兼容 e2e）；dual=Key 或 JWT；jwt_only=仅 JWT
+    auth_mode: str = "dev"
+    # JWT（D-1 起生效；D-0 仅预留配置，Bearer 请求返回 501）
+    jwt_secret: str = "change-me-jwt-secret"
+    jwt_expire_minutes: int = 10080
+
     # ADB 与 Frida 配置（番茄 App 会话）
     adb_path: str = r"D:\install\Netease\MuMu\nx_main\adb.exe"
     adb_device: str = "127.0.0.1:16384"

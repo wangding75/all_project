@@ -1,9 +1,48 @@
 # Relay API
 
-Base URL: `http://127.0.0.1:8000`  
-鉴权：除 `/health`、`/`、`/ui` 外，请求头 `X-API-Key: <key>`（默认仅开发：`dev-key-change-me`）
+Base URL: `http://127.0.0.1:8000`
 
 > 契约以本文件 + 运行中的 OpenAPI（`/docs`）为准。
+
+---
+
+## 认证与身份鉴权（D-1）
+
+除 **`/health`**、**`/`**、**`/ui`**（及静态资源）外，业务接口依赖统一身份层 `require_identity`。
+
+### 配置（`.env`）
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `AUTH_MODE` | `dev` | `dev` \| `dual` \| `jwt_only` |
+| `API_KEY` | `dev-key-change-me` | 与请求头 `X-API-Key` 比对（仅限开发默认值） |
+| `JWT_SECRET` | `change-me-jwt-secret` | 签名密钥；**勿用于生产默认值** |
+| `JWT_EXPIRE_MINUTES` | `10080` | 7 天 |
+
+### 模式行为
+
+| AUTH_MODE | 有效凭证 | 说明 |
+|-----------|----------|------|
+| **dev** | `X-API-Key: <API_KEY>` | 与历史一致；脚本 e2e **零改**；忽略 Bearer Token |
+| **dual** | `X-API-Key` **或** `Authorization: Bearer <token>` | Key 匹配 → 运维身份 `is_ops=true`；Bearer → 用户身份 `is_ops=false` 并校验数据库状态 |
+| **jwt_only** | 仅 `Authorization: Bearer <token>` | 仅验证 Bearer JWT；忽略 API Key |
+
+### 请求头示例
+
+```http
+# 开发 / 脚本（推荐）
+X-API-Key: dev-key-change-me
+
+# 用户登录后
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+身份语义（服务端内部）：
+
+- `kind=api_key`，`is_ops=true`：运维/本机 Key，VIP 门闸可放行
+- `kind=user`：已登录用户，填充 `user_id` / `username`
+
+**本阶段不对 jobs 强制 VIP**（D-2）。
 
 ---
 
@@ -137,7 +176,88 @@ Base URL: `http://127.0.0.1:8000`
 
 ---
 
+## POST /v1/auth/register
+
+无需鉴权。注册新用户。
+
+### 请求体
+
+```json
+{
+  "username": "user123",
+  "password": "password123"
+}
+```
+
+### 响应 (201 Created)
+
+```json
+{
+  "id": 1,
+  "username": "user123",
+  "is_active": true,
+  "created_at": "2026-07-20T17:18:46Z",
+  "updated_at": "2026-07-20T17:18:46Z",
+  "vip_expires_at": null
+}
+```
+
+- 重名、验证失败、密码长度少于 8 或大于 72 字节均返回 **400 Bad Request**。
+
+---
+
+## POST /v1/auth/login
+
+无需鉴权。校验密码并签发 JWT token。
+
+### 请求体
+
+```json
+{
+  "username": "user123",
+  "password": "password123"
+}
+```
+
+### 响应 (200 OK)
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer",
+  "expires_in": 604800,
+  "vip_expires_at": null
+}
+```
+
+- 凭证错误或用户不存在返回 **401 Unauthorized**。
+
+---
+
+## GET /v1/auth/me
+
+依赖统一身份鉴权（`Authorization: Bearer <token>`）。
+
+### 响应 (200 OK)
+
+```json
+{
+  "id": 1,
+  "username": "user123",
+  "is_active": true,
+  "created_at": "2026-07-20T17:18:46Z",
+  "updated_at": "2026-07-20T17:18:46Z",
+  "vip_expires_at": null
+}
+```
+
+- 仅使用 `X-API-Key` 访问时返回 **400/403** (非用户身份)。
+- 凭证无效或过期返回 **401 Unauthorized**。
+
+---
+
 ## 交互文档
 
 服务启动后：`http://127.0.0.1:8000/docs`
+
 

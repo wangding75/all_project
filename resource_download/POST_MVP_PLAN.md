@@ -8,11 +8,12 @@
 > | **本文 `POST_MVP_PLAN.md`** | **当前迭代 backlog**（问题清单、阶段顺序、本周任务）— 可随评审更新 |
 > | [`DEV_ROADMAP.md`](./DEV_ROADMAP.md) | **历史执行记录**（MVP-H/F 已完成任务归档） |
 > | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | **逆向/运维知识**（签名、解密、设备坑）— 不写任务状态 |
-> | [`business_landing_architecture.md`](./business_landing_architecture.md) | **商业化蓝图**（未实施） |
 > | [`docs/release.md`](./docs/release.md) | **打包与首次运行**（阶段 C） |
+> | [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | **阶段 D 实施方案**（D-0 已编码；D-1+ 设计） |
+> | [`business_landing_architecture.md`](./business_landing_architecture.md) | **商业化蓝图总览**（与 STAGE_D_PLAN 互补） |
 >
-> **生成 / 修订**: 2026-07-20（v1.2 勾选 0/A/B 完成，启动阶段 C）  
-> **代码版本**: `0.2.0`（服务端 `__version__`；勿与 UI 历史文案 v2.1.0 混淆）
+> **生成 / 修订**: 2026-07-20（v1.4 D-0 鉴权并存落地）  
+> **代码版本**: `0.2.0`（服务端 `__version__`）
 
 ---
 
@@ -25,50 +26,33 @@
 | **阶段 0（工程骨架）** | 契约 + 鉴权 + 任务状态机 | `smoke_health.py` | ✅ 完成 |
 | **MVP-H** | 红果 vendor 复用 | job 出 MP4（环境就绪时） | ✅ 适配完成 |
 | **MVP-F** | 番茄 Web + App | job 出 TXT（App 需设备） | ✅ 代码接入；运维见 HANDOFF |
-| **阶段 0（Post-MVP 闭环）** | 恢复下载 API + 列表递归 + 文档 | E2E 可 `GET /v1/files/{id}` | ✅ 完成（`977a506` 一带） |
+| **阶段 0（Post-MVP 闭环）** | 恢复下载 API + 列表递归 + 文档 | E2E 可 `GET /v1/files/{id}` | ✅ 完成（`977a506`） |
 | **阶段 A** | 服务端稳定化 | Job 恢复/上限/列表/取消/日志 | ✅ 完成 |
 | **阶段 B** | UI 诚实闭环 | 无假成功、Jobs 轮询、设置 | ✅ 完成 |
-| **阶段 C** | 打包与分发 | `build_exe` + `docs/release.md` | 🔄 **进行中** |
-| **阶段 D** | 商业化 | JWT/卡密/Redroid | ⏳ 未开始 |
+| **阶段 C** | 打包与分发 | PyWebView 桌面壳 + `build_exe` + release | ✅ 完成（`826250b` 评审修复） |
+| **阶段 D** | 商业化基础 | 见 [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | 🔄 **D-0/D-1 已落地**；D-2+ 未编码 |
 
 ### 核心模块（当前）
 
 ```
 server/
-  app/*                 ✅ API / Job / 鉴权 / 下载契约
+  app/*                 ✅ API / Job / require_identity(D-0) / 下载契约
   platforms/fanqie|hongguo  ✅
-ui/                     ✅ 诚实错误 + Jobs/设置/本地库
-desktop/main.py         ✅ 阶段 C 入口（服务 + 浏览器）
-scripts/build_exe.py    ✅ 阶段 C 打包脚本
-docs/release.md         ✅ 发布说明
-scripts/e2e_*.py        ✅ 依赖 GET /v1/files/{file_id}
+ui/                     ✅ 诚实错误 + Jobs/设置/本地库 + 无边框标题栏
+desktop/main.py         ✅ PyWebView 桌面壳 + health 轮询 + js_api
+scripts/build_exe.py    ✅ collect-all app/platforms/webview
+docs/release.md         ✅ PyWebView 发行说明
+docs/STAGE_D_PLAN.md    📋 D-0/D-1 已落地
+scripts/e2e_*.py        ✅ GET /v1/files/{file_id}
 ```
 
 ---
 
-## 二、已知问题清单（历史评审 — 阶段 0/A/B 已关闭）
+## 二、已知问题清单（历史 — 0/A/B/C 已关闭）
 
-> 下列 P0/P1 项在 **0.2.0** 代码中已修复；保留表便于追溯。未完成项仅剩 P2 与阶段 C/D。
+> P0/P1 与阶段 C 桌面壳评审 Issue 1–10 已在 **0.2.0** / `826250b` 关闭。
 
-### 服务端 — 已关闭
-
-| # | 问题 | 状态 |
-|---|------|------|
-| S-P0-0 | 缺 `GET /v1/files/{file_id}` | ✅ |
-| S-P0-1 | 默认 API Key 启动警告 | ✅ |
-| S-P0-2 | 卡密 Stub 假成功 | ✅ `success=false` |
-| S-P0-3 | list_files 不递归 | ✅ |
-| S-P1-1～10 | persist/锁/恢复/env/SSL/explorer/上限/summary 等 | ✅ |
-| 评审 Issue 1～12 | 目录 open、分段编码、MIME、DTO 等 | ✅ |
-
-### 前端 — 已关闭（P0/P1）
-
-| # | 问题 | 状态 |
-|---|------|------|
-| U-P0-1～3 | modal CSS / XSS / 假成功 | ✅ |
-| U-P1-1～6 | 设置/Jobs/轮询/health/按钮/卡密 | ✅ |
-
-### 🟡 P2 — 仍可选（不挡阶段 C）
+### 🟡 P2 — 仍可选（不挡阶段 D）
 
 | # | 问题 | 修复方案 |
 |---|------|---------|
@@ -80,12 +64,13 @@ scripts/e2e_*.py        ✅ 依赖 GET /v1/files/{file_id}
 | S-P2-9 | 历史 Job 内存上限 | 淘汰策略 |
 | U-P2-1 | 选集分页 | 每页 20 |
 | U-P2-4～7 | user-select / nav border / 内联 style / warning 色 | CSS |
+| C-nit | `HOST=0.0.0.0` 时端口/health 探测应用 `127.0.0.1` | desktop 小改 |
 
 ---
 
 ## 三、阶段规划与勾选
 
-> **原则**：服务端以**脚本 E2E** 为准。顺序：0 闭环 → A 服务端 → B UI → **C 打包** → D 商业化。
+> **原则**：服务端以**脚本 E2E** 为准。顺序：0 → A → B → C → **D（设计后编码）**。
 
 ### 阶段 0 — 恢复验收闭环 ✅
 
@@ -93,63 +78,60 @@ scripts/e2e_*.py        ✅ 依赖 GET /v1/files/{file_id}
 - [x] **S-P0-3** `list_files` 递归 outputs
 - [x] 更新 `scripts/README.md` 双平台示例
 - [x] 同步 `docs/api.md`
-- [ ] 环境具备时实跑 `smoke_health` + 双平台 e2e 至落盘（**环境受限，暂未执行**）
+- [ ] 环境具备时实跑双平台 e2e 至落盘（**运维验收，持续**）
 
 ### 阶段 A — 服务端稳定化 ✅
 
-**A-1 Job 恢复与上限**
-
-- [x] lifespan 加载 jobs；running/pending → failed 并写回
-- [x] 活跃 Job 上限 5 + 429
-- [x] 进度更新线程安全
-
-**A-2 Job / 文件 API**
-
-- [x] `GET /v1/jobs` 分页 + status
-- [x] `DELETE /v1/jobs/{job_id}`
-- [x] `JobManager.summary()`；假速度改为 0.0
-
-**A-3 日志与配置**
-
-- [x] `logging.basicConfig`
-- [x] `.env` 绝对路径 / frozen 根目录
-- [x] Stub redeem 明确未开通
-
-**A-4 健壮性**
-
-- [x] `_persist` → `to_thread`
-- [x] fanqie settings 懒加载、SSL 局部 suppress
-- [x] explorer 列表参数 + 空格路径
+- [x] Job 恢复 / 上限 429 / 进度线程安全
+- [x] `GET /v1/jobs`、`DELETE /v1/jobs/{id}`、`summary()`
+- [x] logging、`.env` 路径、Stub redeem、persist 异步、explorer 安全
 
 ### 阶段 B — 客户端诚实闭环 ✅
 
-- [x] U-P0 CSS / XSS / 假成功
-- [x] 卡密仅 `success===true` 关弹窗；Stub 文案
-- [x] Jobs 列表 + 3s 轮询
-- [x] 设置 localStorage + 恢复默认（稳定 id）
-- [x] health 红/绿
-- [x] 本地库过滤 / 分段路径编码 / 打开目录
+- [x] 假成功清除、XSS、modal CSS
+- [x] Jobs 轮询、设置、health 色、本地库、路径编码
 
-### 阶段 C — 打包与分发 🔄 **当前**
+### 阶段 C — 打包与分发 ✅
 
-- [x] 提供可用入口 `desktop/main.py`（原脚本依赖缺失文件）
-- [x] 重写 `scripts/build_exe.py`（含 `ui/` + `platforms/`，默认不打 vendor）
-- [x] 撰写 [`docs/release.md`](./docs/release.md)（首次运行、API Key、依赖、验收表）
-- [x] 版本号对齐服务端 `0.2.0`（诚实口径）
-- [x] 在本机执行 `python scripts/build_exe.py` 验证出 exe
-- [x] 按 `docs/release.md` 检查表做一次发布前冒烟
-- [ ] （可选）`INCLUDE_VENDOR=1` 体积与启动验证
-- [ ] （可选）noconsole + 日志文件、安装器、CI artifact
+- [x] `desktop/main.py`：PyWebView 无边框窗 + 后台 uvicorn
+- [x] `js_api` 规范挂载、health 轮询、端口冲突探测、closed → 退出
+- [x] 拖拽 / no-drag CSS；标题栏版本 `v0.2.0`
+- [x] `scripts/build_exe.py`：collect-all app/platforms/webview；失败非零退出
+- [x] `docs/release.md` 与产物口径（约 60–70MB）对齐
+- [x] 本机打包 + 冒烟（health `0.2.0`、窗体拉起）
+- [x] 评审修复提交 `826250b`
+- [ ] （可选）`INCLUDE_VENDOR=1`、noconsole + 日志文件、安装器、CI
 
-### 阶段 D — 商业化基础 ⏳
+### 阶段 D — 商业化基础 🔄 D-0/D-1 完成
 
-> 详见 [`business_landing_architecture.md`](./business_landing_architecture.md)。  
-> **未实施前**：不在 UI 假装 VIP 已可用。
+> **实施方案（权威切片）**: [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md)  
+> **业务蓝图**: [`business_landing_architecture.md`](./business_landing_architecture.md)  
+> **未实施 VIP 前**：redeem 保持 Stub/未开通语义，UI 不得假成功 VIP。
 
-- [ ] D-1 JWT / 用户表 / VIP 期限
-- [ ] D-2 真实卡密核销
-- [ ] D-3 Redroid 签名池
-- [ ] D-4 限流与配额
+| 切片 | 内容 | 状态 |
+|------|------|------|
+| **D-0** | `AUTH_MODE` + `Identity` / `require_identity`；路由统一；JWT 占位 501 | ✅ 完成 |
+| **D-1** | SQLite + 用户注册/登录 + JWT | ✅ 完成 |
+| **D-2** | 真实卡密核销 + VIP 门闸（jobs） | ⏳ 待编码 |
+| **D-4** | 限流 + 下载配额（先于 D-3） | ⏳ 待编码 |
+| **D-3** | Redroid / 签名池（独立里程碑） | ⏳ 后置 |
+
+**D-0 交付**
+
+- [x] `config`: `auth_mode` / `jwt_secret` / `jwt_expire_minutes`
+- [x] `auth.py`: `Identity`、`require_identity`、`require_api_key` 别名
+- [x] 受保护路由改为 `Depends(require_identity)`；`/health` 公开
+- [x] `docs/api.md` 认证章节、`.env.example`
+- [x] 模式矩阵单测：dev/dual/jwt_only → 200 路径 / 401 / 501
+
+**D-1 交付**
+
+- [x] SQLite 用户表存储与 ORM 设计
+- [x] `/v1/auth/register`, `/v1/auth/login`, `/v1/auth/me` 接口逻辑实现
+- [x] 真 JWT 签发与校验（HS256），移除 D-0 501 占位
+- [x] `require_identity` 模式矩阵集成及 `dev` 模式下忽略 Bearer token
+- [x] pytest 自动化覆盖 12 个关键用例全绿
+
 
 ---
 
@@ -157,25 +139,25 @@ scripts/e2e_*.py        ✅ 依赖 GET /v1/files/{file_id}
 
 | 债项 | 当前状态 | 何时还 |
 |------|----------|--------|
-| 进程内 `JobManager` | 单机可接受 | 商业化 Celery/RQ |
-| JSON 持久化 | ✅ 已恢复 + 中断写回 | — |
-| 单并发 Frida | 文档限制 + Job 上限 | 商业化签名池 |
-| httpx / requests 双栈 | 可接受 | 可后续统一 httpx |
-| 无单元测试 | 技术债 | 补 pytest 骨架 |
-| 番茄默认会话 key / ADB 默认路径 | 开发便利 | config / 环境变量 |
-| EXE 默认不内嵌 vendor | 有意为之 | release 说明外置 |
+| 进程内 `JobManager` | 单机可接受 | D 后期 / Celery |
+| JSON Job 文件 | ✅ 恢复 + 中断写回 | 可选迁 SQLite |
+| 单并发 Frida | 上限 + 文档 | D-3 签名池 |
+| 全局 API Key | 本机/单租户 | D-1 过渡后弱化 |
+| 无单元测试 | 技术债 | D-1 起补 auth 测试 |
+| EXE 不内嵌 vendor | 有意 | release 外置说明 |
 
 ---
 
 ## 五、质量门槛（不可妥协）
 
-1. **每平台至少 1 条脚本可跑 of E2E**，写进 `scripts/README.md`
+1. **每平台至少 1 条脚本可跑的 E2E**，写进 `scripts/README.md`
 2. **密钥 / token / Cookie 不提交 git**
-3. **生产 API Key 必须覆盖默认值**
+3. **生产 API Key / JWT 密钥必须覆盖默认值**
 4. **服务端完成以脚本 E2E 为准**，不以 UI 为准
 5. **敏感路径走配置 / 环境变量**
 6. **禁止用假成功掩盖 API 失败**
 7. **对外版本号与 `__version__` / release.md 一致，禁止商业完整版虚标**
+8. **阶段 D 编码前须对照 STAGE_D_PLAN；鉴权变更不得 silent break e2e（保留 dev 旁路）**
 
 ---
 
@@ -183,19 +165,14 @@ scripts/e2e_*.py        ✅ 依赖 GET /v1/files/{file_id}
 
 ```
 已完成
-  阶段 0  下载契约 + 列表递归 + API/脚本文档
-  阶段 A  Job 恢复/上限/列表/取消/日志/配置
-  阶段 B  UI 诚实闭环 + Jobs/设置
+  阶段 0 / A / B / C（含 PyWebView 桌面壳与 826250b 评审修复）
 
-当前（阶段 C）
-  [x] desktop/main.py + build_exe.py + docs/release.md + version 0.2.0
-  [ ] 本机跑通打包与 EXE 冒烟
-  [ ] 发布检查表勾选
+当前
+  阶段 D-0 ✅ AUTH_MODE + require_identity
+  下一编码: D-1 用户/JWT → D-2 卡密/VIP → D-4 限流配额 → D-3 池
 
-再后
-  阶段 C 可选增强（安装器 / noconsole / CI）
-  阶段 D 商业化
-  P2 体验与代码整理
+可选
+  P2 体验、阶段 C 安装器/CI、双平台 e2e 实跑
 ```
 
 ---
@@ -206,4 +183,6 @@ scripts/e2e_*.py        ✅ 依赖 GET /v1/files/{file_id}
 |------|------|------|
 | 2026-07-20 | v1.0 | MVP 结束初稿 |
 | 2026-07-20 | v1.1 | 全库评审：P0 下载缺口、阶段顺序、文档层级 |
-| 2026-07-20 | v1.2 | 勾选阶段 0/A/B 完成；启动阶段 C（build_exe + release.md + desktop 入口）；版本 0.2.0 |
+| 2026-07-20 | v1.2 | 勾选 0/A/B；启动阶段 C；版本 0.2.0 |
+| 2026-07-20 | v1.3 | 阶段 C ✅（PyWebView + `826250b`）；起草 `docs/STAGE_D_PLAN.md`；阶段 D 进入设计完成态 |
+| 2026-07-20 | v1.4 | D-0 落地：`require_identity` / AUTH_MODE / api.md / .env.example |

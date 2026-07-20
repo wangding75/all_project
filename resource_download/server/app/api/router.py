@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app import __version__
-from app.auth import require_api_key
+from app.auth import Identity, require_identity
 from app.config import get_settings
 from app.jobs import get_job_manager
 from app.models import (
@@ -32,8 +32,11 @@ from app.models import (
     VersionResponse,
 )
 from platforms.registry import get_platform, list_platforms
+from app.api.auth_router import auth_router
 
 api_router = APIRouter()
+api_router.include_router(auth_router)
+
 
 
 @api_router.get("/health", response_model=HealthResponse)
@@ -58,7 +61,7 @@ async def search(
     platform: PlatformName = Query(...),
     q: str = Query(..., min_length=1),
     page: int = Query(1, ge=1),
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> list[SearchItem]:
     try:
         impl = get_platform(platform)
@@ -76,7 +79,7 @@ async def search(
 async def detail(
     platform: PlatformName = Query(...),
     id: str = Query(..., min_length=1, description="书/剧 ID 或 URL"),
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> DetailResponse:
     try:
         impl = get_platform(platform)
@@ -96,7 +99,7 @@ async def detail(
 @api_router.post("/v1/jobs", response_model=JobResponse)
 async def create_job(
     body: JobCreateRequest,
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> JobResponse:
     try:
         get_platform(body.platform)
@@ -122,7 +125,7 @@ async def list_jobs(
     status: JobStatus | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> JobListResponse:
     manager = get_job_manager()
     records, total = await manager.list_jobs(status=status, page=page, page_size=page_size)
@@ -136,7 +139,7 @@ async def list_jobs(
 
 @api_router.get("/v1/jobs/summary", response_model=JobsSummaryResponse)
 async def jobs_summary(
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> JobsSummaryResponse:
     manager = get_job_manager()
     data = await manager.summary()
@@ -146,7 +149,7 @@ async def jobs_summary(
 @api_router.get("/v1/jobs/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: str,
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> JobResponse:
     manager = get_job_manager()
     record = await manager.get_job(job_id)
@@ -158,7 +161,7 @@ async def get_job(
 @api_router.delete("/v1/jobs/{job_id}")
 async def cancel_job(
     job_id: str,
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> dict[str, str]:
     manager = get_job_manager()
     cancelled = await manager.cancel_job(job_id)
@@ -169,7 +172,7 @@ async def cancel_job(
 
 @api_router.get("/v1/version", response_model=VersionResponse)
 async def get_version(
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> VersionResponse:
     return VersionResponse(
         latest_version="v2.1.0",
@@ -182,7 +185,7 @@ async def get_version(
 @api_router.post("/v1/auth/redeem", response_model=RedeemResponse)
 async def redeem_card(
     body: RedeemRequest,
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> RedeemResponse:
     code = body.card_code.strip()
     if not code:
@@ -196,7 +199,7 @@ async def redeem_card(
 
 @api_router.get("/v1/files", response_model=FileListResponse)
 async def list_files(
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> FileListResponse:
     settings = get_settings()
     out_dir = settings.outputs_dir.resolve()
@@ -246,7 +249,7 @@ async def list_files(
 @api_router.get("/v1/files/{file_id:path}")
 async def get_file(
     file_id: str,
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> FileResponse:
     manager = get_job_manager()
     path = manager.resolve_file(file_id)
@@ -259,7 +262,7 @@ async def get_file(
 async def open_file(
     file_id: str,
     body: FileOpenRequest,
-    _: str = Depends(require_api_key),
+    _: Identity = Depends(require_identity),
 ) -> FileOpenResponse:
     manager = get_job_manager()
     path = manager.resolve_file(file_id)

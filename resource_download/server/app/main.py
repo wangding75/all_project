@@ -28,9 +28,18 @@ async def lifespan(_app: FastAPI):
     settings.jobs_dir.mkdir(parents=True, exist_ok=True)
     settings.outputs_dir.mkdir(parents=True, exist_ok=True)
 
+    # 初始化 SQLite 数据库
+    from app.db import init_db
+    init_db()
+
     if settings.api_key == "dev-key-change-me":
         logging.warning(
             "⚠️ 当前使用的是默认开发 API Key ('dev-key-change-me')！请在生产环境中通过 .env 或环境变量覆盖。"
+        )
+
+    if settings.jwt_secret == "change-me-jwt-secret" and settings.auth_mode in ("dual", "jwt_only"):
+        logging.warning(
+            "⚠️ 当前使用的是默认 JWT 密钥 ('change-me-jwt-secret') 且已启用用户鉴权！请在生产环境中通过 .env 或环境变量设置 JWT_SECRET。"
         )
 
     manager = get_job_manager()

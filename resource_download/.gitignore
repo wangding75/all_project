@@ -13,6 +13,8 @@ data/jobs/*
 data/outputs/*
 !data/outputs/.gitkeep
 data/e2e_downloads/
+data/*.db
+data/app.db
 tmp/
 *.egg-info/
 .dist/

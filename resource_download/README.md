@@ -14,7 +14,8 @@
 | [`docs/hongguo_setup.md`](./docs/hongguo_setup.md) / [`docs/fanqie_app_setup.md`](./docs/fanqie_app_setup.md) | 平台环境 |
 | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | 逆向结论与设备运维坑 |
 | [`docs/release.md`](./docs/release.md) | 打包 EXE、首次运行、依赖与验收 |
-| [`business_landing_architecture.md`](./business_landing_architecture.md) | 商业化规划（未实施） |
+| [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | 阶段 D 商业化实施方案（设计） |
+| [`business_landing_architecture.md`](./business_landing_architecture.md) | 商业化蓝图总览（未编码） |
 
 ## 目录
 
@@ -90,8 +91,8 @@ python scripts/e2e_hongguo.py --search "剧名" --range 1-1
 | **MVP-H** | 复用 hongguo + relay + e2e 出 MP4 | 适配完成；注意文件下载 API 缺口见 POST_MVP_PLAN |
 | **MVP-F** | 番茄 Web/App 接入 | 代码接入；App 依赖设备与会话稳定性 |
 | **阶段 0/A/B** | 下载契约 + 服务端稳定 + UI 诚实闭环 | ✅ 见 POST_MVP_PLAN |
-| **阶段 C** | 打包分发（`build_exe` + release.md） | 🔄 进行中 |
-| **之后** | 订阅/卡密等商业化 | 阶段 D |
+| **阶段 C** | PyWebView 桌面壳 + `build_exe` + release | ✅ 完成 |
+| **阶段 D** | 用户/JWT/卡密/限流（Redroid 后置） | 📋 方案见 `docs/STAGE_D_PLAN.md` |
 
 ## 说明
 
