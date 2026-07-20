@@ -1,10 +1,14 @@
-# 多平台内容下载器 — 开发计划（已定稿）
+# 多平台内容下载器 — 架构与计划定稿
 
-> 基于方案讨论结论。实现以本文为准；旧版 `design_plan.md` 中与本文冲突的部分（本机一体化、全离线无签名等）以本文覆盖。
+> **本文职责：锁定架构决策、非目标、API 原则。**  
+> **当前迭代 backlog / 已知 Bug / 阶段顺序 → [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。**  
+> 旧版 `design_plan.md` 中与本文冲突的部分（本机一体化、全离线无签名等）以本文覆盖。
 
-**定稿日期**：2026-07-18（客户端后置修订同日）
+**定稿日期**：2026-07-18（客户端后置修订同日）  
+**文档修订**：2026-07-20 — 标明与 POST_MVP_PLAN 的分工；进度以 POST_MVP_PLAN 为准
 
 ---
+
 
 ## 0. 已锁定决策
 
@@ -12,11 +16,11 @@
 |----|------|
 | 总体架构 | **方案 2：瘦客户端 + 中转服务端（托管订阅向）** |
 | 红果 | **当前主路径**：复用 **`vendor/hongguo`**（不重写解密/取链） |
-| 番茄 | 后置；**App 会话**（不做 Web 主路径） |
+| 番茄 | **App 会话为主目标**；Web SSR 可作对照/免费章兜底，不作长期会员主路径 |
 | 会话 | **服务端自养**；用户不贴 Cookie |
-| 客户端 | **最后做**；脚本验收 |
-| 验收方式 | **`scripts/e2e_hongguo.py` 等** 打 API |
-| 产品优先级 | **红果复用打通 → 运维/签名稳 → 番茄 App → 客户端** |
+| 客户端 | **脚本验收优先**；`ui/` 为实验壳，达标前不以 UI 为完成标准 |
+| 验收方式 | **`scripts/e2e_hongguo.py` / `e2e_fanqie.py` 等** 打 API |
+| 产品优先级 | **红果复用 → 运维/签名稳 → 番茄 App → 服务端稳定 → 客户端诚实闭环** |
 
 ### 架构示意
 
@@ -115,171 +119,67 @@ health → detail → create job → poll until success|failed → GET file → 
 
 ---
 
-## 4. 分阶段计划
+## 4. 分阶段计划（历史摘要 + 当前指针）
 
-### 阶段 0 — 工程骨架与契约（约 1～2 天）
+> 细任务只维护在 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。
 
-**交付**
+### 阶段回顾（完成状态以 POST_MVP_PLAN / DEV_ROADMAP 为准）
 
-- `server/` FastAPI 空壳、`/health`、鉴权、统一错误体  
-- `BasePlatform` + 假 platform  
-- 任务状态机：`pending | running | success | failed | cancelled`  
-- `data/jobs/`、`data/outputs/`  
-- `scripts/smoke_health.py`  
-- 简短 `docs/api.md` 或 OpenAPI  
+| 原阶段 | 内容 | 备注 |
+|--------|------|------|
+| 0 | 骨架 + 契约 + smoke | 已完成 |
+| 1～2 | 番茄 Web + E2E 脚本 | 已接入；App 模式另需设备 |
+| 3 | 红果 vendor 适配 + E2E | 主路径；注意文件下载契约缺口 |
+| 4 | 双平台脚本回归 | 文档与 API 对齐仍在 POST_MVP 阶段 0 |
+| 5 | 瘦客户端 | `ui/` 已有实验实现，**未达标** |
+| 6 | 硬化 / 商业化 | 见 POST_MVP 阶段 C/D 与 business 蓝图 |
 
-**验收**
+**当前执行顺序**（摘要，细节只维护在 POST_MVP_PLAN）：
 
-- 脚本能 health；假 job 能跑完并下载占位文件  
-
----
-
-### 阶段 1 — 番茄服务端 MVP（约 3～5 天）【优先】
-
-**交付**
-
-- `platforms/fanqie/`：自 `download.py` 迁移  
-  - URL/ID、`__INITIAL_STATE__`、目录、章节、字体解密、限速/重试、锁章标记  
-- Cookie 可选配置  
-- 导出 **TXT**  
-- jobs + files API  
-
-**验收（仅脚本，无 UI）**
-
-```text
-python scripts/e2e_fanqie.py --url "https://fanqienovel.com/page/..." 
-→ job success → 本地 TXT 可读、无大面积乱码
-```
+1. 恢复 `GET /v1/files/{file_id}`，跑通双平台 E2E 至文件落盘  
+2. 服务端稳定化（Job 恢复、并发上限、日志、Stub 诚实）  
+3. UI 去掉假成功，Jobs/设置闭环  
+4. 打包分发 → 商业化  
 
 ---
 
-### 阶段 2 — 番茄脚本工具化与稳定（约 1～2 天）
-
-**交付**
-
-- 完善 `scripts/e2e_fanqie.py`：轮询、超时、退出码、保存路径参数  
-- 可选：`scripts/job_status.py`、批量 book_id 列表  
-- README 写清：启动 server、环境变量 `API_BASE` / `API_KEY`、一条复制即跑命令  
-
-**验收**
-
-- 他人（或未来的你）只按 README 即可复现番茄下载，不依赖 GUI  
-
----
-
-### 阶段 3 — 红果服务端（约 5～10 天）
-
-**交付**
-
-- 对齐 `zhangbaio/hongguo`：可插拔签名、spade 自测、CTR 解密、默认 1080p  
-- `platforms/hongguo` 接入同一 jobs API  
-- 签名宕机时错误明确，不影响番茄  
-
-**验收（仅脚本）**
-
-```text
-python scripts/e2e_hongguo.py --series-id ... --range 1-2
-→ MP4 可播
-```
-
----
-
-### 阶段 4 — 双平台脚本回归（约 1 天）
-
-**交付**
-
-- 番茄 + 红果各至少 1 条固定样例写进 `scripts/README.md`  
-- 简单回归：先 fanqie smoke，再 hongguo smoke  
-
-**验收**
-
-- 两平台链路文档化、可重复  
-
----
-
-### 阶段 5 — 瘦客户端（最后，约 3～7 天）
-
-**前提**：阶段 1～4 脚本链路已稳定。
-
-**交付**
-
-- 桌面薄壳：只调已有 API（`API_BASE` + `API_KEY`）  
-- 番茄 + 红果：搜索/详情/队列/设置  
-- 技术栈开工时二选一锁死（PyWebView 或 PySide6）  
-
-**验收**
-
-- UI 不新增服务端能力；仅复现脚本已能完成的操作  
-
----
-
-### 阶段 6 — 硬化与发布（持续）
-
-日志、清理、EPUB 可选、Docker/启动脚本、打包客户端、免责声明等。
-
----
-
-## 5. 排期总览
-
-| 阶段 | 内容 | 估计 |
-|------|------|------|
-| 0 | 骨架 + 契约 + smoke 脚本 | 1～2 天 |
-| 1 | 番茄服务端 | 3～5 天 |
-| 2 | 番茄 E2E 脚本与文档 | 1～2 天 |
-| 3 | 红果服务端 | 5～10 天 |
-| 4 | 双平台脚本回归 | ~1 天 |
-| **—** | **主链路打通（可无 UI）** | **约 2～4 周** |
-| 5 | 瘦客户端（后置） | 3～7 天 |
-| 6 | 硬化发布 | 持续 |
-
----
-
-## 6. 技术选型
+## 5. 技术选型
 
 | 层 | 选型 | 备注 |
 |----|------|------|
 | 服务端 | FastAPI + uvicorn | |
-| 任务 | 进程内队列 + SQLite/JSON | |
-| 番茄 | fonttools + brotli | |
-| 红果 | pycryptodome + hongguo；签名外置 | |
-| 验收 | **Python scripts + requests/httpx** | 主「客户端」直至阶段 5 |
-| 桌面 UI | 阶段 5 再定 | 不提前开工 |
+| 任务 | 进程内队列 + JSON 文件（商业化再换） | |
+| 番茄 | fonttools + brotli；App 路径 Frida 进程内解密 | |
+| 红果 | pycryptodome + vendor/hongguo；签名外置 | |
+| 验收 | **Python scripts + httpx** | 主验收面 |
+| 桌面/Web UI | `ui/` 静态页挂载；完整桌面壳后置 | 不新增服务端能力 |
 
 ---
 
-## 7. 质量门槛
+## 6. 质量门槛
 
 1. 每平台至少 1 条 **脚本可跑的 E2E**（非仅单元测试）。  
 2. 红果 spade 真值测试保留。  
 3. 密钥/token/Cookie 不入库。  
-4. README 中的脚本命令与真实行为一致。  
+4. README / `scripts/README` 中的命令与真实行为一致。  
 5. **不以「客户端做好了」为服务端完成标准**；以脚本 E2E 为准。  
+6. **禁止用假成功掩盖 API 失败**。  
 
 ---
 
-## 8. 立即执行顺序（MVP-1）
-
-1. ~~阶段 0 脚手架~~：**已生成**（`server/` + `scripts/`）  
-2. 安装依赖、启动 `python server/run.py`，跑 `scripts/smoke_health.py`  
-3. 用真实书 ID 跑 `scripts/e2e_fanqie.py --range 1-2`，修字体/限流问题  
-4. MVP-1 验收通过后再开 MVP-2（红果）  
-5. 双平台脚本稳定后再开 `client/`  
-
----
-
-## 9. 决策备忘
+## 7. 决策备忘
 
 | 问题 | 结论 |
 |------|------|
-| 客户端何时做？ | **最后**；不挡主链路 |
+| 客户端何时做？ | 脚本 E2E 优先；UI 不挡服务端完成判定 |
 | 如何验收下载？ | **`scripts/` 请求 API** |
-| 番茄中转模式 | 架构同红果，协议 Web 自有 |
+| 番茄中转模式 | 架构同红果；Web 对照，App 会话为主目标 |
 | 红果 Cookie | 用户不要；服务端要会话+签名 |
-| MVP-1 是否含红果/UI？ | **否** |
+| 迭代任务写哪？ | **POST_MVP_PLAN.md**，本文只锁架构 |
 
 ---
 
-## 10. 修订记录
+## 8. 修订记录
 
 | 日期 | 说明 |
 |------|------|
@@ -287,3 +187,4 @@ python scripts/e2e_hongguo.py --series-id ... --range 1-2
 | 2026-07-18 | **客户端后置**；主验收改为 scripts E2E；阶段重排 |
 | 2026-07-18 | 标明 **MVP-1 / MVP-2**；落地 `server/` + `scripts/` 脚手架 |
 | 2026-07-18 | **主路径改为红果**；`vendor/hongguo` 复用 + `platforms/hongguo` 适配 |
+| 2026-07-20 | 与 POST_MVP_PLAN 分工；阶段详情归档；补质量门槛第 6 条 |

@@ -1,14 +1,15 @@
-# DEV_ROADMAP — 执行开发路线图
+# DEV_ROADMAP — MVP 历史执行记录
 
-> **本文是权威执行文档，后续开发按此文档推进。**
+> **文档状态：归档。** 当前迭代任务与问题清单以 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md) 为准。  
+> 架构决策以 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md) 为准。
 >
-> - 决策背景：[DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)
 > - 商业化蓝图（规划中）：[business_landing_architecture.md](./business_landing_architecture.md)
 > - 历史设计存档：[design_plan.md](./design_plan.md)
 >
-> 最后更新：2026-07-19
+> 最后更新：2026-07-19（正文为 MVP-H/F 完成时快照；后续勿在此追加新任务）
 
 ---
+
 
 ## 一、当前代码状态（截至 2026-07-19）
 
@@ -48,7 +49,7 @@
 |--------|------|----------|------|
 | **MVP-H** | 红果主链路打通 | `e2e_hongguo.py` 出可播 MP4 | ✅ 已完成 |
 | **MVP-F** | 番茄 App 会话打通 | `e2e_fanqie.py` App 模式出书 | ✅ 已完成 |
-| **Client** | 薄客户端 UI | UI 复现脚本所有功能 | ⏳ 后置 |
+| **Client** | 薄客户端 UI | UI 复现脚本所有功能 | ⚠️ 有 `ui/` 原型，未达标 → 见 POST_MVP_PLAN |
 | **商业化** | VIP + 卡密 + Redroid | 参见 business_landing_architecture.md | ⏳ 规划中 |
 
 ---
@@ -297,8 +298,10 @@ MVP-H：红果主链路（✅ 已完成）
 MVP-F：番茄 App 会话（✅ 已完成）
   F-1 ~ F-6  番茄 App 会话链路                      ✅ (b296e4c / 8bd2608)
 
-后续演进（按需）
-  质量改善 Q-1 ~ Q-6                               ⏳ 待开工
-  薄客户端 UI（阶段 5）                            ⏳ 后置
-  商业化（阶段 6）                                  ⏳ 规划中
+后续演进 → 一律以 POST_MVP_PLAN.md 为准
+  阶段 0  恢复 GET /v1/files/{file_id} 与 E2E 闭环
+  阶段 A  服务端稳定化
+  阶段 B  UI 诚实闭环
+  阶段 C  打包分发
+  阶段 D  商业化
 ```

@@ -45,6 +45,7 @@ System.Management.Automation.Internal.Host.InternalHost/
 !/README.md
 !/DEVELOPMENT_PLAN.md
 !/DEV_ROADMAP.md
+!/POST_MVP_PLAN.md
 !/design_plan.md
 !/business_landing_architecture.md
 !/requirements.txt

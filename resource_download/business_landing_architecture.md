@@ -1,10 +1,10 @@
 # 资源下载器全局商业化落地设计规范（中继网关/订阅卡密版）
 
-> **⚠️ 本文为商业化阶段规划蓝图，MVP-H / MVP-F 阶段尚未实施任何内容。**
+> **⚠️ 本文为商业化阶段规划蓝图，尚未实施。**
 >
-> 对应里程碑：**阶段 6（硬化与发布）** 及之后，参见 [`DEV_ROADMAP.md`](./DEV_ROADMAP.md)。
+> 对应迭代：**POST_MVP_PLAN 阶段 D**。架构决策见 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md)；当前任务见 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。
 >
-> 当前（MVP-H）仍使用简单 API Key 鉴权，无数据库、无卡密、无 VIP 体系。
+> 当前仍使用简单 API Key 鉴权。`POST /v1/auth/redeem` 等为 **Stub**，不得当作真实 VIP 核销；UI 侧不应展示假成功兑换。
 
 本规范详细定义了资源下载器向个人商业化过渡的系统架构、数据库实体、基于 **方案 B (路由级依赖注入)** 的统一鉴权方案，以及设备层（Redroid）部署规范。
 
