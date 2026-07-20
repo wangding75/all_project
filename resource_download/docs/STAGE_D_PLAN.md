@@ -1,6 +1,6 @@
 # 阶段 D — 商业化基础实施方案
 
-> **状态**: D-0 与 D-1 ✅ 已编码；D-2+ 📋 设计待编码  
+> **状态**: D-0、D-1 与 D-2 ✅ 已编码；D-4+ 📋 设计待编码  
 > **关联**: [`POST_MVP_PLAN.md`](../POST_MVP_PLAN.md) · [`business_landing_architecture.md`](../business_landing_architecture.md) · 当前代码 `0.2.0`  
 > **原则**: 先可运营的「用户 + VIP + 限流」，后「云端设备池」；**不 silent 破坏** 现有脚本 E2E 与本机桌面体验。
 
@@ -335,6 +335,14 @@ JobManager → SignPoolClient → [节点健康检查] → Redroid/模拟器 wor
 - [x] 依赖写入 `server/requirements.txt`（SQLAlchemy、PyJWT、bcrypt…）  
 - [x] 至少 1 个 pytest：register → login → me  
 - [x] e2e 在 dev 下回归 smoke  
+
+### D-2 开工前
+
+- [x] CardKey 表 ORM 与 SQLite 自动创建
+- [x] `require_vip` 逻辑定义，ops / API Key 绕过
+- [x] 真 `/v1/auth/redeem` 逻辑替换 Stub
+- [x] `gen_card_keys` 批量生成脚本
+- [x] test_auth_d2.py 测试覆盖且全绿
 
 ---
 

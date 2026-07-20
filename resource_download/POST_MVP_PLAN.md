@@ -30,7 +30,7 @@
 | **阶段 A** | 服务端稳定化 | Job 恢复/上限/列表/取消/日志 | ✅ 完成 |
 | **阶段 B** | UI 诚实闭环 | 无假成功、Jobs 轮询、设置 | ✅ 完成 |
 | **阶段 C** | 打包与分发 | PyWebView 桌面壳 + `build_exe` + release | ✅ 完成（`826250b` 评审修复） |
-| **阶段 D** | 商业化基础 | 见 [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | 🔄 **D-0/D-1 已落地**；D-2+ 未编码 |
+| **阶段 D** | 商业化基础 | 见 [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | 🔄 **D-0/D-1/D-2 已落地**；D-4+ 未编码 |
 
 ### 核心模块（当前）
 
@@ -42,7 +42,7 @@ ui/                     ✅ 诚实错误 + Jobs/设置/本地库 + 无边框标�
 desktop/main.py         ✅ PyWebView 桌面壳 + health 轮询 + js_api
 scripts/build_exe.py    ✅ collect-all app/platforms/webview
 docs/release.md         ✅ PyWebView 发行说明
-docs/STAGE_D_PLAN.md    📋 D-0/D-1 已落地
+docs/STAGE_D_PLAN.md    📋 D-0/D-1/D-2 已落地
 scripts/e2e_*.py        ✅ GET /v1/files/{file_id}
 ```
 
@@ -102,7 +102,7 @@ scripts/e2e_*.py        ✅ GET /v1/files/{file_id}
 - [x] 评审修复提交 `826250b`
 - [ ] （可选）`INCLUDE_VENDOR=1`、noconsole + 日志文件、安装器、CI
 
-### 阶段 D — 商业化基础 🔄 D-0/D-1 完成
+### 阶段 D — 商业化基础 🔄 D-0/D-1/D-2 完成
 
 > **实施方案（权威切片）**: [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md)  
 > **业务蓝图**: [`business_landing_architecture.md`](./business_landing_architecture.md)  
@@ -112,7 +112,7 @@ scripts/e2e_*.py        ✅ GET /v1/files/{file_id}
 |------|------|------|
 | **D-0** | `AUTH_MODE` + `Identity` / `require_identity`；路由统一；JWT 占位 501 | ✅ 完成 |
 | **D-1** | SQLite + 用户注册/登录 + JWT | ✅ 完成 |
-| **D-2** | 真实卡密核销 + VIP 门闸（jobs） | ⏳ 待编码 |
+| **D-2** | 真实卡密核销 + VIP 门闸（jobs） | ✅ 完成 |
 | **D-4** | 限流 + 下载配额（先于 D-3） | ⏳ 待编码 |
 | **D-3** | Redroid / 签名池（独立里程碑） | ⏳ 后置 |
 
@@ -131,6 +131,15 @@ scripts/e2e_*.py        ✅ GET /v1/files/{file_id}
 - [x] 真 JWT 签发与校验（HS256），移除 D-0 501 占位
 - [x] `require_identity` 模式矩阵集成及 `dev` 模式下忽略 Bearer token
 - [x] pytest 自动化覆盖 12 个关键用例全绿
+
+**D-2 交付**
+
+- [x] SQLite 卡密表 (card_keys) 定义与 lifespan 自动建表
+- [x] `/v1/auth/redeem` 替换 Stub 为真数据库事务安全兑换逻辑
+- [x] `/v1/jobs` 挂载 `require_vip` 校验，支持 X-API-Key/ops 管理员直接绕过
+- [x] `gen_card_keys.py` 命令行卡密生成工具，修复 Windows Unicode 编码异常
+- [x] pytest 全绿覆盖，含 5 条 D-2 新增验证用例 (总 17 条测试通过)
+
 
 
 ---

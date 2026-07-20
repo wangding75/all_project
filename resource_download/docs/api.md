@@ -171,8 +171,31 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 ## POST /v1/auth/redeem
 
-卡密兑换。**当前为商业化 Stub（未开启）**，`success` 返回 `false`，勿当作真实 VIP 核销。  
-规划见 [`business_landing_architecture.md`](../business_landing_architecture.md)。
+依赖用户身份鉴权（`Authorization: Bearer <token>`）。
+
+兑换卡密以延长用户的 VIP 有效期。
+
+### 请求体
+
+```json
+{
+  "card_code": "RD-DECBE35422D12CB7DE18B834"
+}
+```
+
+### 响应 (200 OK)
+
+```json
+{
+  "success": true,
+  "message": "卡密兑换成功",
+  "vip_expires_at": "2026-08-20T18:14:56.123456"
+}
+```
+
+- 仅使用 `X-API-Key` 访问时返回 **403 Forbidden**（请使用用户登录后兑换）。
+- 卡密序列号不存在或已被使用返回 **400 Bad Request**（"卡密不存在" 或 "卡密已被使用"）。
+- 凭证失效或过期返回 **401 Unauthorized**。
 
 ---
 

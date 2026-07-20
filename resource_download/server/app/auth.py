@@ -169,3 +169,25 @@ async def require_api_key(
 ) -> Identity:
     """兼容旧依赖名；内部走 require_identity。"""
     return identity
+
+
+async def require_vip(
+    identity: Identity = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> Identity:
+    """校验是否是 VIP 或者是 ops API Key 身份。"""
+    if identity.is_ops or identity.kind == "api_key":
+        return identity
+
+    if identity.kind == "user" and identity.user_id is not None:
+        user = db.query(User).filter(User.id == identity.user_id).first()
+        if user and user.is_active:
+            from datetime import datetime, timezone
+            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+            if user.vip_expires_at and user.vip_expires_at > now_utc:
+                return identity
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="需要 VIP，请兑换卡密",
+    )

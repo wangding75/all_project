@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app import __version__
-from app.auth import Identity, require_identity
+from app.auth import Identity, require_identity, require_vip
 from app.config import get_settings
 from app.jobs import get_job_manager
 from app.models import (
@@ -99,7 +99,7 @@ async def detail(
 @api_router.post("/v1/jobs", response_model=JobResponse)
 async def create_job(
     body: JobCreateRequest,
-    _: Identity = Depends(require_identity),
+    _: Identity = Depends(require_vip),
 ) -> JobResponse:
     try:
         get_platform(body.platform)
@@ -182,19 +182,6 @@ async def get_version(
     )
 
 
-@api_router.post("/v1/auth/redeem", response_model=RedeemResponse)
-async def redeem_card(
-    body: RedeemRequest,
-    _: Identity = Depends(require_identity),
-) -> RedeemResponse:
-    code = body.card_code.strip()
-    if not code:
-        raise HTTPException(status_code=400, detail="卡密序列号不能为空")
-    return RedeemResponse(
-        success=False,
-        message=f"卡密兑换功能暂未开启（商业化 Stub）。序列号 [{code}] 暂无法兑换。",
-        vip_expires_at="",
-    )
 
 
 @api_router.get("/v1/files", response_model=FileListResponse)
