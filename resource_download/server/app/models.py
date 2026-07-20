@@ -94,9 +94,10 @@ class RedeemRequest(BaseModel):
 
 
 class RedeemResponse(BaseModel):
-    success: bool = True
-    message: str = "🎉 卡密兑换成功！VIP 会员天数已增加 30 天。"
-    vip_expires_at: str = "2026-08-19"
+    success: bool = False
+    message: str = "卡密兑换功能暂未开启（Stub）。"
+    vip_expires_at: str = ""
+
 
 
 class FileItemResponse(BaseModel):
@@ -128,4 +129,12 @@ class JobsSummaryResponse(BaseModel):
     completed_jobs: int = 0
     total_speed_human: str = "0.0 MB/s"
     disk_free_human: str = "128.4 GB"
+
+
+class JobListResponse(BaseModel):
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+    items: list[JobResponse] = Field(default_factory=list)
+
 

@@ -14,10 +14,11 @@ DEFAULT_DATA_DIR = REPO_ROOT / "data"
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=REPO_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
 
     api_key: str = "dev-key-change-me"
     host: str = "127.0.0.1"

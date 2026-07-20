@@ -1167,6 +1167,10 @@ html, body {
   margin-top: 8px;
 }
 
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 100vw;
   height: 100vh;
   background: var(--bg-modal-overlay);
@@ -1176,6 +1180,7 @@ html, body {
   justify-content: center;
   z-index: 2000;
 }
+
 
 .modal-overlay.active {
   display: flex;

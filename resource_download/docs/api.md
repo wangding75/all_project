@@ -3,8 +3,7 @@
 Base URL: `http://127.0.0.1:8000`  
 鉴权：除 `/health`、`/`、`/ui` 外，请求头 `X-API-Key: <key>`（默认仅开发：`dev-key-change-me`）
 
-> 契约以本文件 + 运行中的 OpenAPI（`/docs`）为准。  
-> **已知缺口（2026-07-20）**：`GET /v1/files/{file_id}` 在代码中**尚未实现**，但 E2E 脚本已依赖；见 [`POST_MVP_PLAN.md`](../POST_MVP_PLAN.md) S-P0-0。
+> 契约以本文件 + 运行中的 OpenAPI（`/docs`）为准。
 
 ---
 
@@ -66,6 +65,18 @@ Base URL: `http://127.0.0.1:8000`
 
 ---
 
+## GET /v1/jobs
+
+分页列举所有 Job。
+
+| 参数 | 说明 |
+|------|------|
+| status | 可选状态过滤：`pending` \| `running` \| `success` \| `failed` \| `cancelled` |
+| page | 页码，默认 1 |
+| page_size | 每页数量，默认 20 (最大 100) |
+
+---
+
 ## GET /v1/jobs/{job_id}
 
 任务状态：`pending` \| `running` \| `success` \| `failed` \| `cancelled`。  
@@ -73,26 +84,28 @@ Base URL: `http://127.0.0.1:8000`
 
 ---
 
+## DELETE /v1/jobs/{job_id}
+
+取消指定的 `pending` 或 `running` Job。
+
+---
+
 ## GET /v1/jobs/summary
 
-返回活跃/完成任务计数、磁盘剩余等。  
-> 注意：当前实现中「下载速度」可能为占位字符串，勿当真实测速。
+返回活跃/完成任务计数、磁盘剩余等。
 
 ---
 
 ## GET /v1/files
 
-本地产物列表（UI 资源库用）。  
-> 注意：当前实现可能只扫描 `outputs/` 顶层，而真实文件多在 `outputs/{job_id}/` 下；修复见 POST_MVP_PLAN S-P0-3。
+本地产物列表（UI 资源库用）。递归扫描 `outputs/` 目录下的 `.mp4`, `.txt`, `.m4a` 文件。
 
 ---
 
 ## GET /v1/files/{file_id}
 
 **契约（E2E 依赖）**：下载产物二进制。  
-`file_id` 为 job 返回的相对路径（可含 `/`，请求时需 URL 编码）。
-
-> **实现状态：待恢复（S-P0-0）**。恢复前脚本末步会失败。
+`file_id` 为 job 返回的相对路径（支持带 `/` 路径，如 `job_id/video.mp4`）。
 
 ---
 
@@ -113,26 +126,18 @@ Base URL: `http://127.0.0.1:8000`
 
 ## GET /v1/version
 
-客户端检查更新用。当前为占位数据。
+客户端检查更新用。当前返回占位版本数据。
 
 ---
 
 ## POST /v1/auth/redeem
 
-卡密兑换。**当前为商业化 Stub**，勿当作真实 VIP 核销。  
+卡密兑换。**当前为商业化 Stub（未开启）**，`success` 返回 `false`，勿当作真实 VIP 核销。  
 规划见 [`business_landing_architecture.md`](../business_landing_architecture.md)。
-
----
-
-## 未实现但已规划
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/v1/jobs` | 分页列举任务 |
-| DELETE | `/v1/jobs/{job_id}` | 取消任务 |
 
 ---
 
 ## 交互文档
 
 服务启动后：`http://127.0.0.1:8000/docs`
+

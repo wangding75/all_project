@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app import __version__
 from app.auth import require_api_key
+from app.config import get_settings
 from app.jobs import get_job_manager
 from app.models import (
     DetailResponse,
@@ -16,8 +21,10 @@ from app.models import (
     FileOpenResponse,
     HealthResponse,
     JobCreateRequest,
+    JobListResponse,
     JobResponse,
     JobsSummaryResponse,
+    JobStatus,
     PlatformName,
     RedeemRequest,
     RedeemResponse,
@@ -98,41 +105,42 @@ async def create_job(
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     manager = get_job_manager()
-    record = await manager.create_job(
-        platform=body.platform,
-        item_id=body.id,
-        range_spec=body.range,
-        options=body.options,
-    )
+    try:
+        record = await manager.create_job(
+            platform=body.platform,
+            item_id=body.id,
+            range_spec=body.range,
+            options=body.options,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
     return record.to_response()
+
+
+@api_router.get("/v1/jobs", response_model=JobListResponse)
+async def list_jobs(
+    status: JobStatus | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _: str = Depends(require_api_key),
+) -> JobListResponse:
+    manager = get_job_manager()
+    records, total = await manager.list_jobs(status=status, page=page, page_size=page_size)
+    return JobListResponse(
+        total=total,
+        page=page,
+        page_size=page_size,
+        items=[r.to_response() for r in records],
+    )
 
 
 @api_router.get("/v1/jobs/summary", response_model=JobsSummaryResponse)
 async def jobs_summary(
     _: str = Depends(require_api_key),
 ) -> JobsSummaryResponse:
-    import shutil
     manager = get_job_manager()
-    active = 0
-    completed = 0
-    for job in manager._jobs.values():  # noqa: SLF001
-        if job.status.value in ["pending", "running"]:
-            active += 1
-        elif job.status.value == "success":
-            completed += 1
-
-    try:
-        stat = shutil.disk_usage(manager.settings.outputs_dir)
-        disk_free_human = f"{stat.free / (1024**3):.1f} GB"
-    except Exception:  # noqa: BLE001
-        disk_free_human = "100.0 GB"
-
-    return JobsSummaryResponse(
-        active_jobs=active,
-        completed_jobs=completed,
-        total_speed_human="3.2 MB/s" if active > 0 else "0.0 MB/s",
-        disk_free_human=disk_free_human,
-    )
+    data = await manager.summary()
+    return JobsSummaryResponse(**data)
 
 
 @api_router.get("/v1/jobs/{job_id}", response_model=JobResponse)
@@ -145,6 +153,18 @@ async def get_job(
     if record is None:
         raise HTTPException(status_code=404, detail="job not found")
     return record.to_response()
+
+
+@api_router.delete("/v1/jobs/{job_id}")
+async def cancel_job(
+    job_id: str,
+    _: str = Depends(require_api_key),
+) -> dict[str, str]:
+    manager = get_job_manager()
+    cancelled = await manager.cancel_job(job_id)
+    if not cancelled:
+        raise HTTPException(status_code=400, detail="Job 无法取消（可能已完成、已失败或不存在）")
+    return {"message": "Job successfully cancelled", "job_id": job_id}
 
 
 @api_router.get("/v1/version", response_model=VersionResponse)
@@ -168,9 +188,9 @@ async def redeem_card(
     if not code:
         raise HTTPException(status_code=400, detail="卡密序列号不能为空")
     return RedeemResponse(
-        success=True,
-        message=f"🎉 卡密 [{code}] 兑换成功！VIP 会员天数已增加 30 天。",
-        vip_expires_at="2026-08-19",
+        success=False,
+        message=f"卡密兑换功能暂未开启（商业化 Stub）。序列号 [{code}] 暂无法兑换。",
+        vip_expires_at="",
     )
 
 
@@ -178,22 +198,28 @@ async def redeem_card(
 async def list_files(
     _: str = Depends(require_api_key),
 ) -> FileListResponse:
-    from app.config import get_settings
-    import os
-    from datetime import datetime
-
     settings = get_settings()
     out_dir = settings.outputs_dir.resolve()
     items: list[FileItemResponse] = []
 
     if out_dir.exists():
-        for entry in out_dir.iterdir():
-            if entry.is_file() and entry.suffix.lower() in [".mp4", ".txt", ".m4a"]:
+        for entry in out_dir.rglob("*"):
+            ext = entry.suffix.lower()
+            if entry.is_file() and ext in [".mp4", ".txt", ".m4a"]:
                 size_bytes = entry.stat().st_size
                 mtime = datetime.fromtimestamp(entry.stat().st_mtime).isoformat()
-                media_type = "video/mp4" if entry.suffix.lower() == ".mp4" else "text/plain"
-                platform = "hongguo" if entry.suffix.lower() == ".mp4" else "fanqie"
-                
+                if ext == ".mp4":
+                    media_type = "video/mp4"
+                    platform = "hongguo"
+                elif ext == ".m4a":
+                    media_type = "audio/mp4"
+                    platform = "hongguo"
+                else:
+                    media_type = "text/plain"
+                    platform = "fanqie"
+
+                rel_id = str(entry.relative_to(out_dir)).replace("\\", "/")
+
                 # 计算人类可读文件大小
                 if size_bytes >= 1024 * 1024 * 1024:
                     size_human = f"{size_bytes / (1024**3):.1f} GB"
@@ -204,7 +230,7 @@ async def list_files(
 
                 items.append(
                     FileItemResponse(
-                        file_id=entry.name,
+                        file_id=rel_id,
                         title=entry.name,
                         media_type=media_type,
                         platform=platform,
@@ -217,30 +243,46 @@ async def list_files(
     return FileListResponse(total=len(items), items=items)
 
 
-@api_router.post("/v1/files/{file_id}/open", response_model=FileOpenResponse)
+@api_router.get("/v1/files/{file_id:path}")
+async def get_file(
+    file_id: str,
+    _: str = Depends(require_api_key),
+) -> FileResponse:
+    manager = get_job_manager()
+    path = manager.resolve_file(file_id)
+    if path is None or not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="指定文件不存在")
+    return FileResponse(path=path, filename=path.name)
+
+
+@api_router.post("/v1/files/{file_id:path}/open", response_model=FileOpenResponse)
 async def open_file(
     file_id: str,
     body: FileOpenRequest,
     _: str = Depends(require_api_key),
 ) -> FileOpenResponse:
-    import os
-    import subprocess
     manager = get_job_manager()
     path = manager.resolve_file(file_id)
     if path is None or not path.exists():
-        raise HTTPException(status_code=404, detail="指定文件不存在")
+        raise HTTPException(status_code=404, detail="指定文件或目录不存在")
 
     try:
         if body.action == "folder":
-            # 打开所在文件夹并选中该文件
-            subprocess.Popen(f'explorer.exe /select,"{path}"')
-            msg = f"已在资源管理器中定位文件: {path.name}"
+            if path.is_file():
+                # 打开所在文件夹并选中该文件 (含空格路径用引号包裹)
+                subprocess.Popen(["explorer.exe", f'/select,"{path}"'])
+                msg = f"已在资源管理器中定位文件: {path.name}"
+            else:
+                # 路径本身为目录，直接在资源管理器中打开
+                subprocess.Popen(["explorer.exe", str(path)])
+                msg = f"已在资源管理器中打开目录: {path.name or 'outputs'}"
         else:
-            # 用系统默认程序播放/打开
             os.startfile(str(path))
-            msg = f"已通过系统默认程序打开: {path.name}"
+            msg = f"已成功通过系统程序打开: {path.name or 'outputs'}"
         return FileOpenResponse(success=True, message=msg)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"无法打开文件: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"无法打开文件或目录: {exc}") from exc
+
+
 
 

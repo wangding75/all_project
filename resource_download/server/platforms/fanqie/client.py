@@ -12,22 +12,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlparse
 
+import warnings
 import requests
 import urllib3
 
-urllib3.disable_warnings()
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CFG_PATH = REPO_ROOT / "data" / "config" / "fanqie_config.json"
-
-from app.config import get_settings
-
-_settings = get_settings()
-ADB = os.environ.get("ADB", _settings.adb_path)
-DEV = os.environ.get("ADB_DEVICE", _settings.adb_device)
-FRIDA_HOST = os.environ.get("FRIDA_HOST", _settings.frida_host)
-PKG = os.environ.get("FANQIE_PKG", _settings.fanqie_pkg)
 
 _CFG: dict[str, Any] = {}
 _CFG_LOCK = threading.Lock()
@@ -70,30 +62,35 @@ class FanqieSignOracle:
 
     def init_frida(self) -> None:
         import frida  # type: ignore
-        adb = ADB
-        dev = DEV
+        from app.config import get_settings
+        settings = get_settings()
+        adb = os.environ.get("ADB", settings.adb_path)
+        dev = os.environ.get("ADB_DEVICE", settings.adb_device)
+        frida_host = os.environ.get("FRIDA_HOST", settings.frida_host)
+        pkg = os.environ.get("FANQIE_PKG", settings.fanqie_pkg)
+
         # 确保 ADB 已连接
         subprocess.run([adb, "connect", dev], capture_output=True)
         pid_out = subprocess.run(
-            [adb, "-s", dev, "shell", "pidof", PKG],
+            [adb, "-s", dev, "shell", "pidof", pkg],
             capture_output=True,
             text=True,
         ).stdout.strip()
         if not pid_out:
             # 尝试启动 App
             subprocess.run(
-                [adb, "-s", dev, "shell", "monkey", "-p", PKG,
+                [adb, "-s", dev, "shell", "monkey", "-p", pkg,
                  "-c", "android.intent.category.LAUNCHER", "1"],
                 capture_output=True,
             )
             time.sleep(8)
             pid_out = subprocess.run(
-                [adb, "-s", dev, "shell", "pidof", PKG],
+                [adb, "-s", dev, "shell", "pidof", pkg],
                 capture_output=True,
                 text=True,
             ).stdout.strip()
         if not pid_out:
-            raise RuntimeError(f"无法启动/获取番茄小说进程 {PKG}，请确认模拟器已开启且已打开该 App")
+            raise RuntimeError(f"无法启动/获取番茄小说进程 {pkg}，请确认模拟器已开启且已打开该 App")
         
         pid = int(pid_out.split()[0])
         
@@ -104,8 +101,9 @@ class FanqieSignOracle:
             time.sleep(2)
             
         subprocess.run([adb, "-s", dev, "forward", "tcp:27042", "tcp:27042"], capture_output=True)
-        frida_dev = frida.get_device_manager().add_remote_device(FRIDA_HOST)
+        frida_dev = frida.get_device_manager().add_remote_device(frida_host)
         self.session = frida_dev.attach(pid)
+
         
         js_path = HERE / "oracle_sign.js"
         self.script = self.session.create_script(js_path.read_text(encoding="utf-8"))
@@ -173,11 +171,12 @@ def api_once(method: str, path: str, body: dict | None = None, extra_query: dict
         headers["x-ss-stub"] = hashlib.md5(data).hexdigest().upper()
     if signed:
         headers.update(sign(url, headers))
-    headers.pop("accept-encoding", None)
-    
-    r = requests.request(method, url, data=data, headers=headers, verify=False, timeout=30)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", urllib3.exceptions.InsecureRequestWarning)
+        r = requests.request(method, url, data=data, headers=headers, verify=False, timeout=30)
     r.raise_for_status()
     return r.json()
+
 
 
 def api(method: str, path: str, body: dict | None = None, extra_query: dict[str, str] | None = None, max_retries: int = 3, signed: bool = True) -> dict[str, Any]:

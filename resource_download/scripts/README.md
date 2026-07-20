@@ -9,10 +9,8 @@ API_KEY=dev-key-change-me
 
 质量门槛：每平台至少 1 条可复制命令的 E2E；**以脚本结果为准，不以 UI 为准**。
 
-> **已知问题**：E2E 末步 `GET /v1/files/{file_id}` 在服务端可能尚未实现（见仓库根目录 `POST_MVP_PLAN.md` S-P0-0）。  
-> job 若已 `success`，也可直接到 `data/outputs/{job_id}/` 查看产物。
-
 ---
+
 
 ## 启动服务端
 
