@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Default LSPosed scope: empty means user selects targets in LSPosed manager -->
+    <string-array name="xposed_scope">
+        <!-- Example: leave empty; user scopes target apps in LSPosed UI -->
+    </string-array>
+</resources>

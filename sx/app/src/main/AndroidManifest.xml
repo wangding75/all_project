@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Location -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_MOCK_LOCATION"
+        tools:ignore="MockLocation,ProtectedPermissions" />
+
+    <!-- Network / time sync -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+
+    <!-- Camera / media -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Foreground service / shortcuts -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Telephony read (legacy, may be empty on modern Android) -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+    <application
+        android:name=".SxApp"
+        android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Sx"
+        android:requestLegacyExternalStorage="true"
+        tools:targetApi="34">
+
+        <!-- LSPosed / Xposed module meta -->
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true" />
+        <meta-data
+            android:name="xposeddescription"
+            android:value="闪现：沙箱环境伪装（定位/设备/WiFi/基站/相机）" />
+        <meta-data
+            android:name="xposedminversion"
+            android:value="93" />
+        <meta-data
+            android:name="xposedscope"
+            android:resource="@array/xposed_scope" />
+
+        <activity
+            android:name=".ui.SplashActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Sx.Splash">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="false"
+            android:launchMode="singleTask" />
+
+        <activity
+            android:name=".ui.LicenseActivity"
+            android:exported="false"
+            android:label="@string/module_license" />
+
+        <activity
+            android:name=".ui.location.LocationSettingsActivity"
+            android:exported="false"
+            android:label="@string/module_location" />
+
+        <activity
+            android:name=".ui.location.LocationPickerActivity"
+            android:exported="false"
+            android:label="@string/action_pick_map" />
+
+        <activity
+            android:name=".ui.device.DeviceSettingsActivity"
+            android:exported="false"
+            android:label="@string/module_device" />
+
+        <activity
+            android:name=".ui.network.NetworkSettingsActivity"
+            android:exported="false"
+            android:label="@string/module_network" />
+
+        <activity
+            android:name=".ui.camera.VirtualCameraActivity"
+            android:exported="false"
+            android:label="@string/module_camera" />
+
+        <activity
+            android:name=".ui.sandbox.AppListActivity"
+            android:exported="false"
+            android:label="@string/module_sandbox" />
+
+        <activity
+            android:name=".ui.sandbox.AppPickerActivity"
+            android:exported="false"
+            android:label="@string/action_add_app" />
+
+        <activity
+            android:name=".ui.sandbox.AppDetailActivity"
+            android:exported="false"
+            android:label="应用设置" />
+
+        <!-- Desktop shortcut target for sandbox instances -->
+        <activity
+            android:name=".ui.sandbox.ShortcutLaunchActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Sx.Splash"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="com.sx.app.action.LAUNCH_SANDBOX" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".service.MockLocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+</manifest>

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">闪现</string>
+    <string name="app_name_full">闪现 · 沙箱伪装</string>
+    <string name="splash_slogan">多开隔离 · 环境伪装 · 安全可控</string>
+
+    <string name="tab_home">首页</string>
+    <string name="tab_apps">应用</string>
+    <string name="tab_me">我的</string>
+
+    <string name="module_sandbox">沙箱多开</string>
+    <string name="module_location">虚拟定位</string>
+    <string name="module_camera">虚拟相机</string>
+    <string name="module_device">设备伪装</string>
+    <string name="module_network">网络伪装</string>
+    <string name="module_license">授权管理</string>
+
+    <string name="module_sandbox_desc">导入应用 · 多实例 · 数据隔离 · 桌面快捷方式</string>
+    <string name="module_location_desc">地图选点 · 50ms 注入 · 轨迹模拟 · 反 Mock 检测</string>
+    <string name="module_camera_desc">视频/图片替换 · Camera/Camera2 · Surface 渲染</string>
+    <string name="module_device_desc">IMEI · Android ID · Build · SIM/运营商</string>
+    <string name="module_network_desc">WiFi SSID/BSSID · 扫描列表 · 基站信息</string>
+    <string name="module_license_desc">卡密激活 · 离线 Token · 防时钟回拨</string>
+
+    <string name="action_start">启动</string>
+    <string name="action_stop">停止</string>
+    <string name="action_save">保存</string>
+    <string name="action_random">随机生成</string>
+    <string name="action_reset">重置本机</string>
+    <string name="action_add_app">添加应用</string>
+    <string name="action_confirm">确认</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_activate">激活</string>
+    <string name="action_enable">开启</string>
+    <string name="action_disable">关闭</string>
+    <string name="action_pick_map">地图选点</string>
+    <string name="action_manual_input">手动输入</string>
+    <string name="action_pick_media">选择媒体</string>
+    <string name="action_create_shortcut">创建快捷方式</string>
+    <string name="action_clone">克隆分身</string>
+    <string name="action_uninstall">移除</string>
+    <string name="action_clear_data">清除数据</string>
+    <string name="action_independent">独立设置</string>
+
+    <string name="loc_enabled">位置模拟已开启</string>
+    <string name="loc_disabled">位置模拟已关闭</string>
+    <string name="loc_coord">坐标：纬度 %1$.8f；经度 %2$.8f</string>
+    <string name="loc_accuracy">精度 (米)</string>
+    <string name="loc_interval">更新间隔 (ms)</string>
+    <string name="loc_mock_guide_title">需要开启模拟位置</string>
+    <string name="loc_mock_guide">请在 开发者选项 → 选择模拟位置信息应用 → 选择「闪现」</string>
+    <string name="loc_service_running">虚拟定位服务运行中</string>
+    <string name="loc_input_error">输入有误：纬度 -90~90，经度 -180~180</string>
+
+    <string name="device_notice">1. 默认显示真实设备信息\n2. 高版本系统可能无法读取 IMEI\n3. 可手动填写或随机生成\n4. 需在 LSPosed 中启用本模块并勾选目标应用</string>
+    <string name="wifi_notice">伪造当前连接 WiFi 与扫描列表，防止通过周边 WiFi 交叉定位。</string>
+    <string name="camera_notice">选择相册视频 (MP4) 或图片作为摄像头替换源。需在 LSPosed 作用域中启用目标应用。</string>
+
+    <string name="license_hint">请输入卡密激活</string>
+    <string name="license_ok">已激活，有效期至 %1$s</string>
+    <string name="license_expired">授权已过期</string>
+    <string name="license_invalid">卡密无效</string>
+    <string name="license_device">设备 ID：%1$s</string>
+
+    <string name="empty_apps">还没有添加任何应用</string>
+    <string name="xposed_status_ok">LSPosed 模块已加载</string>
+    <string name="xposed_status_no">LSPosed 模块未激活（Hook 功能需框架支持）</string>
+
+    <string name="notif_channel_location">虚拟定位服务</string>
+    <string name="notif_location_title">闪现 · 定位注入中</string>
+    <string name="notif_location_text">正在以 50ms 周期更新位置</string>
+
+    <string name="permission_required">需要相关权限才能使用此功能</string>
+    <string name="saved">已保存</string>
+</resources>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="@color/primary"
+            android:theme="@style/ThemeOverlay.MaterialComponents.Dark.ActionBar" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switch_enabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="启用网络/基站伪装" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/wifi_notice"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="WiFi"
+            android:textStyle="bold" />
+
+        <EditText android:id="@+id/et_ssid" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="SSID" />
+        <EditText android:id="@+id/et_bssid" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="BSSID (MAC)" />
+        <EditText android:id="@+id/et_mac" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="本机 WiFi MAC" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="基站 Cell"
+            android:textStyle="bold" />
+
+        <EditText android:id="@+id/et_mcc" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="MCC (如 460)" android:inputType="number" />
+        <EditText android:id="@+id/et_mnc" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="MNC (如 00)" android:inputType="number" />
+        <EditText android:id="@+id/et_lac" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="LAC" android:inputType="number" />
+        <EditText android:id="@+id/et_cid" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="CID" android:inputType="number" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="扫描列表 (每行: SSID,BSSID,level)"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/et_scan_list"
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:gravity="top"
+            android:hint="HomeWiFi,aa:bb:cc:dd:ee:01,-45"
+            android:inputType="textMultiLine" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_random"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/action_random" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/action_save" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>
