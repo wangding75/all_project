@@ -13,6 +13,7 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.sx.app.R;
 import com.sx.app.data.LocationConfig;
+import com.sx.app.util.PermissionHelper;
 
 public class LocationSettingsActivity extends AppCompatActivity {
 
@@ -53,6 +54,10 @@ public class LocationSettingsActivity extends AppCompatActivity {
 
         mConfig = LocationConfig.load(this);
         loadConfigUI();
+
+        if (!PermissionHelper.hasLocationPermission(this)) {
+            PermissionHelper.requestLocationPermission(this, 102);
+        }
 
         findViewById(R.id.btn_save).setOnClickListener(v -> saveConfig(true));
 

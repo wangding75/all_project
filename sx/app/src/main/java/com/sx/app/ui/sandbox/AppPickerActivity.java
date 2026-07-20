@@ -63,7 +63,7 @@ public class AppPickerActivity extends AppCompatActivity {
                 mRvApps.setVisibility(View.VISIBLE);
                 mAdapter.setList(apps);
                 if (apps.isEmpty()) {
-                    Toast.makeText(AppPickerActivity.this, "未找到可导入的应用，请检查 QUERY_ALL_PACKAGES 权限", Toast.LENGTH_LONG).show();
+                    Toast.makeText(AppPickerActivity.this, "未找到可导入的应用，请检查 QUERY_ALL_PACKAGES 权限（系统可能限制包可见性）", Toast.LENGTH_LONG).show();
                 }
             });
         });

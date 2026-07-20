@@ -203,10 +203,25 @@ public class FakeSandboxEngine implements SandboxEngine {
                 intent.putExtra("user_id", userId);
 
                 // Use the host application icon for shortcut if available
-                Icon icon = null;
+                Icon icon = Icon.createWithResource(context, R.drawable.ic_launcher);
                 try {
                     PackageManager pm = context.getPackageManager();
-                    icon = Icon.createWithBitmap(((android.graphics.drawable.BitmapDrawable) pm.getApplicationIcon(packageName)).getBitmap());
+                    android.graphics.drawable.Drawable d = pm.getApplicationIcon(packageName);
+                    if (d instanceof android.graphics.drawable.BitmapDrawable) {
+                        android.graphics.Bitmap bmp = ((android.graphics.drawable.BitmapDrawable) d).getBitmap();
+                        if (bmp != null) {
+                            icon = Icon.createWithBitmap(bmp);
+                        }
+                    } else {
+                        // Rasterize custom/Adaptive drawables onto a bitmap
+                        int width = d.getIntrinsicWidth() > 0 ? d.getIntrinsicWidth() : 144;
+                        int height = d.getIntrinsicHeight() > 0 ? d.getIntrinsicHeight() : 144;
+                        android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888);
+                        android.graphics.Canvas canvas = new android.graphics.Canvas(bmp);
+                        d.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+                        d.draw(canvas);
+                        icon = Icon.createWithBitmap(bmp);
+                    }
                 } catch (Exception e) {
                     icon = Icon.createWithResource(context, R.drawable.ic_launcher);
                 }

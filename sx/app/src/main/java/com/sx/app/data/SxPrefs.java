@@ -8,9 +8,9 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * Central preferences store.
- * World-readable flag is required so LSPosed module (different process) can read configs
- * via {@code XSharedPreferences} when the host app is selected as module scope source.
+ * 闪现配置存储（Phase 0：MODE_PRIVATE）。
+ * 分身列表、定位/设备/网络/相机/授权等 JSON 配置。
+ * 若后续 LSPosed 需跨进程读配置，再单独评估可读策略，勿在 Phase 0 使用 MODE_WORLD_READABLE。
  */
 public final class SxPrefs {
 

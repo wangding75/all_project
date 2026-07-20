@@ -6,12 +6,14 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import com.sx.app.R;
 import com.sx.app.data.CameraConfig;
+import com.sx.app.util.PermissionHelper;
 
 public class VirtualCameraActivity extends AppCompatActivity {
 
@@ -51,13 +53,11 @@ public class VirtualCameraActivity extends AppCompatActivity {
         });
 
         findViewById(R.id.btn_pick).setOnClickListener(v -> {
-            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-            if (mRbVideo.isChecked()) {
-                intent.setType("video/*");
-            } else {
-                intent.setType("image/*");
+            if (!PermissionHelper.hasStoragePermission(this)) {
+                PermissionHelper.requestStoragePermission(this, 101);
+                return;
             }
-            startActivityForResult(Intent.createChooser(intent, getString(R.string.action_pick_media)), 200);
+            openMediaPicker();
         });
 
         findViewById(R.id.btn_save).setOnClickListener(v -> {
@@ -67,6 +67,29 @@ public class VirtualCameraActivity extends AppCompatActivity {
             mConfig.save(this);
             Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show();
         });
+    }
+
+    private void openMediaPicker() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        if (mRbVideo.isChecked()) {
+            intent.setType("video/*");
+        } else {
+            intent.setType("image/*");
+        }
+        startActivityForResult(Intent.createChooser(intent, getString(R.string.action_pick_media)), 200);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 101) {
+            // 可能一次申请多项权限，用 Helper 综合判断
+            if (PermissionHelper.hasStoragePermission(this)) {
+                openMediaPicker();
+            } else {
+                Toast.makeText(this, "需要存储/媒体权限以选择视频或图片", Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void loadConfigUI() {
@@ -84,11 +107,44 @@ public class VirtualCameraActivity extends AppCompatActivity {
         }
     }
 
+    private String copyMediaToInternal(android.net.Uri uri) {
+        try {
+            java.io.InputStream is = getContentResolver().openInputStream(uri);
+            if (is == null) return null;
+
+            String extension = mRbVideo.isChecked() ? ".mp4" : ".jpg";
+            java.io.File dir = new java.io.File(getFilesDir(), "camera");
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            java.io.File dest = new java.io.File(dir, "temp_camera_source" + extension);
+            java.io.FileOutputStream os = new java.io.FileOutputStream(dest);
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = is.read(buffer)) != -1) {
+                os.write(buffer, 0, read);
+            }
+            is.close();
+            os.flush();
+            os.close();
+            return dest.getAbsolutePath();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == 200 && resultCode == RESULT_OK && data != null && data.getData() != null) {
-            mSelectedPath = data.getData().toString();
+            android.net.Uri uri = data.getData();
+            String localPath = copyMediaToInternal(uri);
+            if (localPath != null) {
+                mSelectedPath = localPath;
+            } else {
+                mSelectedPath = uri.toString();
+            }
             mTvPath.setText(mSelectedPath);
         }
     }
