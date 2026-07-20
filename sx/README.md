@@ -49,8 +49,9 @@
 **后续开发请从这里接手：**
 
 1. [docs/09_开发者交接与开工指南.md](./docs/09_开发者交接与开工指南.md)（必读）  
-2. [docs/10_实现任务分解Backlog.md](./docs/10_实现任务分解Backlog.md)（任务看板）  
-3. [docs/07_开发计划与里程碑.md](./docs/07_开发计划与里程碑.md)  
+2. [docs/11_Phase0执行计划.md](./docs/11_Phase0执行计划.md)（**Phase 0 批准执行版**）  
+3. [docs/10_实现任务分解Backlog.md](./docs/10_实现任务分解Backlog.md)（任务勾选）  
+4. [docs/开发指令_Phase0.md](./docs/开发指令_Phase0.md)（下发摘要）  
 
 ---
 

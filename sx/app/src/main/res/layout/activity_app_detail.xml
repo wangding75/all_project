@@ -58,6 +58,13 @@
         android:text="@string/action_create_shortcut" />
 
     <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_independent"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/action_independent" />
+
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_clear"
         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
         android:layout_width="match_parent"

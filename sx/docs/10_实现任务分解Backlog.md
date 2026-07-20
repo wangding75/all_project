@@ -23,23 +23,23 @@
 
 | ID | 任务 | 状态 | 规模 | 依赖 | 验收要点 |
 |----|------|------|------|------|----------|
-| B-01 | 修复工程 Sync/编译；补 Application | todo | M | — | debug APK 可装 |
-| B-02 | SplashActivity 流程 | todo | S | B-01 | 进 Main 或 License |
-| B-03 | MainActivity + 底栏三 Tab | todo | M | B-01 | 首页/应用/我的切换 |
-| B-04 | HomeFragment 入口卡片 | todo | S | B-03 | 跳转各模块 |
-| B-05 | MeFragment 版本/设备/授权入口 | todo | S | B-03 | 展示基本信息 |
-| B-06 | SandboxEngine 接口落地 + Fake 实现 | todo | M | B-01 | 内存增删改查 |
-| B-07 | 应用列表 UI 绑定 Fake | todo | M | B-06 | 空态/列表/点击 |
-| B-08 | 应用选择器（本机包列表） | todo | M | B-06 | 添加进 Fake |
-| B-09 | 应用详情 + 菜单动作（模拟） | todo | M | B-07 | 克隆/删除 Toast 或真改 Fake |
-| B-10 | LocationSettings 绑定 LocationConfig | todo | M | B-04 | 保存持久化 |
-| B-11 | LocationPicker POI + 回传坐标 | todo | M | B-10 | setResult |
-| B-12 | DeviceSettings 绑定 DeviceProfile | todo | M | B-04 | 随机/重置/保存 |
-| B-13 | NetworkSettings 绑定 NetworkProfile | todo | M | B-04 | 保存 |
-| B-14 | CameraSettings 绑定 CameraConfig | todo | S | B-04 | 路径选择可先 stub |
-| B-15 | LicenseActivity + LicenseManager 串联 | todo | M | B-02 | 开发卡密可激活 |
-| B-16 | 权限申请封装（定位/通知/存储） | todo | S | B-01 | 设置页调用 |
-| B-17 | Phase 0 走查与修交互 | todo | M | B-* | 对照 docs/04 |
+| B-01 | 修复工程 Sync/编译；补 Application | done | M | — | debug APK 可装 |
+| B-02 | SplashActivity 流程 | done | S | B-01 | 进 Main 或 License |
+| B-03 | MainActivity + 底栏三 Tab | done | M | B-01 | 首页/应用/我的切换 |
+| B-04 | HomeFragment 入口卡片 | done | S | B-03 | 跳转各模块 |
+| B-05 | MeFragment 版本/设备/授权入口 | done | S | B-03 | 展示基本信息 |
+| B-06 | SandboxEngine 接口落地 + Fake 实现 | done | M | B-01 | 内存增删改查 |
+| B-07 | 应用列表 UI 绑定 Fake | done | M | B-06 | 空态/列表/点击 |
+| B-08 | 应用选择器（本机包列表） | done | M | B-06 | 添加进 Fake |
+| B-09 | 应用详情 + 菜单动作（模拟） | done | M | B-07 | 克隆/删除 Toast 或真改 Fake |
+| B-10 | LocationSettings 绑定 LocationConfig | done | M | B-04 | 保存持久化 |
+| B-11 | LocationPicker POI + 回传坐标 | done | M | B-10 | setResult |
+| B-12 | DeviceSettings 绑定 DeviceProfile | done | M | B-04 | 随机/重置/保存 |
+| B-13 | NetworkSettings 绑定 NetworkProfile | done | M | B-04 | 保存 |
+| B-14 | CameraSettings 绑定 CameraConfig | done | S | B-04 | 路径选择可先 stub |
+| B-15 | LicenseActivity + LicenseManager 串联 | done | M | B-02 | 开发卡密可激活 |
+| B-16 | 权限申请封装（定位/通知/存储） | done | S | B-01 | 设置页调用 |
+| B-17 | Phase 0 走查与修交互 | done | M | B-* | 对照 docs/04 |
 
 **Epic B 完成定义 (DoD)：** 无 BlackBox 可演示全 UI；配置持久化；Fake 应用列表可增删。
 

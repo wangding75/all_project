@@ -25,10 +25,8 @@ public final class SxPrefs {
 
     private SxPrefs() {}
 
-    @SuppressWarnings("deprecation")
     public static SharedPreferences get(Context context) {
-        // MODE_WORLD_READABLE allows XSharedPreferences to read from LSPosed
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_WORLD_READABLE);
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
     public static SharedPreferences getPrivate(Context context) {
