@@ -13,6 +13,7 @@
 | [`docs/api.md`](./docs/api.md) | HTTP API 契约 |
 | [`docs/hongguo_setup.md`](./docs/hongguo_setup.md) / [`docs/fanqie_app_setup.md`](./docs/fanqie_app_setup.md) | 平台环境 |
 | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | 逆向结论与设备运维坑 |
+| [`docs/release.md`](./docs/release.md) | 打包 EXE、首次运行、依赖与验收 |
 | [`business_landing_architecture.md`](./business_landing_architecture.md) | 商业化规划（未实施） |
 
 ## 目录
@@ -23,9 +24,10 @@ server/                 # 中转服务端（FastAPI）
   platforms/hongguo/    # 适配 vendor/hongguo（主路径）
   platforms/fanqie/     # Web SSR + App 会话
   run.py
-ui/                     # Web UI 实验壳（未达「复现脚本全部能力」）
+ui/                     # Web UI（Jobs/设置已联调；以脚本 E2E 为最终验收）
+desktop/                # 桌面入口（打包用）
 vendor/hongguo/         # 上游 clone（config 自备，勿提交密钥）
-scripts/                # smoke / e2e_hongguo / e2e_fanqie
+scripts/                # smoke / e2e / build_exe
 docs/
 data/                   # jobs / outputs（本地运行时）
 ```
@@ -41,24 +43,36 @@ git clone --depth 1 https://github.com/zhangbaio/hongguo.git vendor/hongguo
 
 ### 1. 启动本仓服务端
 
-需要 **Python 3.10+**（推荐 `py -3.14`）。
+需要 **Python 3.10+**。
 
+**方式 A：开发与控制台服务模式**
 ```powershell
 cd server
-py -3.14 -m venv .venv
-.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pip install requests pycryptodome
 python run.py
 ```
 
-默认：`http://127.0.0.1:8000`，`X-API-Key: dev-key-change-me`。
+**方式 B：桌面外壳模式（自动生成默认配置并拉起浏览器 UI）**
+```powershell
+# 在项目根目录下直接拉起
+python desktop/main.py
+```
 
-> **生产环境**请在仓库根或运行目录 `.env` 中设置 `api_key=<随机强密钥>`，默认值仅限本地开发。
+默认服务地址：`http://127.0.0.1:8000`，`X-API-Key: dev-key-change-me`。
+
+> **生产环境**请在项目根目录 `.env` 中设置 `api_key=<随机强密钥>`，默认值仅限本地开发使用。
 
 浏览器可打开 `http://127.0.0.1:8000/` 或 `/ui/` 查看实验 UI；**验收以脚本为准**。
 
+### 1.5 编译打包独立可执行程序 (.exe)
+项目提供了全自动的 PyInstaller 打包流程，详细发布指南参见 [`docs/release.md`](./docs/release.md)：
+```powershell
+# 执行打包脚本，产物生成在 dist/ 目录下
+python scripts/build_exe.py
+```
+
 ### 2. 脚本验收
+
 
 ```powershell
 $env:API_BASE = "http://127.0.0.1:8000"
@@ -75,8 +89,9 @@ python scripts/e2e_hongguo.py --search "剧名" --range 1-1
 |------|------|----------------|
 | **MVP-H** | 复用 hongguo + relay + e2e 出 MP4 | 适配完成；注意文件下载 API 缺口见 POST_MVP_PLAN |
 | **MVP-F** | 番茄 Web/App 接入 | 代码接入；App 依赖设备与会话稳定性 |
-| **UI** | 薄客户端 | 实验性，未达标 |
-| **之后** | 服务端稳定、订阅/卡密 | 见 POST_MVP_PLAN 阶段 A~D |
+| **阶段 0/A/B** | 下载契约 + 服务端稳定 + UI 诚实闭环 | ✅ 见 POST_MVP_PLAN |
+| **阶段 C** | 打包分发（`build_exe` + release.md） | 🔄 进行中 |
+| **之后** | 订阅/卡密等商业化 | 阶段 D |
 
 ## 说明
 

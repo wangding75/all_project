@@ -37,6 +37,7 @@ System.Management.Automation.Internal.Host.InternalHost/
 /*
 !/data/
 !/docs/
+!/desktop/
 !/scripts/
 !/server/
 !/tools/

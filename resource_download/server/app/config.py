@@ -2,13 +2,31 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# 仓库根目录: server/app/config.py -> parents[2]
-REPO_ROOT = Path(__file__).resolve().parents[2]
+
+def _resolve_repo_root() -> Path:
+    """可写运行根：打包后为 exe 同级；开发时为仓库根。
+
+    优先级:
+      1. 环境变量 RESOURCE_DOWNLOAD_ROOT
+      2. PyInstaller frozen → sys.executable 所在目录
+      3. server/app/config.py → parents[2]（仓库根）
+    """
+    env = os.environ.get("RESOURCE_DOWNLOAD_ROOT", "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
+
+
+REPO_ROOT = _resolve_repo_root()
 DEFAULT_DATA_DIR = REPO_ROOT / "data"
 
 

@@ -115,7 +115,13 @@ html, body {
   justify-content: space-between;
   padding: 0 12px;
   -webkit-app-region: drag; /* 支持窗口拖拽 */
+  app-region: drag;
   z-index: 1000;
+}
+
+.pywebview-drag-zone {
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
 .titlebar-brand {
@@ -144,7 +150,8 @@ html, body {
 .titlebar-controls {
   display: flex;
   align-items: center;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
 }
 
 .win-btn {
@@ -158,8 +165,11 @@ html, body {
   color: var(--text-secondary);
   font-size: 14px;
   cursor: pointer;
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
   transition: background-color var(--transition-fast);
 }
+
 
 .win-btn:hover {
   background-color: var(--bg-card-hover);

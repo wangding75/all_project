@@ -13,16 +13,27 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
+
+def check_dependencies():
+    """预先校验打包所必须的环境依赖"""
+    try:
+        import webview  # noqa: F401
+    except ImportError:
+        print("[ERR] 缺少依赖: 打包需要 'pywebview'。请先运行: pip install pywebview")
+        sys.exit(1)
+
+
 def run_build():
+    check_dependencies()
+
     print("==================================================")
     print("BUILD: Starting packaging with VirtualStore bypass...")
     print("==================================================")
 
     entry_script = ROOT_DIR / "desktop" / "main.py"
     ui_dir = ROOT_DIR / "ui"
-    server_app_dir = ROOT_DIR / "server" / "app"
     vendor_dir = ROOT_DIR / "vendor"
-    
+
     # 目标 dist 目录
     target_dist = ROOT_DIR / "dist"
     target_dist.mkdir(parents=True, exist_ok=True)
@@ -40,28 +51,41 @@ def run_build():
         "PyInstaller",
         "--name=ResourceDownloader",
         "--onefile",
-        "--noconsole",
+        "--console",  # 开启控制台，便于调试和查看日志
         "--noupx",
         "--clean",
         f"--distpath={temp_dist}",
         f"--workpath={temp_work}",
+        f"--paths={ROOT_DIR / 'server'}",  # 让 PyInstaller 将 server 作为模块搜索路径
         f"--add-data={ui_dir}{os.pathsep}ui",
-        f"--add-data={server_app_dir}{os.pathsep}server/app",
+        "--collect-all=app",              # 递归收集 app 包下的所有子模块、二进制和数据
+        "--collect-all=platforms",        # 递归收集 platforms 包（支持动态导入）
+        "--collect-all=webview",          # 收集 pywebview GUI 的完整依赖
+        "--hidden-import=anyio._backends._asyncio",
+        "--hidden-import=anyio.providers.asyncio",
         "--exclude-module=tkinter",
         "--exclude-module=matplotlib",
         "--exclude-module=IPython",
     ]
 
-    if vendor_dir.exists():
-        pyinstaller_args.append(f"--add-data={vendor_dir}{os.pathsep}vendor")
+    # 默认不包含 vendor 源码，仅在环境变量 INCLUDE_VENDOR == "1" 时打包
+    if os.environ.get("INCLUDE_VENDOR") == "1":
+        if vendor_dir.exists():
+            pyinstaller_args.append(f"--add-data={vendor_dir}{os.pathsep}vendor")
+            print("[BUILD] 打包已内嵌 vendor 源码目录")
+        else:
+            print("[WARN] 设定了 INCLUDE_VENDOR=1，但本地缺少 vendor 文件夹")
+    else:
+        print("[BUILD] 默认打包配置：不内嵌 vendor 目录")
 
     pyinstaller_args.append(str(entry_script))
 
     print(f"[CMD] Executing PyInstaller in temp dir: {temp_dir}")
+    print(f"[CMD] 命令参数: {' '.join(pyinstaller_args)}")
 
     try:
         subprocess.run(pyinstaller_args, cwd=str(ROOT_DIR), check=True)
-        
+
         # 查找临时目录或 VirtualStore 中的产物
         produced_exe = temp_dist / "ResourceDownloader.exe"
         if not produced_exe.exists():
@@ -75,12 +99,12 @@ def run_build():
         if produced_exe.exists():
             dest_file = target_dist / "ResourceDownloader.exe"
             print(f"[COPY] 强行将产物复制至真实项目目录: {dest_file}")
-            
+
             # 使用 shutil 二进制流写入
             with open(produced_exe, "rb") as f_src:
                 with open(dest_file, "wb") as f_dst:
                     shutil.copyfileobj(f_src, f_dst)
-            
+
             size_mb = dest_file.stat().st_size / (1024 * 1024)
             print("\n==================================================")
             print("SUCCESS: 打包并复制完成！")
@@ -90,9 +114,11 @@ def run_build():
             print("==================================================")
         else:
             print("[ERR] PyInstaller 未能生成 EXE 文件")
+            sys.exit(1)
 
     except Exception as e:
         print(f"[ERR] 打包异常: {e}")
+        sys.exit(1)
     finally:
         # 清理临时构建目录
         shutil.rmtree(temp_dir, ignore_errors=True)

@@ -13,8 +13,15 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-HONGGUO_ROOT = REPO_ROOT / "vendor" / "hongguo"
+
+def _install_root() -> Path:
+    """与 app.config.REPO_ROOT 一致：exe 旁 / 环境变量 / 源码仓库根。"""
+    try:
+        from app.config import REPO_ROOT
+
+        return REPO_ROOT
+    except Exception:  # noqa: BLE001
+        return Path(__file__).resolve().parents[3]
 
 
 class HongguoVendorError(RuntimeError):
@@ -22,7 +29,7 @@ class HongguoVendorError(RuntimeError):
 
 
 def vendor_root() -> Path:
-    return HONGGUO_ROOT
+    return _install_root() / "vendor" / "hongguo"
 
 
 def ensure_vendor() -> Path:
@@ -63,7 +70,8 @@ def load_offline_dl():
 def vendor_ready() -> dict:
     """供 /health 或诊断用。"""
     root = vendor_root()
-    cfg = REPO_ROOT / "data" / "config" / "hongguo_config.json"
+    install = _install_root()
+    cfg = install / "data" / "config" / "hongguo_config.json"
     return {
         "vendor_path": str(root),
         "vendor_present": root.is_dir() and (root / "hongguo.py").is_file(),

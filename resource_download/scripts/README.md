@@ -85,6 +85,21 @@ python scripts/e2e_fanqie.py --id "BOOK_ID" --range 1-3 --options "{\"mode\":\"a
 
 ---
 
+## 打包（阶段 C）
+
+详见 [`docs/release.md`](../docs/release.md)。
+
+```powershell
+# 仓库根目录；已激活含依赖的 venv
+pip install pyinstaller pycryptodome
+python scripts/build_exe.py
+# 产物: dist/ResourceDownloader.exe
+```
+
+桌面入口源码：`desktop/main.py`（启动服务并打开浏览器）。
+
+---
+
 ## 脚本列表
 
 | 脚本 | 作用 |
@@ -92,6 +107,7 @@ python scripts/e2e_fanqie.py --id "BOOK_ID" --range 1-3 --options "{\"mode\":\"a
 | `smoke_health.py` | `/health` 冒烟 |
 | `e2e_hongguo.py` | 红果 search/detail → job → poll → 下文件 |
 | `e2e_fanqie.py` | 番茄 detail → job → poll → 下文件 |
+| `build_exe.py` | PyInstaller 打 Windows 单文件（含 ui + platforms） |
 | `_common.py` | `API_BASE` / `API_KEY` / httpx 客户端 |
 
 ---
