@@ -26,24 +26,36 @@ static struct {
 } HookEnv;
 
 static const char *GetMethodDesc(JNIEnv *env, jobject javaMethod) {
+    if (!HookEnv.method_utils_class || !HookEnv.get_method_desc_id) return nullptr;
     auto desc = reinterpret_cast<jstring>(env->CallStaticObjectMethod(HookEnv.method_utils_class,
                                                                       HookEnv.get_method_desc_id,
                                                                       javaMethod));
-    return env->GetStringUTFChars(desc, JNI_FALSE);
+    if (!desc) return nullptr;
+    const char *chars = env->GetStringUTFChars(desc, JNI_FALSE);
+    env->DeleteLocalRef(desc);
+    return chars;
 }
 
 static const char *GetMethodDeclaringClass(JNIEnv *env, jobject javaMethod) {
+    if (!HookEnv.method_utils_class || !HookEnv.get_method_declaring_class_id) return nullptr;
     auto desc = reinterpret_cast<jstring>(env->CallStaticObjectMethod(HookEnv.method_utils_class,
                                                                       HookEnv.get_method_declaring_class_id,
                                                                       javaMethod));
-    return env->GetStringUTFChars(desc, JNI_FALSE);
+    if (!desc) return nullptr;
+    const char *chars = env->GetStringUTFChars(desc, JNI_FALSE);
+    env->DeleteLocalRef(desc);
+    return chars;
 }
 
 static const char *GetMethodName(JNIEnv *env, jobject javaMethod) {
+    if (!HookEnv.method_utils_class || !HookEnv.get_method_name_id) return nullptr;
     auto desc = reinterpret_cast<jstring>(env->CallStaticObjectMethod(HookEnv.method_utils_class,
                                                                       HookEnv.get_method_name_id,
                                                                       javaMethod));
-    return env->GetStringUTFChars(desc, JNI_FALSE);
+    if (!desc) return nullptr;
+    const char *chars = env->GetStringUTFChars(desc, JNI_FALSE);
+    env->DeleteLocalRef(desc);
+    return chars;
 }
 
 inline static uint32_t GetAccessFlags(const char *art_method) {
@@ -99,6 +111,7 @@ static void *GetFieldMethod(JNIEnv *env, jobject field) {
 }
 
 bool CheckFlags(void *artMethod) {
+    if (!artMethod) return false;
     char *method = static_cast<char *>(artMethod);
     if (!HasAccessFlag(method, kAccNative)) {
         ALOGE("not native method");
@@ -113,13 +126,16 @@ void JniHook::HookJniFun(JNIEnv *env, jobject java_method, void *new_fun,
     const char *class_name = GetMethodDeclaringClass(env, java_method);
     const char *method_name = GetMethodName(env, java_method);
     const char *sign = GetMethodDesc(env, java_method);
-    HookJniFun(env, class_name, method_name, sign, new_fun, orig_fun, is_static);
+    if (class_name && method_name && sign) {
+        HookJniFun(env, class_name, method_name, sign, new_fun, orig_fun, is_static);
+    }
 }
 
 void
 JniHook::HookJniFun(JNIEnv *env, const char *class_name, const char *method_name, const char *sign,
                     void *new_fun, void **orig_fun, bool is_static) {
-    if (HookEnv.art_method_native_offset == 0) {
+    if (HookEnv.art_method_native_offset == 0 && HookEnv.api_level >= __ANDROID_API_P__) {
+        ALOGE("art_method_native_offset not found, skipping HookJniFun for %s %s", class_name, method_name);
         return;
     }
     jclass clazz = env->FindClass(class_name);
@@ -144,7 +160,7 @@ JniHook::HookJniFun(JNIEnv *env, const char *class_name, const char *method_name
     };
 
     auto artMethod = reinterpret_cast<uintptr_t *>(GetArtMethod(env, clazz, method));
-    if (!CheckFlags(artMethod)) {
+    if (!artMethod || !CheckFlags(artMethod)) {
         ALOGE("check flags error. class：%s, method：%s", class_name, method_name);
         return;
     }
@@ -172,24 +188,29 @@ __attribute__((section (".mytext")))  JNICALL void set_method_accessible
         (JNIEnv *env, jclass obj, jclass clazz, jobject method) {
     jmethodID methodId = env->FromReflectedMethod(method);
     char *art_method = static_cast<char *>(GetArtMethod(env, clazz, methodId));
-    AddAccessFlag(art_method, kAccPublic);
-    if (HookEnv.api_level >= __ANDROID_API_Q__) {
-        AddAccessFlag(art_method, kAccPublicApi);
+    if (art_method) {
+        AddAccessFlag(art_method, kAccPublic);
+        if (HookEnv.api_level >= __ANDROID_API_Q__) {
+            AddAccessFlag(art_method, kAccPublicApi);
+        }
     }
 }
 
 __attribute__((section (".mytext")))  JNICALL void set_field_accessible
         (JNIEnv *env, jclass obj, jclass clazz, jobject field) {
     char *artField = static_cast<char *>(GetFieldMethod(env, field));
-    AddAccessFlag(artField, kAccPublic);
-    if (HookEnv.api_level >= __ANDROID_API_Q__) {
-        AddAccessFlag(artField, kAccPublicApi);
+    if (artField) {
+        AddAccessFlag(artField, kAccPublic);
+        if (HookEnv.api_level >= __ANDROID_API_Q__) {
+            AddAccessFlag(artField, kAccPublicApi);
+        }
+        ClearAccessFlag(artField, kAccFinal);
     }
-    ClearAccessFlag(artField, kAccFinal);
 }
 
 void registerNative(JNIEnv *env) {
     jclass clazz = env->FindClass("top/niunaijun/jnihook/jni/JniHook");
+    if (!clazz) return;
     JNINativeMethod gMethods[] = {
             {"nativeOffset",  "()V",                                            (void *) native_offset},
             {"nativeOffset2", "()V",                                            (void *) native_offset2},
@@ -206,72 +227,86 @@ void JniHook::InitJniHook(JNIEnv *env, int api_level) {
     HookEnv.api_level = api_level;
 
     jclass clazz = env->FindClass("top/niunaijun/jnihook/jni/JniHook");
+    if (!clazz) return;
     jmethodID nativeOffsetId = env->GetStaticMethodID(clazz, "nativeOffset", "()V");
     jmethodID nativeOffset2Id = env->GetStaticMethodID(clazz, "nativeOffset2", "()V");
 
     jfieldID nativeOffsetFieldId = env->GetStaticFieldID(clazz, "NATIVE_OFFSET", "I");
     jfieldID nativeOffsetField2Id = env->GetStaticFieldID(clazz, "NATIVE_OFFSET_2", "I");
 
-    void *nativeOffsetField = GetFieldMethod(env, env->ToReflectedField(clazz, nativeOffsetFieldId,
-                                                                        true));
-    void *nativeOffsetField2 = GetFieldMethod(env, env->ToReflectedField(clazz, nativeOffsetField2Id,
-                                                                         true));
-    HookEnv.art_field_size = (size_t) nativeOffsetField2 - (size_t) nativeOffsetField;
+    void *nativeOffsetField = GetFieldMethod(env, env->ToReflectedField(clazz, nativeOffsetFieldId, true));
+    void *nativeOffsetField2 = GetFieldMethod(env, env->ToReflectedField(clazz, nativeOffsetField2Id, true));
+    if (nativeOffsetField && nativeOffsetField2) {
+        HookEnv.art_field_size = (size_t) nativeOffsetField2 - (size_t) nativeOffsetField;
+    }
 
     void *nativeOffset = GetArtMethod(env, clazz, nativeOffsetId);
     void *nativeOffset2 = GetArtMethod(env, clazz, nativeOffset2Id);
-    HookEnv.art_method_size = (size_t) nativeOffset2 - (size_t) nativeOffset;
+    if (nativeOffset && nativeOffset2) {
+        HookEnv.art_method_size = (size_t) nativeOffset2 - (size_t) nativeOffset;
+    }
 
-    // calc native offset
-    auto artMethod = reinterpret_cast<uintptr_t *>(nativeOffset);
-    for (int i = 0; i < HookEnv.art_method_size; ++i) {
-        if (reinterpret_cast<void *>(artMethod[i]) == native_offset) {
-            HookEnv.art_method_native_offset = i;
-            break;
+    // calc native offset safely
+    if (nativeOffset && HookEnv.art_method_size > 0) {
+        auto artMethod = reinterpret_cast<uintptr_t *>(nativeOffset);
+        size_t max_words = HookEnv.art_method_size / sizeof(uintptr_t);
+        for (size_t i = 0; i < max_words; ++i) {
+            if (reinterpret_cast<void *>(artMethod[i]) == native_offset) {
+                HookEnv.art_method_native_offset = (int) i;
+                break;
+            }
+        }
+
+        uint32_t flags = 0x0;
+        flags = flags | kAccPublic;
+        flags = flags | kAccStatic;
+        flags = flags | kAccNative;
+        flags = flags | kAccFinal;
+        if (api_level >= __ANDROID_API_Q__) {
+            flags = flags | kAccPublicApi;
+        }
+
+        char *start = reinterpret_cast<char *>(artMethod);
+        size_t max_u32 = HookEnv.art_method_size / sizeof(uint32_t);
+        for (size_t i = 1; i < max_u32; ++i) {
+            auto value = *(uint32_t *) (start + i * sizeof(uint32_t));
+            if (value == flags) {
+                HookEnv.art_method_flags_offset = (int) (i * sizeof(uint32_t));
+                break;
+            }
         }
     }
 
-    uint32_t flags = 0x0;
-    flags = flags | kAccPublic;
-    flags = flags | kAccStatic;
-    flags = flags | kAccNative;
-    flags = flags | kAccFinal;
-    if (api_level >= __ANDROID_API_Q__) {
-        flags = flags | kAccPublicApi;
-    }
-
-    char *start = reinterpret_cast<char *>(artMethod);
-    for (int i = 1; i < HookEnv.art_method_size; ++i) {
-        auto value = *(uint32_t *) (start + i * sizeof(uint32_t));
-        if (value == flags) {
-            HookEnv.art_method_flags_offset = i * sizeof(uint32_t);
-            break;
+    if (nativeOffsetField && HookEnv.art_field_size > 0) {
+        uint32_t flags = 0x0;
+        flags = flags | kAccPublic;
+        flags = flags | kAccStatic;
+        flags = flags | kAccFinal;
+        if (api_level >= __ANDROID_API_Q__) {
+            flags = flags | kAccPublicApi;
         }
-    }
-
-    flags = 0x0;
-    flags = flags | kAccPublic;
-    flags = flags | kAccStatic;
-    flags = flags | kAccFinal;
-    if (api_level >= __ANDROID_API_Q__) {
-        flags = flags | kAccPublicApi;
-    }
-    char *fieldStart = reinterpret_cast<char *>(nativeOffsetField);
-    for (int i = 1; i < HookEnv.art_field_size; ++i) {
-        auto value = *(int32_t *) (fieldStart + i * sizeof(int32_t));
-        if (value == flags) {
-            HookEnv.art_field_flags_offset = i * sizeof(int32_t);
-            break;
+        char *fieldStart = reinterpret_cast<char *>(nativeOffsetField);
+        size_t max_i32 = HookEnv.art_field_size / sizeof(int32_t);
+        for (size_t i = 1; i < max_i32; ++i) {
+            auto value = *(int32_t *) (fieldStart + i * sizeof(int32_t));
+            if (value == flags) {
+                HookEnv.art_field_flags_offset = (int) (i * sizeof(int32_t));
+                break;
+            }
         }
     }
 
     HookEnv.method_utils_class = env->FindClass("top/niunaijun/jnihook/MethodUtils");
-    HookEnv.get_method_desc_id = env->GetStaticMethodID(HookEnv.method_utils_class, "getDesc",
-                                                        "(Ljava/lang/reflect/Method;)Ljava/lang/String;");
-    HookEnv.get_method_declaring_class_id = env->GetStaticMethodID(HookEnv.method_utils_class,
-                                                                   "getDeclaringClass",
-                                                                   "(Ljava/lang/reflect/Method;)Ljava/lang/String;");
-    HookEnv.get_method_name_id = env->GetStaticMethodID(HookEnv.method_utils_class, "getMethodName",
-                                                        "(Ljava/lang/reflect/Method;)Ljava/lang/String;");
+    if (HookEnv.method_utils_class) {
+        HookEnv.method_utils_class = (jclass) env->NewGlobalRef(HookEnv.method_utils_class);
+        HookEnv.get_method_desc_id = env->GetStaticMethodID(HookEnv.method_utils_class, "getDesc",
+                                                            "(Ljava/lang/reflect/Method;)Ljava/lang/String;");
+        HookEnv.get_method_declaring_class_id = env->GetStaticMethodID(HookEnv.method_utils_class,
+                                                                       "getDeclaringClass",
+                                                                       "(Ljava/lang/reflect/Method;)Ljava/lang/String;");
+        HookEnv.get_method_name_id = env->GetStaticMethodID(HookEnv.method_utils_class, "getMethodName",
+                                                            "(Ljava/lang/reflect/Method;)Ljava/lang/String;");
+    }
 }
+
 

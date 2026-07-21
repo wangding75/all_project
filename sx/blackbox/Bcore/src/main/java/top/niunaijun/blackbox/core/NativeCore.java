@@ -31,7 +31,20 @@ public class NativeCore {
         System.loadLibrary("blackbox");
     }
 
-    public static native void init(int apiLevel);
+    public static final int HOOK_UNIX_FILE_SYSTEM = 1 << 0; // 1
+    public static final int HOOK_VM_CLASS_LOADER = 1 << 1;  // 2
+    public static final int HOOK_BINDER           = 1 << 2;  // 4
+    public static final int HOOK_SPOOF_RUNTIME    = 1 << 3;  // 8
+    public static final int HOOK_ALL_NATIVE       = 1 << 4;  // 16
+    public static final int FIXED_IO_REDIRECT     = 1 << 5;  // 32
+
+    public static final int MASK_ALL = HOOK_UNIX_FILE_SYSTEM | HOOK_VM_CLASS_LOADER | HOOK_BINDER | HOOK_SPOOF_RUNTIME | HOOK_ALL_NATIVE | FIXED_IO_REDIRECT; // 63
+
+    public static native void init(int apiLevel, int hookFlags);
+
+    public static void init(int apiLevel) {
+        init(apiLevel, MASK_ALL);
+    }
 
     public static native void enableIO();
 

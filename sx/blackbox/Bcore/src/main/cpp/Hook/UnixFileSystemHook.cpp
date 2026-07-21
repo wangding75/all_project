@@ -1,11 +1,8 @@
-//
-// Created by Milk on 4/9/21.
-//
-
 #include <IO.h>
 #include "UnixFileSystemHook.h"
-#import "JniHook/JniHook.h"
+#include "JniHook/JniHook.h"
 #include "BaseHook.h"
+#include <type_traits>
 
 /*
  * Class:     java_io_UnixFileSystem
@@ -103,10 +100,13 @@ HOOK_JNI(jboolean, setReadOnly0, JNIEnv *env, jobject obj, jobject file) {
  * Method:    getSpace0
  * Signature: (Ljava/io/File;I)J
  */
-HOOK_JNI(jboolean, getSpace0, JNIEnv *env, jobject obj, jobject file, jint t) {
+HOOK_JNI(jlong, getSpace0, JNIEnv *env, jobject obj, jobject file, jint t) {
     jobject redirect = IO::redirectPath(env, file);
     return orig_getSpace0(env, obj, redirect, t);
 }
+
+static_assert(std::is_same<decltype(new_getSpace0(nullptr, nullptr, nullptr, 0)), jlong>::value,
+              "getSpace0 JNI hook return type must be jlong to match (Ljava/io/File;I)J");
 
 void UnixFileSystemHook::init(JNIEnv *env) {
     const char *className = "java/io/UnixFileSystem";
@@ -134,4 +134,4 @@ void UnixFileSystemHook::init(JNIEnv *env) {
                         (void *) new_setReadOnly0, (void **) (&orig_setReadOnly0), false);
     JniHook::HookJniFun(env, className, "getSpace0", "(Ljava/io/File;I)J",
                         (void *) new_getSpace0, (void **) (&orig_getSpace0), false);
-}
+}

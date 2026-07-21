@@ -1,0 +1,212 @@
+﻿[
+    {
+        "Combo":  "A1",
+        "Run":  1,
+        "Flags":  63,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A1",
+        "Run":  2,
+        "Flags":  63,
+        "Reproduced":  false,
+        "SurvivalSec":  34,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A1",
+        "Run":  3,
+        "Flags":  63,
+        "Reproduced":  false,
+        "SurvivalSec":  34,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A2",
+        "Run":  1,
+        "Flags":  62,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A2",
+        "Run":  2,
+        "Flags":  62,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A2",
+        "Run":  3,
+        "Flags":  62,
+        "Reproduced":  false,
+        "SurvivalSec":  34,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A3",
+        "Run":  1,
+        "Flags":  61,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A3",
+        "Run":  2,
+        "Flags":  61,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A3",
+        "Run":  3,
+        "Flags":  61,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A4",
+        "Run":  1,
+        "Flags":  59,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A4",
+        "Run":  2,
+        "Flags":  59,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A4",
+        "Run":  3,
+        "Flags":  59,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A5",
+        "Run":  1,
+        "Flags":  55,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A5",
+        "Run":  2,
+        "Flags":  55,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A5",
+        "Run":  3,
+        "Flags":  55,
+        "Reproduced":  false,
+        "SurvivalSec":  34,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A6",
+        "Run":  1,
+        "Flags":  47,
+        "Reproduced":  false,
+        "SurvivalSec":  34,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A6",
+        "Run":  2,
+        "Flags":  47,
+        "Reproduced":  false,
+        "SurvivalSec":  34,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A6",
+        "Run":  3,
+        "Flags":  47,
+        "Reproduced":  false,
+        "SurvivalSec":  33,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A7",
+        "Run":  1,
+        "Flags":  0,
+        "Reproduced":  true,
+        "SurvivalSec":  15,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A7",
+        "Run":  2,
+        "Flags":  0,
+        "Reproduced":  true,
+        "SurvivalSec":  6,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    },
+    {
+        "Combo":  "A7",
+        "Run":  3,
+        "Flags":  0,
+        "Reproduced":  true,
+        "SurvivalSec":  16,
+        "Signal":  "",
+        "CrashLib":  "/system/lib64/libexpat.so (parserCreate+33) (BuildId: 6d2c129867cb2c05745de6e3c7186988)",
+        "PCOffset":  "000000000000c711"
+    }
+]

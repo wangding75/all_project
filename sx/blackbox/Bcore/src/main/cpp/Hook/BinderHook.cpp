@@ -6,7 +6,7 @@
 #include <IO.h>
 #include <BoxCore.h>
 #include "UnixFileSystemHook.h"
-#import "JniHook/JniHook.h"
+#include "JniHook/JniHook.h"
 
 
 

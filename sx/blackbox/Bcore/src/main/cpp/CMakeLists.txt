@@ -16,7 +16,7 @@ aux_source_directory(./ SRC1)
 aux_source_directory(Utils SRC2)
 aux_source_directory(Hook SRC3)
 aux_source_directory(JniHook SRC4)
-add_compile_options(-w)
+add_compile_options(-Wall -Wextra -Werror=return-type -Werror=incompatible-pointer-types -Werror=format)
 add_library( # Sets the name of the library.
         blackbox
         # Sets the library as a shared library.

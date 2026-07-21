@@ -171,6 +171,26 @@ public class BActivityThread extends IBActivityThread.Stub {
         return getAppConfig() == null ? 0 : getAppConfig().userId;
     }
 
+    public static int getNativeHookFlags() {
+        try {
+            String prop = System.getProperty("sx.native_hook_flags");
+            if (prop == null || prop.trim().isEmpty()) {
+                try {
+                    Class<?> spClass = Class.forName("android.os.SystemProperties");
+                    Method getMethod = spClass.getMethod("get", String.class, String.class);
+                    prop = (String) getMethod.invoke(null, "debug.sx.native_hook_flags", "");
+                } catch (Throwable ignored) {
+                }
+            }
+            if (prop != null && !prop.trim().isEmpty()) {
+                return Integer.parseInt(prop.trim());
+            }
+        } catch (Throwable ignored) {
+        }
+        return NativeCore.MASK_ALL;
+    }
+
+
     public void initProcess(AppConfig appConfig) {
         synchronized (mConfigLock) {
             if (this.mAppConfig != null && !this.mAppConfig.packageName.equals(appConfig.packageName)) {
@@ -338,7 +358,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             BRCompatibility.get().setTargetSdkVersion(applicationInfo.targetSdkVersion);
         }
 
-        NativeCore.init(Build.VERSION.SDK_INT);
+        NativeCore.init(Build.VERSION.SDK_INT, getNativeHookFlags());
         assert packageContext != null;
         IOCore.get().enableRedirect(packageContext);
 
