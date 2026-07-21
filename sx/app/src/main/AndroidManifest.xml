@@ -79,6 +79,11 @@
             android:label="@string/module_license" />
 
         <activity
+            android:name=".ui.legal.PrivacyPolicyActivity"
+            android:exported="false"
+            android:label="用户协议与隐私政策" />
+
+        <activity
             android:name=".ui.location.LocationSettingsActivity"
             android:exported="false"
             android:label="@string/module_location" />

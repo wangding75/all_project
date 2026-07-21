@@ -38,6 +38,10 @@ public class MeFragment extends Fragment {
             startActivity(new Intent(getContext(), com.sx.app.ui.probe.SpoofProbeActivity.class));
         });
 
+        view.findViewById(R.id.btn_privacy_policy).setOnClickListener(v -> {
+            startActivity(new Intent(getContext(), com.sx.app.ui.legal.PrivacyPolicyActivity.class));
+        });
+
         return view;
     }
 }
