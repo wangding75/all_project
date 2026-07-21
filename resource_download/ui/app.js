@@ -201,15 +201,23 @@
     }
   }
 
+  // 判断用户 VIP 是否在有效期内
+  function isVipActive(u) {
+    if (!u || !u.vip_expires_at) return false;
+    const t = new Date(u.vip_expires_at).getTime();
+    return !isNaN(t) && t > Date.now();
+  }
+
   // 更新所有与账号/VIP相关的 UI
   function updateAuthUI() {
     const u = state.user;
+    const isVip = isVipActive(u);
     if (u) {
       // 登录状态
       if (elements.vipUsername) elements.vipUsername.textContent = u.username;
-      if (elements.vipUserAvatar) elements.vipUserAvatar.textContent = u.is_vip ? "👑" : "👤";
+      if (elements.vipUserAvatar) elements.vipUserAvatar.textContent = isVip ? "👑" : "👤";
       if (elements.vipExpireDate) {
-        if (u.is_vip && u.vip_expires_at) {
+        if (isVip && u.vip_expires_at) {
           elements.vipExpireDate.textContent = `VIP 到期: ${formatDate(u.vip_expires_at)}`;
         } else {
           elements.vipExpireDate.textContent = "未开通 VIP";
@@ -221,9 +229,9 @@
       if (elements.btnLogoutBtn) elements.btnLogoutBtn.style.display = "block";
 
       // 设置页面
-      if (elements.settingUsernameVal) elements.settingUsernameVal.textContent = `${u.username} (${u.is_vip ? "VIP 会员" : "普通用户"})`;
+      if (elements.settingUsernameVal) elements.settingUsernameVal.textContent = `${u.username} (${isVip ? "VIP 会员" : "普通用户"})`;
       if (elements.settingVipExpireVal) {
-        elements.settingVipExpireVal.textContent = u.is_vip && u.vip_expires_at ? formatDate(u.vip_expires_at) : "未开通 VIP";
+        elements.settingVipExpireVal.textContent = isVip && u.vip_expires_at ? formatDate(u.vip_expires_at) : "未开通 VIP";
       }
       if (elements.settingBtnAuthModal) elements.settingBtnAuthModal.style.display = "none";
       if (elements.settingBtnLogout) elements.settingBtnLogout.style.display = "inline-block";
