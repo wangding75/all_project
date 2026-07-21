@@ -115,6 +115,25 @@ public class ConfigProvider extends ContentProvider {
             context.sendBroadcast(unboundIntent);
 
             return result;
+        } else if ("get_camera_bytes".equals(method)) {
+            String path = extras != null ? extras.getString("path", "") : "";
+            if (path != null && !path.isEmpty()) {
+                java.io.File file = new java.io.File(path);
+                if (file.exists() && file.canRead()) {
+                    try (java.io.FileInputStream fis = new java.io.FileInputStream(file);
+                         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = fis.read(buf)) != -1) {
+                            baos.write(buf, 0, n);
+                        }
+                        result.putByteArray("camera_bytes", baos.toByteArray());
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error reading camera bytes", e);
+                    }
+                }
+            }
+            return result;
         }
 
         return super.call(method, arg, extras);

@@ -46,7 +46,7 @@ public class SpoofRuntime {
             }
 
             if (cameraConfig != null && cameraConfig.enabled) {
-                CameraHook.install(cl, cameraConfig);
+                CameraHook.install(context, cl, cameraConfig);
             }
 
         } catch (Throwable e) {

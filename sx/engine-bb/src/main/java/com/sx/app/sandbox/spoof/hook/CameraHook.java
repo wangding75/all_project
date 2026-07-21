@@ -23,10 +23,10 @@ public class CameraHook {
     private static int mFrameWidth = 640;
     private static int mFrameHeight = 480;
 
-    public static void install(ClassLoader classLoader, CameraConfig config) {
+    public static void install(android.content.Context context, ClassLoader classLoader, CameraConfig config) {
         if (config == null || !config.enabled) return;
         sConfig = config;
-        prepareFakeMediaData();
+        prepareFakeMediaData(context);
 
         try {
             // 1. Camera1 PreviewCallback Hooks
@@ -108,30 +108,45 @@ public class CameraHook {
         }
     }
 
-    private static void prepareFakeMediaData() {
+    private static void prepareFakeMediaData(android.content.Context context) {
         if (sConfig == null || sConfig.mediaPath == null || sConfig.mediaPath.isEmpty()) {
             return;
         }
         try {
+            Bitmap bitmap = null;
             File file = new File(sConfig.mediaPath);
-            if (!file.exists()) {
-                Log.w(TAG, "Media file does not exist: " + sConfig.mediaPath);
-                return;
+            if (file.exists() && file.canRead()) {
+                bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
+            } else if (context != null) {
+                // Fallback via ConfigProvider get_camera_bytes (F1 fix for cross-process storage isolation)
+                try {
+                    String hostPkg = com.sx.app.data.ProfileRepository.getInstance().resolveCamera(context, null, 0) != null ?
+                            top.niunaijun.blackbox.BlackBoxCore.getHostPkg() : context.getPackageName();
+                    android.net.Uri providerUri = android.net.Uri.parse("content://" + hostPkg + ".config.provider");
+                    android.os.Bundle extras = new android.os.Bundle();
+                    extras.putString("path", sConfig.mediaPath);
+                    android.os.Bundle reply = context.getContentResolver().call(providerUri, "get_camera_bytes", null, extras);
+                    if (reply != null) {
+                        byte[] rawBytes = reply.getByteArray("camera_bytes");
+                        if (rawBytes != null && rawBytes.length > 0) {
+                            bitmap = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.length);
+                            Log.d(TAG, "Loaded camera media bytes via ConfigProvider fallback, bytes=" + rawBytes.length);
+                        }
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "Failed to fetch camera bytes from ConfigProvider fallback", t);
+                }
             }
 
-            Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
             if (bitmap != null) {
-                // Scale bitmap to frame dimensions
                 Bitmap scaled = Bitmap.createScaledBitmap(bitmap, mFrameWidth, mFrameHeight, true);
-
-                // Convert to JPEG bytes for takePicture
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 scaled.compress(Bitmap.CompressFormat.JPEG, 90, baos);
                 sJpegData = baos.toByteArray();
-
-                // Convert to NV21 YUV420sp for preview frame
                 sNv21Frame = getNV21(mFrameWidth, mFrameHeight, scaled);
                 Log.d(TAG, "Prepared fake camera media bytes, jpegLen=" + (sJpegData != null ? sJpegData.length : 0) + ", nv21Len=" + (sNv21Frame != null ? sNv21Frame.length : 0));
+            } else {
+                Log.w(TAG, "Could not load camera bitmap from path: " + sConfig.mediaPath);
             }
         } catch (Throwable e) {
             Log.e(TAG, "Error preparing fake media data", e);

@@ -23,5 +23,6 @@
 ## 3. 已知限制与注意事项
 
 1. **静态图片 vs 动态视频**：当前主路径（P0）使用静态图片生成 NV21 帧流；若 App 依赖硬解码人脸活体检测（如连续微动作），需配置 MP4 视频源（P1 扩展）。
-2. **分辨率自适应**：部分硬件相机仅支持特定 Aspect Ratio，在不同机型上可能存在拉伸，系统会自动按 640×480/1280×720 进行双线性采样（Bilinear Scaling）。
-3. **安全对抗限制**：对于使用 C/C++ Native 绕过 Java Camera API 直连 NDK AImageReader 的强检应用，Java 层的 Hook 无法完全拦截。
+2. **Surface / Texture 预览限制**：当前 P0 主要覆盖走 `Camera.PreviewCallback` 回调处理图像的应用（如 QR 扫码、人脸比对回调、照相拍照提取等）。对于直接通过 Surface / OpenGL (SurfaceTexture / SurfaceHolder) 硬件通道渲染画面而未注册 Callback 的 App，画面预览框仍可能显示系统相机原始纹理，但其在 Java 层获取到的帧数据和 `takePicture` 结果均已被替换为假图。Surface / TextureView 的 OpenGL 纹理硬替换标定为 P1 扩展方案。
+3. **分辨率自适应**：部分硬件相机仅支持特定 Aspect Ratio，在不同机型上可能存在拉伸，系统会自动按 640×480/1280×720 进行双线性采样（Bilinear Scaling）。
+4. **安全对抗限制**：对于使用 C/C++ Native 绕过 Java Camera API 直连 NDK AImageReader 的强检应用，Java 层的 Hook 无法完全拦截。

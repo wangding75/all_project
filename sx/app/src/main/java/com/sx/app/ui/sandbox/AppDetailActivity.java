@@ -73,8 +73,12 @@ public class AppDetailActivity extends AppCompatActivity {
                         .show();
                 return;
             }
-            mEngine.launch(mPackageName, mUserId);
-            Toast.makeText(this, "正在启动 " + appInfo.displayName() + "...", Toast.LENGTH_SHORT).show();
+            boolean ok = mEngine.launch(mPackageName, mUserId);
+            if (ok) {
+                Toast.makeText(this, "正在启动 " + appInfo.displayName() + "...", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "启动失败：授权未激活或底层引擎未就绪", Toast.LENGTH_LONG).show();
+            }
         });
 
         findViewById(R.id.btn_clone).setOnClickListener(v -> {

@@ -105,12 +105,12 @@
 
 | ID | 任务 | 状态 | 规模 | 依赖 | 验收要点 |
 |----|------|------|------|------|----------|
-| E-01 | 图片虚拟预览（单 API 路径） | todo | L | D-01 | 预览可见假图 |
-| E-02 | 视频解码循环预览 | todo | XL | E-01 | MP4 循环 |
-| E-03 | Camera1/2 覆盖策略文档化 | todo | S | E-01 | 已知限制 |
-| E-04 | 授权拦截启动/核心功能 | todo | M | B-15 | 过期不可用 |
-| E-05 | TimeGuard 网络授时 | todo | M | E-04 | 回拨无效 |
-| E-06 | 微漂移/扫描列表完善 | todo | M | D-03/D-06 | P1 需求 |
+| E-01 | 图片虚拟预览（单 API 路径） | done | L | D-01 | 预览可见假图 / PreviewCallback 数据替换 |
+| E-02 | 视频解码循环预览 | deferred | XL | E-01 | P1 可选扩展，标定于 docs/18 |
+| E-03 | Camera1/2 覆盖策略文档化 | done | S | E-01 | docs/18 已记录覆盖策略与限制 |
+| E-04 | 授权拦截启动/核心功能 | done | M | B-15 | BlackBoxSandboxEngine.launch + UI 均双向拦截 Toast |
+| E-05 | TimeGuard 网络授时 | done | M | E-04 | SxApp 异步授时，LicenseManager 可信时间校验防回拨 |
+| E-06 | 微漂移/扫描列表完善 | done | M | D-03/D-06 | Location/NetworkHook 已接入微漂移与扫描列表 |
 
 **DoD：** 相机至少一路可用；授权与防回拨可用。
 

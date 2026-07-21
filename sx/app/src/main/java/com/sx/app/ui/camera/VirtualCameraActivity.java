@@ -113,7 +113,13 @@ public class VirtualCameraActivity extends AppCompatActivity {
             if (is == null) return null;
 
             String extension = mRbVideo.isChecked() ? ".mp4" : ".jpg";
-            java.io.File dir = new java.io.File(getFilesDir(), "camera");
+            java.io.File dir = getExternalFilesDir("camera");
+            if (dir == null) {
+                dir = getExternalCacheDir();
+            }
+            if (dir == null) {
+                dir = new java.io.File(getFilesDir(), "camera");
+            }
             if (!dir.exists()) {
                 dir.mkdirs();
             }
@@ -127,6 +133,7 @@ public class VirtualCameraActivity extends AppCompatActivity {
             is.close();
             os.flush();
             os.close();
+            dest.setReadable(true, false);
             return dest.getAbsolutePath();
         } catch (Exception e) {
             e.printStackTrace();
