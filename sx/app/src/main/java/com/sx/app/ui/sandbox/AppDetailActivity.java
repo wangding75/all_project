@@ -67,7 +67,7 @@ public class AppDetailActivity extends AppCompatActivity {
                         .setTitle("未激活或已过期")
                         .setMessage("软件授权未激活或已过期，无法启动沙箱分身。请前往【我的 -> 授权管理】输入有效卡密激活。")
                         .setPositiveButton("去激活", (dialog, which) -> {
-                            startActivity(new Intent(this, com.sx.app.ui.license.LicenseActivity.class));
+                            startActivity(new Intent(this, com.sx.app.ui.LicenseActivity.class));
                         })
                         .setNegativeButton("取消", null)
                         .show();
