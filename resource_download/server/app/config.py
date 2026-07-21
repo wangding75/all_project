@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-jwt-secret"
     jwt_expire_minutes: int = 10080
 
+    # 频率限制与每日配额（阶段 D-4）
+    rate_limit_per_minute: int = 60
+    rate_limit_auth_per_minute: int = 10
+    free_jobs_per_day: int = 0
+    vip_jobs_per_day: int = 50
+
     # ADB 与 Frida 配置（番茄 App 会话）
     adb_path: str = r"D:\install\Netease\MuMu\nx_main\adb.exe"
     adb_device: str = "127.0.0.1:16384"

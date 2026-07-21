@@ -1,8 +1,12 @@
 # 阶段 D — 商业化基础实施方案
 
-> **状态**: D-0、D-1 与 D-2 ✅ 已编码；D-4+ 📋 设计待编码  
-> **关联**: [`POST_MVP_PLAN.md`](../POST_MVP_PLAN.md) · [`business_landing_architecture.md`](../business_landing_architecture.md) · 当前代码 `0.2.0`  
-> **原则**: 先可运营的「用户 + VIP + 限流」，后「云端设备池」；**不 silent 破坏** 现有脚本 E2E 与本机桌面体验。
+> **状态**: D-0、D-1、D-2、D-4 ✅；**D-3** 待编码；全部完成后进入商业产品阶段  
+> **关联**:  
+> - [`POST_MVP_PLAN.md`](../POST_MVP_PLAN.md)  
+> - [`COMMERCIAL_V1_PLAN.md`](./COMMERCIAL_V1_PLAN.md) ← **D 出口后的商业 V1.0（E0～E6）**  
+> - [`business_landing_architecture.md`](../business_landing_architecture.md)  
+> - 当前代码 `0.2.0`  
+> **原则**: 先「用户 + VIP + 限流 + 签名池」技术底座，再全面商业产品化；**不 silent 破坏** dev e2e。
 
 ---
 
@@ -42,11 +46,13 @@
 ## 1. 切片与推荐顺序
 
 ```text
-D-0  鉴权并存与配置开关     ← 先做，保 e2e
-D-1  SQLite + 用户 + JWT
-D-2  卡密核销 + VIP 门闸
-D-4  限流 + 日配额          ← 先于 D-3
-D-3  Redroid / 签名池       ← 独立里程碑，可另开文档
+D-0  鉴权并存与配置开关     ✅
+D-1  SQLite + 用户 + JWT    ✅
+D-2  卡密核销 + VIP 门闸    ✅
+D-4  限流 + 日配额          ← 当前
+D-3  Redroid / 签名池       ← D-4 后；独立里程碑
+        ↓
+阶段 E  商业产品 V1.0      → docs/COMMERCIAL_V1_PLAN.md
 ```
 
 **不要**一次 PR 做完 D-1～D-4。每切片可独立合并、独立回滚。
@@ -344,6 +350,15 @@ JobManager → SignPoolClient → [节点健康检查] → Redroid/模拟器 wor
 - [x] `gen_card_keys` 批量生成脚本
 - [x] test_auth_d2.py 测试覆盖且全绿
 
+### D-4 开工前
+
+- [x] UsageDaily 表 ORM 与 SQLite 自动创建
+- [x] config 与 .env.example 新增限流及配额参数
+- [x] in-memory 固定窗口 1 分钟 rate limiter
+- [x] `UsageDaily` 日用配额校验层
+- [x] global 及 auth 路由限流与 quota 日配额逻辑接入
+- [x] test_quota_d4.py 测试覆盖且全绿 (共 22 条用例通过)
+
 ---
 
 ## 12. 修订记录
@@ -352,3 +367,4 @@ JobManager → SignPoolClient → [节点健康检查] → Redroid/模拟器 wor
 |------|------|
 | 2026-07-20 | 初稿：D-0 并存、D-1/D-2/D-4 优先、D-3 后置；对齐现网 API Key + JobManager |
 | 2026-07-20 | D-0 编码落地：config / auth / router / api.md / .env.example |
+| 2026-07-20 | 衔接 COMMERCIAL_V1_PLAN：D-4→D-3 出口后进入 E0～E6 商业产品开发 |

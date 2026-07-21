@@ -52,10 +52,15 @@ def fixture_client(db_session):
 
 @pytest.fixture(autouse=True)
 def reset_settings():
-    """每次测试前后重置 settings 状态。"""
+    """每次测试前后重置 settings 状态和限流缓存。"""
     settings = get_settings()
     original_auth_mode = settings.auth_mode
     original_api_key = settings.api_key
+
+    from app.rate_limit import _rate_limit_lock, _rate_limit_cache
+    with _rate_limit_lock:
+        _rate_limit_cache.clear()
+
     yield
     settings.auth_mode = original_auth_mode
     settings.api_key = original_api_key

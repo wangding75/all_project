@@ -3,7 +3,9 @@
 > **⚠️ 本文为商业化阶段规划蓝图，尚未实施编码。**
 >
 > 对应迭代：**POST_MVP_PLAN 阶段 D**。  
-> **可执行切片与迁移策略（D-0～D-4 顺序）以 [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) 为准**；本文保留业务总览、表结构灵感与方案 B 鉴权示意。
+> **阶段 D 技术切片**以 [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) 为准。  
+> **D-4+D-3 完成之后的商业产品全面开发**以 [`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md)（E0～E6）为准。  
+> 本文保留业务总览、表结构灵感与方案 B 鉴权示意。
 >
 > 架构决策见 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md)；当前任务见 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。
 >

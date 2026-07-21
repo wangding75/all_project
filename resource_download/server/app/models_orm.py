@@ -48,3 +48,13 @@ class CardKey(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+
+class UsageDaily(Base):
+    """每日配额使用表模型。"""
+
+    __tablename__ = "usage_daily"
+
+    user_id = Column(Integer, primary_key=True)
+    day = Column(String(10), primary_key=True)  # UTC YYYY-MM-DD
+    job_count = Column(Integer, nullable=False, default=0)

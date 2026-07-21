@@ -33,8 +33,11 @@ from app.models import (
 )
 from platforms.registry import get_platform, list_platforms
 from app.api.auth_router import auth_router
+from app.rate_limit import ip_rate_limiter
+from app.db import get_db
+from sqlalchemy.orm import Session
 
-api_router = APIRouter()
+api_router = APIRouter(dependencies=[Depends(ip_rate_limiter("global"))])
 api_router.include_router(auth_router)
 
 
@@ -99,7 +102,8 @@ async def detail(
 @api_router.post("/v1/jobs", response_model=JobResponse)
 async def create_job(
     body: JobCreateRequest,
-    _: Identity = Depends(require_vip),
+    identity: Identity = Depends(require_vip),
+    db: Session = Depends(get_db),
 ) -> JobResponse:
     try:
         get_platform(body.platform)
@@ -107,6 +111,11 @@ async def create_job(
         raise HTTPException(status_code=501, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 每日配额校验
+    from app.quota import check_job_quota, increment_job_quota
+    check_job_quota(identity, db)
+
     manager = get_job_manager()
     try:
         record = await manager.create_job(
@@ -117,6 +126,9 @@ async def create_job(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+    # 创建成功后累加配额计数
+    increment_job_quota(identity, db)
     return record.to_response()
 
 

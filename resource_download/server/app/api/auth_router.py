@@ -26,6 +26,7 @@ from app.schemas_auth import (
     UserRegisterRequest,
     UserRegisterResponse,
 )
+from app.rate_limit import ip_rate_limiter
 
 auth_router = APIRouter()
 
@@ -34,6 +35,7 @@ auth_router = APIRouter()
     "/v1/auth/register",
     response_model=UserRegisterResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(ip_rate_limiter("auth"))],
 )
 def register(
     body: UserRegisterRequest,
@@ -71,6 +73,7 @@ def register(
 @auth_router.post(
     "/v1/auth/login",
     response_model=UserLoginResponse,
+    dependencies=[Depends(ip_rate_limiter("auth"))],
 )
 def login(
     body: UserLoginRequest,

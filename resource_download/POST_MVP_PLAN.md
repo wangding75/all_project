@@ -9,10 +9,11 @@
 > | [`DEV_ROADMAP.md`](./DEV_ROADMAP.md) | **历史执行记录**（MVP-H/F 已完成任务归档） |
 > | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | **逆向/运维知识**（签名、解密、设备坑）— 不写任务状态 |
 > | [`docs/release.md`](./docs/release.md) | **打包与首次运行**（阶段 C） |
-> | [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | **阶段 D 实施方案**（D-0 已编码；D-1+ 设计） |
-> | [`business_landing_architecture.md`](./business_landing_architecture.md) | **商业化蓝图总览**（与 STAGE_D_PLAN 互补） |
+> | [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | **阶段 D 技术底座**（D-0～D-2 已编码；D-4/D-3 待完成） |
+> | [`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) | **商业产品 V1.0**（**D-4+D-3 出口之后**全面开发） |
+> | [`business_landing_architecture.md`](./business_landing_architecture.md) | **商业化蓝图总览** |
 >
-> **生成 / 修订**: 2026-07-20（v1.4 D-0 鉴权并存落地）  
+> **生成 / 修订**: 2026-07-20（v1.5 衔接商业 V1.0 计划）  
 > **代码版本**: `0.2.0`（服务端 `__version__`）
 
 ---
@@ -30,7 +31,8 @@
 | **阶段 A** | 服务端稳定化 | Job 恢复/上限/列表/取消/日志 | ✅ 完成 |
 | **阶段 B** | UI 诚实闭环 | 无假成功、Jobs 轮询、设置 | ✅ 完成 |
 | **阶段 C** | 打包与分发 | PyWebView 桌面壳 + `build_exe` + release | ✅ 完成（`826250b` 评审修复） |
-| **阶段 D** | 商业化基础 | 见 [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | 🔄 **D-0/D-1/D-2 已落地**；D-4+ 未编码 |
+| **阶段 D** | 商业化技术底座 | [`STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | 🔄 D-0～D-2 ✅；**D-4 → D-3** 待完成 |
+| **阶段 E** | 商业产品 V1.0 | [`COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) | 📋 **D-4+D-3 出口后启动** |
 
 ### 核心模块（当前）
 
@@ -102,19 +104,35 @@ scripts/e2e_*.py        ✅ GET /v1/files/{file_id}
 - [x] 评审修复提交 `826250b`
 - [ ] （可选）`INCLUDE_VENDOR=1`、noconsole + 日志文件、安装器、CI
 
-### 阶段 D — 商业化基础 🔄 D-0/D-1/D-2 完成
+### 阶段 D — 商业化技术底座 🔄 D-0～D-2/D-4 完成
 
-> **实施方案（权威切片）**: [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md)  
-> **业务蓝图**: [`business_landing_architecture.md`](./business_landing_architecture.md)  
-> **未实施 VIP 前**：redeem 保持 Stub/未开通语义，UI 不得假成功 VIP。
+> **实施方案**: [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md)  
+> **D 全部完成后的商业产品开发**: [`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md)（E0～E6）  
+> **业务蓝图**: [`business_landing_architecture.md`](./business_landing_architecture.md)
 
 | 切片 | 内容 | 状态 |
 |------|------|------|
-| **D-0** | `AUTH_MODE` + `Identity` / `require_identity`；路由统一；JWT 占位 501 | ✅ 完成 |
+| **D-0** | `AUTH_MODE` + `Identity` / `require_identity` | ✅ 完成 |
 | **D-1** | SQLite + 用户注册/登录 + JWT | ✅ 完成 |
 | **D-2** | 真实卡密核销 + VIP 门闸（jobs） | ✅ 完成 |
-| **D-4** | 限流 + 下载配额（先于 D-3） | ⏳ 待编码 |
-| **D-3** | Redroid / 签名池（独立里程碑） | ⏳ 后置 |
+| **D-4** | 限流 + 下载配额（先于 D-3） | ✅ 完成 |
+| **D-3** | Redroid / 签名池 | ⏳ D-4 之后 |
+
+### 阶段 E — 商业产品 V1.0 📋 排期锁定（D 出口后开工）
+
+> **唯一权威**：[docs/COMMERCIAL_V1_PLAN.md](./docs/COMMERCIAL_V1_PLAN.md)  
+> **前提**：D-4 ✅ 且 D-3 ✅（见该文档 §1 出口标准 X1～X5）  
+> **目标**：可试售、可运营的商业产品，而非 Demo。
+
+| 切片 | 内容 | 状态 |
+|------|------|------|
+| **E0** | 发布门禁与履约质量（双平台 e2e 门禁） | 📋 待 D 出口 |
+| **E1** | 多用户 Job/文件隔离 | 📋 |
+| **E2** | 客户端登录/兑卡/VIP 闭环 | 📋 |
+| **E3** | 生产安全默认（禁默认密钥上公网） | 📋 |
+| **E4** | 最小运营（封禁/废卡批次） | 📋 |
+| **E5** | 可观测性与备份 | 📋 |
+| **E6** | 正式发行与 `v1.0.0` 清单 | 📋 |
 
 **D-0 交付**
 
@@ -139,6 +157,15 @@ scripts/e2e_*.py        ✅ GET /v1/files/{file_id}
 - [x] `/v1/jobs` 挂载 `require_vip` 校验，支持 X-API-Key/ops 管理员直接绕过
 - [x] `gen_card_keys.py` 命令行卡密生成工具，修复 Windows Unicode 编码异常
 - [x] pytest 全绿覆盖，含 5 条 D-2 新增验证用例 (总 17 条测试通过)
+
+**D-4 交付**
+
+- [x] SQLite 每日配额表 (usage_daily) 定义与 lifespan 自动建表
+- [x] config.py 和 .env.example 暴露限流与配额配置
+- [x] 线程安全的进程内内存 IP 频率限流器 (1 分钟固定窗口)，豁免 /health 及探活
+- [x] `/v1/auth/register` 与 `/v1/auth/login` 单独计入严格限流，global 排除双计
+- [x] VIP 每日创建任务配额校验，ops/API Key 豁免
+- [x] pytest 全绿覆盖，包含 6 条新增集成测试用例 (总 22 条测试通过)
 
 
 
@@ -174,14 +201,19 @@ scripts/e2e_*.py        ✅ GET /v1/files/{file_id}
 
 ```
 已完成
-  阶段 0 / A / B / C（含 PyWebView 桌面壳与 826250b 评审修复）
+  0 / A / B / C
+  D-0 鉴权并存 · D-1 用户 JWT · D-2 卡密与 VIP 门闸 · D-4 限流与日配额
 
 当前
-  阶段 D-0 ✅ AUTH_MODE + require_identity
-  下一编码: D-1 用户/JWT → D-2 卡密/VIP → D-4 限流配额 → D-3 池
+  D-3 签名/设备池     ← 待编码/待设计
 
-可选
-  P2 体验、阶段 C 安装器/CI、双平台 e2e 实跑
+D 出口后（全面商业产品开发）
+  阶段 E = docs/COMMERCIAL_V1_PLAN.md
+  E0 履约门禁 → E1 隔离 → E2 客户端闭环
+  → E3 生产安全 → E4 运营 → E5 可观测 → E6 发 v1.0.0
+
+可选穿插
+  P2 体验债（不挡 D/E 主线）
 ```
 
 ---
@@ -193,5 +225,6 @@ scripts/e2e_*.py        ✅ GET /v1/files/{file_id}
 | 2026-07-20 | v1.0 | MVP 结束初稿 |
 | 2026-07-20 | v1.1 | 全库评审：P0 下载缺口、阶段顺序、文档层级 |
 | 2026-07-20 | v1.2 | 勾选 0/A/B；启动阶段 C；版本 0.2.0 |
-| 2026-07-20 | v1.3 | 阶段 C ✅（PyWebView + `826250b`）；起草 `docs/STAGE_D_PLAN.md`；阶段 D 进入设计完成态 |
-| 2026-07-20 | v1.4 | D-0 落地：`require_identity` / AUTH_MODE / api.md / .env.example |
+| 2026-07-20 | v1.3 | 阶段 C ✅；起草 STAGE_D_PLAN |
+| 2026-07-20 | v1.4 | D-0 落地 |
+| 2026-07-20 | v1.5 | D-1/D-2 完成态；**新增 COMMERCIAL_V1_PLAN（E0～E6）**；明确 D-4→D-3→阶段 E |

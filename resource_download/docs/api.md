@@ -42,7 +42,14 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 - `kind=api_key`，`is_ops=true`：运维/本机 Key，VIP 门闸可放行
 - `kind=user`：已登录用户，填充 `user_id` / `username`
 
-**本阶段不对 jobs 强制 VIP**（D-2）。
+### 频率限制与每日配额（D-4）
+
+为保障服务稳定性，系统对 API 请求进行限流与每日额度配额控制：
+
+- **全站 IP 限流**：按客户端 IP 限制，默认最大 `60` 次每分钟。超过限制返回 **429 Too Many Requests**，携带提示 `{"detail": "请求过于频繁"}`。探活接口 `/health` 及 `/` 豁免限流。
+- **注册/登录限流**：针对 `/v1/auth/register` 与 `/v1/auth/login` 进行更严格的速率限制，默认最大 `10` 次每分钟。超过限制返回 **429 Too Many Requests**。
+- **VIP 每日任务配额**：非 ops 的普通 VIP 用户每日可建任务数（`POST /v1/jobs`）受 `VIP_JOBS_PER_DAY`（默认 `50`）限制，超过日配额将返回 **429 Too Many Requests**，返回细节为 `{"detail": "今日下载配额已用尽"}`。
+- **管理员 (ops / X-API-Key) 豁免**：使用有效 API Key 发起的请求完全不受每日配额计数及配额限制的影响。
 
 ---
 
