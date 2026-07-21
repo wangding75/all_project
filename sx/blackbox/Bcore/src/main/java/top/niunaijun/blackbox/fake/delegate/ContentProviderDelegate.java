@@ -37,6 +37,8 @@ public class ContentProviderDelegate {
     private static Set<String> sInjected = new HashSet<>();
 
     public static void update(Object holder, String auth) {
+        if (holder == null)
+            return;
         IInterface iInterface;
         if (BuildCompat.isOreo()) {
             iInterface = BRContentProviderHolderOreo.get(holder).provider();
@@ -44,7 +46,7 @@ public class ContentProviderDelegate {
             iInterface = BRIActivityManagerContentProviderHolder.get(holder).provider();
         }
 
-        if (iInterface instanceof Proxy)
+        if (iInterface == null || iInterface instanceof Proxy)
             return;
         IInterface bContentProvider;
         switch (auth) {

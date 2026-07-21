@@ -507,6 +507,8 @@ public class BActivityThread extends IBActivityThread.Stub {
             if (clientRecord == null)
                 return;
             Activity activity = getActivityByToken(token);
+            if (activity == null)
+                return;
 
             while (activity.getParent() != null) {
                 activity = activity.getParent();
@@ -579,9 +581,16 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     public static Activity getActivityByToken(IBinder token) {
+        if (token == null)
+            return null;
         Map<IBinder, Object> iBinderObjectMap =
                 BRActivityThread.get(BlackBoxCore.mainThread()).mActivities();
-        return BRActivityThreadActivityClientRecord.get(iBinderObjectMap.get(token)).activity();
+        if (iBinderObjectMap == null)
+            return null;
+        Object record = iBinderObjectMap.get(token);
+        if (record == null)
+            return null;
+        return BRActivityThreadActivityClientRecord.get(record).activity();
     }
 
     private void onBeforeCreateApplication(String packageName, String processName, Context context) {
