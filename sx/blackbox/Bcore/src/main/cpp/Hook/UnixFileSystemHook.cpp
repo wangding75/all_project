@@ -80,7 +80,7 @@ HOOK_JNI(jboolean, createDirectory0, JNIEnv *env, jobject obj, jobject path) {
  * Method:    setLastModifiedTime0
  * Signature: (Ljava/io/File;J)Z
  */
-HOOK_JNI(jboolean, setLastModifiedTime0, JNIEnv *env, jobject obj, jobject file, jobject time) {
+HOOK_JNI(jboolean, setLastModifiedTime0, JNIEnv *env, jobject obj, jobject file, jlong time) {
     jobject redirect = IO::redirectPath(env, file);
     return orig_setLastModifiedTime0(env, obj, redirect, time);
 }
@@ -105,6 +105,22 @@ HOOK_JNI(jlong, getSpace0, JNIEnv *env, jobject obj, jobject file, jint t) {
     return orig_getSpace0(env, obj, redirect, t);
 }
 
+static_assert(std::is_same<decltype(new_canonicalize0(nullptr, nullptr, nullptr)), jstring>::value,
+              "canonicalize0 return type must be jstring");
+static_assert(std::is_same<decltype(new_getLastModifiedTime0(nullptr, nullptr, nullptr)), jlong>::value,
+              "getLastModifiedTime0 return type must be jlong");
+static_assert(std::is_same<decltype(new_setPermission0(nullptr, nullptr, nullptr, 0, false, false)), jboolean>::value,
+              "setPermission0 return type must be jboolean");
+static_assert(std::is_same<decltype(new_createFileExclusively0(nullptr, nullptr, nullptr)), jboolean>::value,
+              "createFileExclusively0 return type must be jboolean");
+static_assert(std::is_same<decltype(new_list0(nullptr, nullptr, nullptr)), jobjectArray>::value,
+              "list0 return type must be jobjectArray");
+static_assert(std::is_same<decltype(new_createDirectory0(nullptr, nullptr, nullptr)), jboolean>::value,
+              "createDirectory0 return type must be jboolean");
+static_assert(std::is_same<decltype(new_setLastModifiedTime0(nullptr, nullptr, nullptr, 0L)), jboolean>::value,
+              "setLastModifiedTime0 return type must be jboolean");
+static_assert(std::is_same<decltype(new_setReadOnly0(nullptr, nullptr, nullptr)), jboolean>::value,
+              "setReadOnly0 return type must be jboolean");
 static_assert(std::is_same<decltype(new_getSpace0(nullptr, nullptr, nullptr, 0)), jlong>::value,
               "getSpace0 JNI hook return type must be jlong to match (Ljava/io/File;I)J");
 

@@ -358,7 +358,26 @@ public class BActivityThread extends IBActivityThread.Stub {
             BRCompatibility.get().setTargetSdkVersion(applicationInfo.targetSdkVersion);
         }
 
-        NativeCore.init(Build.VERSION.SDK_INT, getNativeHookFlags());
+        int flags = getNativeHookFlags();
+        String runId = System.getProperty("sx.run_id", "");
+        if (runId.isEmpty()) {
+            try {
+                Class<?> spClass = Class.forName("android.os.SystemProperties");
+                Method getMethod = spClass.getMethod("get", String.class, String.class);
+                runId = (String) getMethod.invoke(null, "debug.sx.run_id", "");
+            } catch (Throwable ignored) {}
+        }
+        Slog.d(TAG, "SX_TARGET_BOUND: RunId=" + runId +
+                " virtualPackage=" + packageName +
+                " virtualProcessName=" + processName +
+                " hostProcessName=" + BlackBoxCore.getHostPkg() +
+                " pid=" + android.os.Process.myPid() +
+                " uid=" + android.os.Process.myUid() +
+                " userId=" + getUserId() +
+                " requestedFlags=" + flags +
+                " appliedFlags=" + flags);
+
+        NativeCore.init(Build.VERSION.SDK_INT, flags);
         assert packageContext != null;
         IOCore.get().enableRedirect(packageContext);
 
