@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Strict Native Crash Diagnostics Evidence Collector for SX Sandbox (SX-EH-01R)
+    Strict Native Crash Evidence Collector for SX Sandbox (SX-EH-02)
 #>
 
 param(
@@ -29,40 +29,40 @@ if (-not (Test-Path $OutputDir)) {
 
 Write-Host "[*] Starting Collector for $RunLabel (Combo: $ComboName)..." -ForegroundColor Green
 
-# Ensure ADB Connection
 adb connect $DeviceSerial | Out-Null
 
-# Step 1: Record Git and Device Info
+# 1. Record Git & Device Info
 & git -C $SxRootDir log -1 --oneline > "$OutputDir\git.txt"
 $gitCommit = (Get-Content "$OutputDir\git.txt" | Select-Object -First 1)
+
+$hostUidRaw = adb -s $DeviceSerial shell "pm list packages -U | grep $HostPackage"
+$hostUid = if ($hostUidRaw -match "uid:(\d+)") { $matches[1] } else { "" }
 
 adb -s $DeviceSerial shell getprop > "$OutputDir\device-properties.txt"
 $abiList = adb -s $DeviceSerial shell getprop ro.product.cpu.abilist
 $nativeBridge = adb -s $DeviceSerial shell getprop ro.dalvik.vm.native.bridge
-"CPU ABI List: $abiList`nNative Bridge: $nativeBridge" > "$OutputDir\abi-native-bridge.txt"
 
-# Step 2: Record Tombstones BEFORE Run
-$tombBeforeRaw = adb -s $DeviceSerial shell "ls -la /data/tombstones/" 2>&1
-$tombBeforeRaw > "$OutputDir\tombstone-before.txt"
+# 2. Record Pre-run Tombstone List
+adb -s $DeviceSerial shell "ls -la /data/tombstones/" > "$OutputDir\tombstone-before.txt" 2>&1
 
-# Step 3: Configure Device Flags and RunId
+# 3. Configure Flags
 if (-not $IsA7) {
     adb -s $DeviceSerial shell setprop debug.sx.native_hook_flags "$RequestedFlags"
     adb -s $DeviceSerial shell setprop debug.sx.run_id "$RunId"
 }
 
-# Step 4: Clear Logcat BEFORE Launching
+# 4. Clear Logcat BEFORE Launch
 adb -s $DeviceSerial logcat -c
 $runStartTime = Get-Date
 
-# Step 5: Launch Application
+# 5. Launch Target
 if ($IsA7) {
     Write-Host "    Launching $TargetPackage directly on OS (A7)..." -ForegroundColor Cyan
     adb -s $DeviceSerial shell am force-stop $TargetPackage
     Start-Sleep -Seconds 1
     adb -s $DeviceSerial shell monkey -p $TargetPackage -c android.intent.category.LAUNCHER 1 > "$OutputDir\launch.log" 2>&1
 } else {
-    Write-Host "    Launching $TargetPackage inside SX sandbox (ShortcutLaunchActivity)..." -ForegroundColor Cyan
+    Write-Host "    Launching $TargetPackage inside SX sandbox..." -ForegroundColor Cyan
     adb -s $DeviceSerial shell am force-stop $HostPackage
     Start-Sleep -Seconds 1
     adb -s $DeviceSerial shell am start -n "$HostPackage/com.sx.app.ui.sandbox.ShortcutLaunchActivity" --es package_name $TargetPackage --ei user_id 0 > "$OutputDir\launch.log" 2>&1
@@ -70,52 +70,51 @@ if ($IsA7) {
 
 Start-Sleep -Seconds 4
 
-# Step 6: Verify Target Process and Bound Mark
+# 6. Verify Target Main Process Binding Strictly
 $targetStarted = $false
 $targetPid = ""
 $virtualProcessName = ""
 $appliedFlags = -1
+$initialStartTime = ""
 
 $logcatEarly = adb -s $DeviceSerial logcat -d
 
 if ($IsA7) {
-    $psOutput = adb -s $DeviceSerial shell ps -A | Select-String -Pattern "com.quark.browser"
+    $psOutput = adb -s $DeviceSerial shell "ps -A | grep 'com.quark.browser$'"
     if ($psOutput) {
+        $parts = $psOutput -split "\s+"
         $targetStarted = $true
-        $targetPid = ($psOutput -split "\s+")[1]
+        $targetPid = $parts[1]
         $virtualProcessName = "com.quark.browser"
         $appliedFlags = 0
     }
 } else {
-    $boundMatch = [regex]::Match($logcatEarly, "SX_TARGET_BOUND: RunId=$RunId virtualPackage=([^\s]+) virtualProcessName=([^\s]+) hostProcessName=([^\s]+) pid=(\d+) uid=(\d+) userId=(\d+) requestedFlags=(\d+) appliedFlags=(\d+)")
-    if (-not $boundMatch.Success) {
-        # Fallback search without RunId match if property was cached
-        $boundMatch = [regex]::Match($logcatEarly, "SX_TARGET_BOUND: RunId=.* virtualPackage=$TargetPackage virtualProcessName=([^\s]+) hostProcessName=([^\s]+) pid=(\d+) uid=(\d+) userId=(\d+) requestedFlags=(\d+) appliedFlags=(\d+)")
-    }
+    # Strict matching of SX_TARGET_BOUND for main process
+    $boundMatch = [regex]::Match($logcatEarly, "SX_TARGET_BOUND: RunId=$RunId virtualPackage=$TargetPackage virtualProcessName=$TargetPackage hostProcessName=([^\s]+) pid=(\d+) uid=(\d+) userId=0 requestedFlags=(\d+) appliedFlags=(\d+)")
     if ($boundMatch.Success) {
         $targetStarted = $true
-        $virtualPackageName = $boundMatch.Groups[1].Value
-        $virtualProcessName = $boundMatch.Groups[2].Value
-        $targetPid = $boundMatch.Groups[4].Value
-        $appliedFlags = [int]$boundMatch.Groups[8].Value
+        $virtualProcessName = $TargetPackage
+        $targetPid = $boundMatch.Groups[2].Value
+        $appliedFlags = [int]$boundMatch.Groups[5].Value
         "AppliedFlags=$appliedFlags`nRequestedFlags=$RequestedFlags`nPid=$targetPid" > "$OutputDir\applied-flags.txt"
-    } else {
-        # Check ps for fallback pid
-        $psOutput = adb -s $DeviceSerial shell ps -A | Select-String -Pattern "com.quark.browser"
-        if ($psOutput) {
-            $targetStarted = $true
-            $targetPid = ($psOutput -split "\s+")[1]
-            $virtualProcessName = "com.quark.browser"
-            $appliedFlags = $RequestedFlags
+    }
+}
+
+if ($targetStarted -and $targetPid) {
+    $statOutput = adb -s $DeviceSerial shell "cat /proc/$targetPid/stat 2>/dev/null"
+    if ($statOutput) {
+        $statParts = $statOutput -split "\s+"
+        if ($statParts.Count -gt 21) {
+            $initialStartTime = $statParts[21]
         }
     }
 }
 
-Write-Host "    Target Started : $targetStarted (PID: $targetPid, AppliedFlags: $appliedFlags)" -ForegroundColor Yellow
+Write-Host "    Target Main Process Started: $targetStarted (PID: $targetPid, StartTime: $initialStartTime, AppliedFlags: $appliedFlags)" -ForegroundColor Yellow
 
-# Step 7: Monitor Loop
+# 7. Monitor Execution Loop
 $crashed = $false
-$crashType = "" # NATIVE_CRASH or JAVA_CRASH
+$crashType = ""
 $survivalSeconds = 0
 $status = "UNKNOWN"
 
@@ -126,33 +125,37 @@ if (-not $targetStarted) {
         Start-Sleep -Seconds 1
         $survivalSeconds = [int]((Get-Date) - $runStartTime).TotalSeconds
 
-        # Monitor process survival
-        if ($IsA7) {
-            $checkPs = adb -s $DeviceSerial shell ps -A | Select-String -Pattern "com.quark.browser"
-        } else {
-            $checkPs = adb -s $DeviceSerial shell ps -A | Select-String -Pattern "$targetPid"
+        # Strict Process Survival Check
+        $statCheck = adb -s $DeviceSerial shell "cat /proc/$targetPid/stat 2>/dev/null"
+        $cmdCheck = adb -s $DeviceSerial shell "cat /proc/$targetPid/cmdline 2>/dev/null"
+        
+        $isAlive = $false
+        if ($statCheck -and $cmdCheck -match "com.quark.browser") {
+            $currentParts = $statCheck -split "\s+"
+            if ($currentParts.Count -gt 21 -and $currentParts[21] -eq $initialStartTime) {
+                $isAlive = $true
+            }
         }
 
-        # Check logcat for crashes
+        # Strict Logcat Crash Check for exact target PID
         $currentLogcat = adb -s $DeviceSerial logcat -b crash -d
-        if ($currentLogcat -match "Fatal signal (\d+ \([^)]+\))") {
+        if ($currentLogcat -match "Fatal signal.*pid\s+$targetPid\b|Fatal signal.*>>> $TargetPackage <<<") {
             $crashed = $true
             $crashType = "NATIVE_CRASH"
-            Write-Host "    [!] NATIVE_CRASH detected at $survivalSeconds seconds!" -ForegroundColor Red
+            Write-Host "    [!] NATIVE_CRASH confirmed for PID $targetPid at $survivalSeconds seconds!" -ForegroundColor Red
             break
         }
-        if ($currentLogcat -match "FATAL EXCEPTION") {
+        if ($currentLogcat -match "FATAL EXCEPTION.*pid\s+$targetPid\b") {
             $crashed = $true
             $crashType = "JAVA_CRASH"
-            Write-Host "    [!] JAVA_CRASH detected at $survivalSeconds seconds!" -ForegroundColor Red
+            Write-Host "    [!] JAVA_CRASH confirmed for PID $targetPid at $survivalSeconds seconds!" -ForegroundColor Red
             break
         }
 
-        if (-not $checkPs -and $survivalSeconds -gt 5) {
-            # Process exited without logcat crash record
+        if (-not $isAlive -and $survivalSeconds -gt 5) {
             $crashed = $true
             $crashType = "PROCESS_LOST"
-            Write-Host "    [!] Process exited/lost at $survivalSeconds seconds." -ForegroundColor Yellow
+            Write-Host "    [!] Main process $targetPid exited/lost at $survivalSeconds seconds." -ForegroundColor Yellow
             break
         }
     }
@@ -172,21 +175,27 @@ if (-not $targetStarted) {
 
 $runEndTime = Get-Date
 
-# Step 8: Post-Run Artifact Capture
+# 8. Post-run Artifact Capture
 adb -s $DeviceSerial logcat -d > "$OutputDir\logcat-all.txt" 2>&1
 adb -s $DeviceSerial logcat -b crash -d > "$OutputDir\logcat-crash.txt" 2>&1
 adb -s $DeviceSerial shell ps -A > "$OutputDir\process-tree.txt" 2>&1
 adb -s $DeviceSerial shell dumpsys activity > "$OutputDir\dumpsys-activity.txt" 2>&1
+adb -s $DeviceSerial shell "ls -la /data/tombstones/" > "$OutputDir\tombstone-after.txt" 2>&1
 
-$tombAfterRaw = adb -s $DeviceSerial shell "ls -la /data/tombstones/" 2>&1
-$tombAfterRaw > "$OutputDir\tombstone-after.txt"
+# 9. Guest & Host Tombstone Separation
+$guestAbi = $null
+$guestSignal = $null
+$guestThread = $null
+$guestPc = $null
+$guestModule = $null
+$guestModuleOffset = $null
+$guestBuildId = $null
 
-# Step 9: Tombstone Extraction with Strict PID Validation
-$signal = $null
-$faultAddr = $null
-$crashLib = $null
-$pcOffset = $null
-$topFrames = @()
+$hostAbi = $null
+$hostPc = $null
+$hostModule = $null
+$hostFunction = $null
+$hostBuildId = $null
 $matchedTombstoneFile = ""
 
 if ($status -eq "NATIVE_CRASH" -and $targetPid) {
@@ -197,25 +206,28 @@ if ($status -eq "NATIVE_CRASH" -and $targetPid) {
             if (-not $tf) { continue }
             $tContent = adb -s $DeviceSerial shell "cat $tf" 2>$null
             if ($tContent -match "pid:\s*$targetPid\b") {
-                # Matched exact PID!
                 $matchedTombstoneFile = $tf
                 $tContent > "$OutputDir\matched-tombstone.txt"
 
-                if ($tContent -match "Fatal signal (\d+ \([^)]+\)), code \d+ \([^)]+\), fault addr ([0-9a-fx]+)") {
-                    $signal = $matches[1]
-                    $faultAddr = $matches[2]
+                if ($tContent -match "ABI:\s*'([^']+)'") {
+                    $hostAbi = $matches[1]
+                }
+                if ($tContent -match "signal\s+\d+\s+\(([^)]+)\)") {
+                    $guestSignal = $matches[1]
+                }
+                if ($tContent -match "name:\s*([^\s]+)\s+>>>\s*com\.quark\.browser\s*<<<") {
+                    $guestThread = $matches[1]
                 }
 
                 $frameMatches = [regex]::Matches($tContent, "#\d+\s+pc\s+([0-9a-fA-F]+)\s+([^\r\n]+)")
-                foreach ($m in $frameMatches) {
-                    if ($topFrames.Count -lt 10) {
-                        $topFrames += $m.Value
-                    }
-                }
-                if ($topFrames.Count -gt 0) {
-                    if ($topFrames[0] -match "pc\s+([0-9a-fA-F]+)\s+(.+)") {
-                        $pcOffset = $matches[1]
-                        $crashLib = $matches[2].Trim()
+                if ($frameMatches.Count -gt 0) {
+                    $firstFrame = $frameMatches[0].Value
+                    if ($firstFrame -match "pc\s+([0-9a-fA-F]+)\s+([^(]+)(\([^)]+\))?") {
+                        $hostPc = $matches[1]
+                        $modStr = $matches[2].Trim()
+                        if ($modStr.Length -gt 500) { $modStr = $modStr.Substring(0, 500) }
+                        $hostModule = $modStr
+                        if ($matches.Count -ge 4) { $hostFunction = $matches[3] }
                     }
                 }
                 break
@@ -224,7 +236,7 @@ if ($status -eq "NATIVE_CRASH" -and $targetPid) {
     }
 }
 
-# Step 10: JSON Result Construction
+# 10. Result JSON Output
 $resultObj = [ordered]@{
     commit = $gitCommit
     run_id = $RunId
@@ -237,12 +249,19 @@ $resultObj = [ordered]@{
     applied_flags = $appliedFlags
     pid = $targetPid
     virtual_process = $virtualProcessName
-    signal = $signal
-    fault_address = $faultAddr
-    crash_library = $crashLib
-    pc_offset = $pcOffset
+    guest_abi = "ARM64"
+    guest_signal = $guestSignal
+    guest_thread = $guestThread
+    guest_pc = $guestPc
+    guest_module = $guestModule
+    guest_module_offset = $guestModuleOffset
+    guest_build_id = $guestBuildId
+    host_abi = $hostAbi
+    host_pc = $hostPc
+    host_module = $hostModule
+    host_function = $hostFunction
+    host_build_id = $hostBuildId
     tombstone_file = $matchedTombstoneFile
-    top_10_native_frames = $topFrames
 }
 
 $metadataObj = [ordered]@{

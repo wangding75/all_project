@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Gate 1 Self-Check Fixtures Test
+    Gate 1 Self-Check Fixtures Test (SX-EH-02)
 #>
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -18,7 +18,7 @@ $validRunDir = Join-Path $FixtureDir "20260721-180000-$validRunLabel"
 New-Item -ItemType Directory -Path $validRunDir -Force | Out-Null
 
 $validResult = [ordered]@{
-    commit = "a49102b"
+    commit = "422d62f"
     run_id = "20260721-180000-$validRunLabel"
     combo = "A1"
     run_label = $validRunLabel
@@ -29,12 +29,19 @@ $validResult = [ordered]@{
     applied_flags = 63
     pid = "1234"
     virtual_process = "com.quark.browser"
-    signal = $null
-    fault_address = $null
-    crash_library = $null
-    pc_offset = $null
+    guest_abi = "ARM64"
+    guest_signal = $null
+    guest_thread = $null
+    guest_pc = $null
+    guest_module = $null
+    guest_module_offset = $null
+    guest_build_id = $null
+    host_abi = $null
+    host_pc = $null
+    host_module = $null
+    host_function = $null
+    host_build_id = $null
     tombstone_file = ""
-    top_10_native_frames = @()
 }
 
 $validResult | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $validRunDir "result.json") -Encoding UTF8

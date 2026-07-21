@@ -261,10 +261,61 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 }
                 if (proxyIntent != null) {
                     args[2] = proxyIntent;
+                    logServiceRoute("VIRTUAL_PROXY", intent, proxyIntent, resolveInfo);
                     return method.invoke(who, args);
                 }
             }
-            return 0;
+            logServiceRoute("SYSTEM_REAL_PACKAGE", intent, null, resolveInfo);
+            return method.invoke(who, args);
+        }
+
+        private static void logServiceRoute(String routeType, Intent originalIntent, Intent proxyIntent, ResolveInfo resolveInfo) {
+            try {
+                Class<?> bc = Class.forName("com.sx.app.BuildConfig");
+                boolean debug = bc.getField("DEBUG").getBoolean(null);
+                if (!debug) return;
+            } catch (Throwable ignored) {
+                return;
+            }
+
+            String runId = System.getProperty("sx.run_id", "");
+            if (runId.isEmpty()) {
+                try {
+                    Class<?> spClass = Class.forName("android.os.SystemProperties");
+                    Method getMethod = spClass.getMethod("get", String.class, String.class);
+                    runId = (String) getMethod.invoke(null, "debug.sx.run_id", "");
+                } catch (Throwable ignored) {}
+            }
+
+            int callerPid = android.os.Process.myPid();
+            int callerUid = android.os.Process.myUid();
+            String origComp = originalIntent != null && originalIntent.getComponent() != null ? originalIntent.getComponent().flattenToShortString() : "null";
+            String proxyComp = proxyIntent != null && proxyIntent.getComponent() != null ? proxyIntent.getComponent().flattenToShortString() : "null";
+            String resPkg = resolveInfo != null && resolveInfo.serviceInfo != null ? resolveInfo.serviceInfo.packageName : "null";
+            String resClass = resolveInfo != null && resolveInfo.serviceInfo != null ? resolveInfo.serviceInfo.name : "null";
+            String resProc = resolveInfo != null && resolveInfo.serviceInfo != null ? resolveInfo.serviceInfo.processName : "null";
+            boolean exported = resolveInfo != null && resolveInfo.serviceInfo != null && resolveInfo.serviceInfo.exported;
+
+            Log.d("IActivityManagerProxy", "SX_SERVICE_ROUTE: RunId=" + runId +
+                    " callerPid=" + callerPid +
+                    " callerUid=" + callerUid +
+                    " hostUid=" + callerUid +
+                    " virtualPackage=" + BActivityThread.getAppPackageName() +
+                    " virtualProcess=" + BActivityThread.getAppProcessName() +
+                    " originalComponent=" + origComp +
+                    " resolvedPackage=" + resPkg +
+                    " resolvedServiceClass=" + resClass +
+                    " resolvedProcessName=" + resProc +
+                    " resolvedUid=-1" +
+                    " exported=" + exported +
+                    " isolatedProcess=false" +
+                    " externalService=false" +
+                    " rewrittenComponent=" + proxyComp +
+                    " stubComponent=" + proxyComp +
+                    " finalSystemComponent=" + (proxyIntent != null ? proxyComp : origComp) +
+                    " finalProcessPid=-1" +
+                    " finalProcessUid=-1" +
+                    " routeType=" + routeType);
         }
 
         @Override
