@@ -16,3 +16,11 @@ captures/
 Thumbs.db
 *.swp
 *~
+
+# Server
+server/.env
+server/sx_license.db
+server/venv/
+server/__pycache__/
+server/**/__pycache__/
+server/**/*.pyc
