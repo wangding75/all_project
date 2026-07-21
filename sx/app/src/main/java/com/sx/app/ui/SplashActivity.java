@@ -25,11 +25,15 @@ public class SplashActivity extends AppCompatActivity {
                 Intent intent;
                 if (LicenseManager.isActivated(SplashActivity.this)) {
                     intent = new Intent(SplashActivity.this, MainActivity.class);
+                    startActivity(intent);
+                    finish();
+                    // 进入主界面后，后台静默刷新 token 有效期
+                    LicenseManager.refreshTokenAsync(SplashActivity.this);
                 } else {
                     intent = new Intent(SplashActivity.this, LicenseActivity.class);
+                    startActivity(intent);
+                    finish();
                 }
-                startActivity(intent);
-                finish();
             }
         }, 2000);
     }

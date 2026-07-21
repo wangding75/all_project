@@ -140,6 +140,34 @@ public final class LicenseManager {
         }).start();
     }
 
+    /**
+     * 后台静默刷新 Token 有效期（不影响当前 UI）
+     * 网络失败时保留本地 Token，不做任何提示
+     */
+    public static void refreshTokenAsync(Context context) {
+        new Thread(() -> {
+            android.content.SharedPreferences prefs =
+                context.getSharedPreferences("sx_license", Context.MODE_PRIVATE);
+            String token    = prefs.getString("server_token", null);
+            String deviceId = DeviceFingerprint.get(context);
+            if (token == null || deviceId == null) return;
+
+            LicenseResult result = SxServerLicenseClient.verify(token, deviceId);
+            if (result == null) return; // 网络失败，保留本地 token，静默跳过
+
+            if (!result.success) {
+                // 服务端明确返回无效（被解绑等），清除本地 token
+                prefs.edit()
+                     .remove("server_token")
+                     .remove("expire_at")
+                     .apply();
+            } else if (result.expireAt > 0) {
+                // 刷新到期时间
+                prefs.edit().putLong("expire_at", result.expireAt).apply();
+            }
+        }).start();
+    }
+
     private static void saveServerToken(Context context, String cardKey,
                                          String token, long expireAt) {
         context.getSharedPreferences("sx_license", Context.MODE_PRIVATE)
