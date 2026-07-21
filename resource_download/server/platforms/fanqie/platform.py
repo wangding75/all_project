@@ -93,7 +93,12 @@ class FanqiePlatform(BasePlatform):
                 extra={"chapter_count": len(segments)},
             )
 
-        return await asyncio.to_thread(_load)
+        try:
+            return await asyncio.to_thread(_load)
+        except Exception as exc:  # noqa: BLE001
+            from app.errors import format_platform_error
+
+            raise RuntimeError(format_platform_error(exc)) from exc
 
     async def download(
         self,
@@ -198,10 +203,11 @@ class FanqiePlatform(BasePlatform):
                     except Exception:
                         pass
 
-            out_path = work_dir / f"{web_ssr.sanitize_filename(book_name)}.txt"
-            out_path.write_text("".join(parts), encoding="utf-8")
-            if progress:
-                progress(100.0, f"完成 {done} 章，跳过/失败 {skipped}")
             return [out_path]
 
-        return await asyncio.to_thread(_run)
+        try:
+            return await asyncio.to_thread(_run)
+        except Exception as exc:  # noqa: BLE001
+            from app.errors import format_platform_error
+
+            raise RuntimeError(format_platform_error(exc)) from exc

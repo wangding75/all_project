@@ -32,7 +32,7 @@
 | **阶段 B** | UI 诚实闭环 | 无假成功、Jobs 轮询、设置 | ✅ 完成 |
 | **阶段 C** | 打包与分发 | PyWebView 桌面壳 + `build_exe` + release | ✅ 完成（`826250b` 评审修复） |
 | **阶段 D** | 商业化技术底座 | [`STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | ✅ D-0～D-4 全部完成（阶段 D 技术出口） |
-| **阶段 E** | 商业产品 V1.0 | [`COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) | 📋 **阶段 D 出口就绪，准备启动 E0** |
+| **阶段 E (E0)** | 商业产品 V1.0 - 发布门禁 | [`COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) | ✅ E0 完成（发布门禁与履约质量就绪） |
 
 ### 核心模块（当前）
 

@@ -19,12 +19,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import api_base, client, die, pretty  # noqa: E402
 
 
+import os
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fanqie E2E via relay API")
     parser.add_argument(
         "--id",
-        required=True,
-        help="book_id 或 fanqienovel.com page/reader URL",
+        default=os.environ.get("E2E_FANQIE_ID", "").strip(),
+        help="book_id 或 fanqienovel.com page/reader URL (也可以通过 E2E_FANQIE_ID 环境变量提供)",
     )
     parser.add_argument("--range", default="1-2", dest="range_spec", help="all | 1-3 | 1,2")
     parser.add_argument("--out", default="data/e2e_downloads", help="保存下载文件的目录")
@@ -33,13 +35,18 @@ def main() -> None:
     parser.add_argument("--skip-download", action="store_true", help="只跑到 job success")
     args = parser.parse_args()
 
+    sample_id = args.id.strip()
+    if not sample_id:
+        print("[SKIP] Neither --id nor E2E_FANQIE_ID env var provided. Skipping Fanqie E2E test.")
+        sys.exit(0)
+
     print(f"API_BASE={api_base()}")
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     with client() as c:
         print("== detail ==")
-        r = c.get("/v1/detail", params={"platform": "fanqie", "id": args.id})
+        r = c.get("/v1/detail", params={"platform": "fanqie", "id": sample_id})
         if r.status_code != 200:
             die(f"detail failed: {r.status_code} {r.text}")
         detail = r.json()
@@ -50,7 +57,7 @@ def main() -> None:
             "/v1/jobs",
             json={
                 "platform": "fanqie",
-                "id": args.id,
+                "id": sample_id,
                 "range": args.range_spec,
                 "options": {},
             },

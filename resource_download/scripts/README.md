@@ -40,6 +40,25 @@ python scripts/smoke_health.py
 
 ---
 
+## 阶段 E0 自动化冒烟与 E2E (`ci_smoke.ps1` / `ci_smoke.sh`)
+
+发版前一键冒烟检查脚本：
+
+```powershell
+$env:API_BASE = "http://127.0.0.1:8000"
+$env:API_KEY  = "dev-key-change-me"
+
+# 可选注入真实样例 ID（无 ID 时 E2E 自动输出 [SKIP] 并 exit 0）
+$env:E2E_FANQIE_ID = "https://fanqienovel.com/page/7000000000000000000"
+$env:E2E_HONGGUO_ID = "7000000000000000000"
+
+powershell scripts/ci_smoke.ps1
+# 或 Bash:
+# ./scripts/ci_smoke.sh
+```
+
+---
+
 ## 红果 E2E（主路径）
 
 前置：

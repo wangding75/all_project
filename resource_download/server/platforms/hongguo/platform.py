@@ -57,7 +57,9 @@ class HongguoPlatform(BasePlatform):
         except HongguoVendorError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"hongguo search failed: {exc}") from exc
+            from app.errors import format_platform_error
+
+            raise RuntimeError(format_platform_error(exc)) from exc
 
     async def get_detail(self, item_id: str, **kwargs: Any) -> DetailResponse:
         def _run() -> DetailResponse:
@@ -97,7 +99,9 @@ class HongguoPlatform(BasePlatform):
         except HongguoVendorError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"hongguo detail failed: {exc}") from exc
+            from app.errors import format_platform_error
+
+            raise RuntimeError(format_platform_error(exc)) from exc
 
     async def download(
         self,
@@ -153,4 +157,6 @@ class HongguoPlatform(BasePlatform):
         except HongguoVendorError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"hongguo download failed: {exc}") from exc
+            from app.errors import format_platform_error
+
+            raise RuntimeError(format_platform_error(exc)) from exc

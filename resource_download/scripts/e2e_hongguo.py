@@ -22,9 +22,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import api_base, client, die, pretty  # noqa: E402
 
 
+import os
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hongguo E2E via relay API")
-    parser.add_argument("--id", default="", help="series_id")
+    parser.add_argument("--id", default=os.environ.get("E2E_HONGGUO_ID", "").strip(), help="series_id (也可通过 E2E_HONGGUO_ID 环境变量提供)")
     parser.add_argument("--search", default="", help="若未给 id，先 search 取第一条")
     parser.add_argument("--range", default="1-1", dest="range_spec")
     parser.add_argument("--quality", default="best")
@@ -33,10 +35,15 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=3600.0)
     args = parser.parse_args()
 
+    series_id = args.id.strip()
+
+    if not series_id and not args.search.strip():
+        print("[SKIP] Neither --id/--search nor E2E_HONGGUO_ID env var provided. Skipping Hongguo E2E test.")
+        sys.exit(0)
+
     print(f"API_BASE={api_base()}")
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    series_id = args.id.strip()
 
     with client() as c:
         if not series_id:
