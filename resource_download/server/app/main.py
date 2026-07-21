@@ -33,15 +33,9 @@ async def lifespan(_app: FastAPI):
     from app.db import init_db
     init_db()
 
-    if settings.api_key == "dev-key-change-me":
-        logging.warning(
-            "⚠️ 当前使用的是默认开发 API Key ('dev-key-change-me')！请在生产环境中通过 .env 或环境变量覆盖。"
-        )
-
-    if settings.jwt_secret == "change-me-jwt-secret" and settings.auth_mode in ("dual", "jwt_only"):
-        logging.warning(
-            "⚠️ 当前使用的是默认 JWT 密钥 ('change-me-jwt-secret') 且已启用用户鉴权！请在生产环境中通过 .env 或环境变量设置 JWT_SECRET。"
-        )
+    # E3 生产安全默认检查：若配置违规则直接抛错阻断进程启动
+    from app.security_boot import assert_production_secrets
+    assert_production_secrets(settings)
 
     manager = get_job_manager()
     await manager.load_jobs()

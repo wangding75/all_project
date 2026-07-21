@@ -48,9 +48,9 @@
 
 ## 三、 生产安全与诚实错误校验
 
-- [ ] **6. 生产安全默认设置检测**
-  - 在生产环境开启 `AUTH_MODE=dual` 或 `jwt_only` 时，**禁止** 使用默认开发密钥 `dev-key-change-me` 与 `change-me-jwt-secret`。
-  - 监听地址避免裸奔绑定开放网络。
+- [x] **6. 生产安全默认设置阻断 (E3 就绪)**
+  - `assert_production_secrets` 启动门闸控制：在 `AUTH_MODE=dual|jwt_only` 时若 `JWT_SECRET` 为默认值，启动拦截并拒绝服务；当 `API_KEY` 为默认值且 `HOST` 非 loopback 时同样拦截阻断。
+  - 单测 `server/tests/test_security_e3.py` 全绿。
 
 - [ ] **7. 诚实错误文案（零假成功）**
   - 当签名池节点全挂或无可用节点时，确认识别并抛出标准的 **HTTP 503** 错误:
