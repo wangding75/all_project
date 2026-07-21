@@ -37,20 +37,28 @@ public class LicenseActivity extends AppCompatActivity {
         updateStatusText();
 
         findViewById(R.id.btn_activate).setOnClickListener(v -> {
-            String card = mEtCard.getText().toString();
-            LicenseManager.ActivateResult result = LicenseManager.activate(this, card);
-            if (result.success) {
-                Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show();
-                updateStatusText();
-                // Navigate to Main if launched from Splash
-                Intent intent = new Intent(this, MainActivity.class);
-                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(intent);
-                finish();
-            } else {
-                mTvStatus.setText(result.message);
-                Toast.makeText(this, result.message, Toast.LENGTH_SHORT).show();
+            String card = mEtCard.getText().toString().trim();
+            if (card.isEmpty()) {
+                Toast.makeText(this, "请输入卡密", Toast.LENGTH_SHORT).show();
+                return;
             }
+            // 禁用按钮，防重复点击
+            v.setEnabled(false);
+
+            LicenseManager.activateAsync(this, card, result -> {
+                v.setEnabled(true);
+                if (result.success) {
+                    Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show();
+                    updateStatusText();
+                    Intent intent = new Intent(this, MainActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                    finish();
+                } else {
+                    mTvStatus.setText(result.message);
+                    Toast.makeText(this, result.message, Toast.LENGTH_LONG).show();
+                }
+            });
         });
     }
 

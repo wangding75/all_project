@@ -40,7 +40,7 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
 
                 @Override
                 public boolean isEnableDaemonService() {
-                    return true;
+                    return false;
                 }
 
                 @Override

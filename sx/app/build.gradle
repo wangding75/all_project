@@ -9,12 +9,21 @@ android {
     defaultConfig {
         applicationId "com.sx.app"
         minSdk 26
-        targetSdk 34
+        targetSdk 33
         versionCode 1
         versionName "1.0.0"
         // Used by LicenseManager for local HMAC (override in local.properties for release)
         buildConfigField "String", "LICENSE_HMAC_SECRET", "\"sx-dev-hmac-secret-change-me\""
         buildConfigField "String", "SANDBOX_ENGINE", "\"blackbox\""
+
+        def localProps = new Properties()
+        def localFile = rootProject.file("local.properties")
+        if (localFile.exists()) localProps.load(localFile.newDataInputStream())
+
+        buildConfigField "String", "LICENSE_SERVER_URL",
+            "\"${localProps.getProperty('license.server_url', 'http://10.0.2.2:8000')}\""
+        buildConfigField "String", "LICENSE_APP_SECRET",
+            "\"${localProps.getProperty('license.app_secret', 'sx_dev_secret_2026')}\""
     }
 
     buildTypes {

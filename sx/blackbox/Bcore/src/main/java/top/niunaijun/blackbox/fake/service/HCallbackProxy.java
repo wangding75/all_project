@@ -78,21 +78,24 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
         if (!mBeing.getAndSet(true)) {
             try {
                 if (BuildCompat.isPie()) {
-                    if (msg.what == BRActivityThreadH.get().EXECUTE_TRANSACTION()) {
+                    Integer executeTransaction = BRActivityThreadH.get().EXECUTE_TRANSACTION();
+                    if (executeTransaction != null && msg.what == executeTransaction) {
                         if (handleLaunchActivity(msg.obj)) {
                             getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
                             return true;
                         }
                     }
                 } else {
-                    if (msg.what == BRActivityThreadH.get().LAUNCH_ACTIVITY()) {
+                    Integer launchActivity = BRActivityThreadH.get().LAUNCH_ACTIVITY();
+                    if (launchActivity != null && msg.what == launchActivity) {
                         if (handleLaunchActivity(msg.obj)) {
                             getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
                             return true;
                         }
                     }
                 }
-                if (msg.what == BRActivityThreadH.get().CREATE_SERVICE()) {
+                Integer createService = BRActivityThreadH.get().CREATE_SERVICE();
+                if (createService != null && msg.what == createService) {
                     return handleCreateService(msg.obj);
                 }
                 if (mOtherCallback != null) {

@@ -24,19 +24,44 @@ public final class LicenseManager {
 
     private LicenseManager() {}
 
+    private static boolean isDebug(Context context) {
+        try {
+            Class<?> clazz = Class.forName("com.sx.app.BuildConfig");
+            return clazz.getField("DEBUG").getBoolean(null);
+        } catch (Exception e) {
+            return (context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        }
+    }
+
     public static String getDeviceId(Context context) {
         return DeviceIdGenerator.uniqueDeviceFingerprint(context);
     }
 
     public static boolean isActivated(Context context) {
+        android.content.SharedPreferences prefs =
+            context.getSharedPreferences("sx_license", Context.MODE_PRIVATE);
+        // 优先检查服务端 token
+        long expireAt = prefs.getLong("expire_at", 0L);
+        if (expireAt == -1L) return true;   // 永久卡
+        if (expireAt > 0 && TimeGuard.getTrustedNow(context) < expireAt) return true;
+        // 降级：原有本地 HMAC（debug DEV 卡密）
         LicenseInfo info = load(context);
-        if (info == null || TextUtils.isEmpty(info.token)) {
-            return false;
-        }
-        return verifyToken(context, info.token);
+        return info != null && TimeGuard.getTrustedNow(context) < info.expireAt;
     }
 
     public static LicenseInfo load(Context context) {
+        android.content.SharedPreferences prefs =
+            context.getSharedPreferences("sx_license", Context.MODE_PRIVATE);
+        long serverExpire = prefs.getLong("expire_at", 0L);
+        if (serverExpire != 0L) {
+            LicenseInfo info = new LicenseInfo();
+            info.card = prefs.getString("card_key", "");
+            info.token = prefs.getString("license_token", "");
+            info.expireAt = serverExpire;
+            info.deviceId = getDeviceId(context);
+            return info;
+        }
+
         JSONObject o = SxPrefs.getJson(context, SxPrefs.KEY_LICENSE);
         if (o.length() == 0) {
             return null;
@@ -53,8 +78,16 @@ public final class LicenseManager {
         if (TextUtils.isEmpty(cardKey)) {
             return ActivateResult.fail("卡密不能为空");
         }
-        cardKey = cardKey.trim().toUpperCase(Locale.US);
-        long expireAt = parseDevCard(cardKey);
+        String card = cardKey.trim().toUpperCase(Locale.US);
+        if (isDebug(context) && card.startsWith(LicenseConfig.DEV_KEY_PREFIX)) {
+            // debug 模式 + DEV 卡密：走原有本地 HMAC 逻辑，不请求服务端
+        } else {
+            // 生产模式或非 DEV 卡密：调服务端
+            // 注意：此处需在后台线程执行，不可在 UI 线程调用 SxServerLicenseClient
+            throw new IllegalStateException("请通过 activateAsync() 在后台线程调用");
+        }
+
+        long expireAt = parseDevCard(card);
         if (expireAt <= 0) {
             return ActivateResult.fail("卡密无效");
         }
@@ -66,7 +99,7 @@ public final class LicenseManager {
         String token = issueToken(deviceId, expireAt);
         try {
             JSONObject o = new JSONObject();
-            o.put("card", cardKey);
+            o.put("card", card);
             o.put("token", token);
             o.put("expireAt", expireAt);
             o.put("deviceId", deviceId);
@@ -76,6 +109,45 @@ public final class LicenseManager {
         }
         TimeGuard.refreshNetworkTimeAsync(context);
         return ActivateResult.ok(expireAt);
+    }
+
+    /**
+     * 异步激活（在后台线程执行，结果回调到主线程）
+     * 供 LicenseActivity 按钮点击调用
+     */
+    public static void activateAsync(Context context, String cardKey,
+                                      java.util.function.Consumer<ActivateResult> callback) {
+        new Thread(() -> {
+            ActivateResult result;
+            // debug + DEV 卡密：本地通路
+            if (isDebug(context) && cardKey != null && cardKey.trim().toUpperCase(Locale.US).startsWith(LicenseConfig.DEV_KEY_PREFIX)) {
+                result = activate(context, cardKey); // 原有本地方法
+            } else {
+                // 服务端通路
+                String deviceId = DeviceFingerprint.get(context);
+                LicenseResult serverResult = SxServerLicenseClient.activate(cardKey, deviceId);
+                if (serverResult.success) {
+                    // 将服务端 token 和 expireAt 存本地
+                    saveServerToken(context, cardKey, serverResult.token, serverResult.expireAt);
+                    result = new ActivateResult(true, serverResult.message);
+                } else {
+                    result = new ActivateResult(false, serverResult.message);
+                }
+            }
+            ActivateResult finalResult = result;
+            new android.os.Handler(android.os.Looper.getMainLooper())
+                .post(() -> callback.accept(finalResult));
+        }).start();
+    }
+
+    private static void saveServerToken(Context context, String cardKey,
+                                         String token, long expireAt) {
+        context.getSharedPreferences("sx_license", Context.MODE_PRIVATE)
+               .edit()
+               .putString("server_token", token)
+               .putString("card_key", cardKey)
+               .putLong("expire_at", expireAt)
+               .apply();
     }
 
     /** SX-DEV-YYYYMMDD → expire at end of that day (UTC+8 end of day). */
@@ -153,6 +225,12 @@ public final class LicenseManager {
         public final boolean success;
         public final String message;
         public final long expireAt;
+
+        public ActivateResult(boolean success, String message) {
+            this.success = success;
+            this.message = message;
+            this.expireAt = 0L;
+        }
 
         private ActivateResult(boolean success, String message, long expireAt) {
             this.success = success;
