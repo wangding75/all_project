@@ -14,8 +14,32 @@ dependencyResolutionManagement {
         maven { url 'https://maven.aliyun.com/repository/public' }
         google()
         mavenCentral()
+        maven { url 'https://jitpack.io' }
     }
 }
 
 rootProject.name = "SxApp"
 include ':app'
+include ':sandbox-api'
+include ':engine-bb'
+
+include ':Bcore'
+project(':Bcore').projectDir = new File(settingsDir, 'blackbox/Bcore')
+
+include ':Bcore:black-fake'
+project(':Bcore:black-fake').projectDir = new File(settingsDir, 'blackbox/Bcore/black-fake')
+
+include ':Bcore:black-hook'
+project(':Bcore:black-hook').projectDir = new File(settingsDir, 'blackbox/Bcore/black-hook')
+
+include ':Bcore:pine-xposed'
+project(':Bcore:pine-xposed').projectDir = new File(settingsDir, 'blackbox/Bcore/pine-xposed')
+
+include ':Bcore:pine-core'
+project(':Bcore:pine-core').projectDir = new File(settingsDir, 'blackbox/Bcore/pine-core')
+
+include ':Bcore:pine-xposed-res'
+project(':Bcore:pine-xposed-res').projectDir = new File(settingsDir, 'blackbox/Bcore/pine-xposed-res')
+
+include ':android-mirror'
+project(':android-mirror').projectDir = new File(settingsDir, 'blackbox/android-mirror')

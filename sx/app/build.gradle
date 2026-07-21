@@ -14,6 +14,7 @@ android {
         versionName "1.0.0"
         // Used by LicenseManager for local HMAC (override in local.properties for release)
         buildConfigField "String", "LICENSE_HMAC_SECRET", "\"sx-dev-hmac-secret-change-me\""
+        buildConfigField "String", "SANDBOX_ENGINE", "\"blackbox\""
     }
 
     buildTypes {
@@ -39,6 +40,9 @@ android {
 }
 
 dependencies {
+    implementation project(':sandbox-api')
+    implementation project(':engine-bb')
+
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'

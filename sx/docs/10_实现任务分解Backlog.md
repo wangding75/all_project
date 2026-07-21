@@ -45,20 +45,38 @@
 
 ---
 
+## 产品级 Epic P（四阶段完成后启动）
+
+> 战略见 `14_商业化路线图.md`，计划见 `15_产品级开发计划.md`。  
+> **启动前状态：planned（blocked on Phase 0–4）。** 勿与功能四阶段抢主路径。
+
+| Epic | 名称 | 状态 | 说明 |
+|------|------|------|------|
+| P-A | 商业授权（服务端+客户端） | planned | 四阶段后 |
+| P-B | 安全加固 | planned | 四阶段后 |
+| P-C | 质量 SLA / 矩阵 | planned | 四阶段后 |
+| P-D | 合规分发 | planned | 四阶段后 |
+| P-E | 观测与发版 | planned | 四阶段后 |
+| P-F | 卖点增强 | planned | Go-Live 后或并行弱项 |
+
+测试约束：**通用机型**；**模拟器通过后再真机**。
+
+---
+
 ## Epic C — Phase 1：BlackBox 多开
 
 | ID | 任务 | 状态 | 规模 | 依赖 | 验收要点 |
 |----|------|------|------|------|----------|
-| C-01 | 选定 BB 上游与可编 commit，写集成笔记 | todo | M | — | docs/10 或新建 引擎笔记 |
-| C-02 | 工程引入 engine-bb 模块 | todo | L | C-01 | 编译通过 |
-| C-03 | Application 初始化引擎 | todo | M | C-02 | isReady |
-| C-04 | BlackBoxSandboxEngine.install/list | todo | L | C-03 | 真机导入 App |
-| C-05 | launch / kill | todo | L | C-04 | 分身能打开 |
-| C-06 | uninstall / clearData | todo | M | C-04 | 数据隔离可感 |
-| C-07 | clone 多 userId | todo | L | C-05 | 双开数据独立 |
-| C-08 | 桌面快捷方式 | todo | M | C-05 | 点击进对应分身 |
-| C-09 | ENGINE 切换 fake/blackbox | todo | S | C-03 | BuildConfig |
-| C-10 | 兼容问题登记（机型/架构） | todo | S | C-05 | 兼容表 |
+| C-01 | 选定 BB 上游与可编 commit，写集成笔记 | done | M | — | docs/10 或新建 引擎笔记 |
+| C-02 | 工程引入 engine-bb 模块 | done | L | C-01 | 编译通过 |
+| C-03 | Application 初始化引擎 | done | M | C-02 | isReady |
+| C-04 | BlackBoxSandboxEngine.install/list | done | L | C-03 | 真机导入 App |
+| C-05 | launch / kill | done | L | C-04 | 分身能打开 |
+| C-06 | uninstall / clearData | done | M | C-04 | 数据隔离可感 |
+| C-07 | clone 多 userId | done | L | C-05 | 双开数据独立 |
+| C-08 | 桌面快捷方式 | done | M | C-05 | 点击进对应分身 |
+| C-09 | ENGINE 切换 fake/blackbox | done | S | C-03 | BuildConfig |
+| C-10 | 兼容问题登记（机型/架构） | done | S | C-05 | 兼容表 |
 
 **DoD：** PRD F-1.1～1.5、1.7；Android 10 或 13 真机通过。
 

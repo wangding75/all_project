@@ -46,12 +46,17 @@
 | 可运行 UI / Activity | ❌ 待 Phase 0 |
 | BlackBox / Hook | ❌ 待 Phase 1+ |
 
-**后续开发请从这里接手：**
+**策略：功能四阶段 → 产品级/商业化（见 [docs/14](./docs/14_商业化路线图.md)、[docs/15](./docs/15_产品级开发计划.md)）**
 
-1. [docs/09_开发者交接与开工指南.md](./docs/09_开发者交接与开工指南.md)（必读）  
-2. [docs/11_Phase0执行计划.md](./docs/11_Phase0执行计划.md)（**Phase 0 批准执行版**）  
-3. [docs/10_实现任务分解Backlog.md](./docs/10_实现任务分解Backlog.md)（任务勾选）  
-4. [docs/开发指令_Phase0.md](./docs/开发指令_Phase0.md)（下发摘要）  
+| 阶段 | 文档 |
+|------|------|
+| 交接总览 | [docs/09](./docs/09_开发者交接与开工指南.md) |
+| 当前功能开发 | Phase 1：[开发指令_Phase1](./docs/开发指令_Phase1.md) / [12 执行计划](./docs/12_Phase1执行计划.md) |
+| 任务看板 | [docs/10](./docs/10_实现任务分解Backlog.md) |
+| 四阶段全部完成后 | **启动** [15 产品级开发计划](./docs/15_产品级开发计划.md) |
+| 机型/测试 | 通用机型；**模拟器 → 真机**（见 docs/14） |
+
+Phase 0 已完成。产品级 Epic P-A～P-F 在四阶段验收前为 **planned**，不提前主开发。  
 
 ---
 

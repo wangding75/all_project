@@ -41,6 +41,16 @@ public class FakeSandboxEngine implements SandboxEngine {
     }
 
     @Override
+    public void onAttachBaseContext(Context base) {
+        // No-op for FakeSandboxEngine
+    }
+
+    @Override
+    public void onAppCreate() {
+        // No-op for FakeSandboxEngine
+    }
+
+    @Override
     public boolean isReady() {
         return mReady;
     }

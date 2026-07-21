@@ -10,6 +10,12 @@ public interface SandboxEngine {
     /** 宿主 Application 中初始化引擎 */
     void initialize(Application app);
 
+    /** 在 attachBaseContext 阶段挂载沙箱（主要用于 BlackBox 等需要 Hook ClassLoader 的引擎） */
+    default void onAttachBaseContext(Context base) {}
+
+    /** 在 Application onCreate 阶段执行服务与 Binder 挂载 */
+    default void onAppCreate() {}
+
     /** 引擎是否可用 */
     boolean isReady();
 
