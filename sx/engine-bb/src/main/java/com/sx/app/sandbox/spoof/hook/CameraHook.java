@@ -120,8 +120,10 @@ public class CameraHook {
             } else if (context != null) {
                 // Fallback via ConfigProvider get_camera_bytes (F1 fix for cross-process storage isolation)
                 try {
-                    String hostPkg = com.sx.app.data.ProfileRepository.getInstance().resolveCamera(context, null, 0) != null ?
-                            top.niunaijun.blackbox.BlackBoxCore.getHostPkg() : context.getPackageName();
+                    String hostPkg = top.niunaijun.blackbox.BlackBoxCore.getHostPkg();
+                    if (hostPkg == null || hostPkg.isEmpty()) {
+                        hostPkg = context.getPackageName();
+                    }
                     android.net.Uri providerUri = android.net.Uri.parse("content://" + hostPkg + ".config.provider");
                     android.os.Bundle extras = new android.os.Bundle();
                     extras.putString("path", sConfig.mediaPath);

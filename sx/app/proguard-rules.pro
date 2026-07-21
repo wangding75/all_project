@@ -2,10 +2,11 @@
 -keep class com.sx.app.xposed.** { *; }
 -keep class de.robv.android.xposed.** { *; }
 
-# Keep Sandbox API & Engine implementation
+# Keep Sandbox API, Engine & Spoof implementation
 -keep class com.sx.app.sandbox.** { *; }
 -keep class com.sx.app.sandbox.api.** { *; }
 -keep class com.sx.app.sandbox.bb.** { *; }
+-keep class com.sx.app.sandbox.spoof.** { *; }
 
 # Keep Data models and application components
 -keep class com.sx.app.data.** { *; }
@@ -17,6 +18,8 @@
 -keep class top.niunaijun.blackbox.** { *; }
 -keep interface top.niunaijun.blackbox.** { *; }
 -keep class top.niunaijun.pine.** { *; }
+-keep class top.canyie.pine.** { *; }
+-keep interface top.canyie.pine.** { *; }
 
 # Keep Parcelable & AIDL implementations
 -keep class * implements android.os.Parcelable {
