@@ -141,6 +141,12 @@ def get_oracle() -> FanqieSignOracle:
 
 
 def sign(url: str, headers: dict[str, str]) -> dict[str, str]:
+    from app.config import get_settings
+
+    if get_settings().sign_pool_enabled:
+        from app.sign_pool import sign_via_pool
+
+        return sign_via_pool("fanqie_sign", url, headers)
     return get_oracle().sign(url, headers)
 
 

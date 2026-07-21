@@ -281,13 +281,33 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 }
 ```
 
-- 仅使用 `X-API-Key` 访问时返回 **400/403** (非用户身份)。
 - 凭证无效或过期返回 **401 Unauthorized**。
+
+---
+
+## GET /v1/admin/sign-pool（D-3）
+
+依赖运维身份鉴权（`X-API-Key`）。非 Ops 权限访问返回 **403 Forbidden**。
+
+获取当前签名节点池的状态摘要（节点数、健康数、容量、租约与探活记录）。
+
+---
+
+## 异常说明：503 签名节点不可用（D-3）
+
+在开启签名节点池（`SIGN_POOL_ENABLED=true`）后，若节点池中没有可用健康节点或所有节点重试失败，业务操作（搜索/详情/任务签名）将统一返回 **503 Service Unavailable**：
+
+```json
+{
+  "detail": "签名节点繁忙或不可用，请稍后重试"
+}
+```
 
 ---
 
 ## 交互文档
 
 服务启动后：`http://127.0.0.1:8000/docs`
+
 
 

@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     frida_host: str = "127.0.0.1:27042"
     fanqie_pkg: str = "com.dragon.read"
 
+    # 签名池配置（阶段 D-3）
+    sign_pool_enabled: bool = False
+    sign_pool_config: str = "data/sign_pool.json"
+    sign_pool_urls: str = ""
+    sign_pool_health_interval_sec: int = 30
+    sign_pool_lease_sec: int = 120
+    sign_pool_max_fails: int = 3
+
     @property
     def jobs_dir(self) -> Path:
         return self.data_dir / "jobs"
@@ -73,6 +81,13 @@ class Settings(BaseSettings):
     @property
     def outputs_dir(self) -> Path:
         return self.data_dir / "outputs"
+
+    @property
+    def sign_pool_config_path(self) -> Path:
+        p = Path(self.sign_pool_config)
+        if p.is_absolute():
+            return p
+        return REPO_ROOT / p
 
 
 @lru_cache(maxsize=1)

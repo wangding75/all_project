@@ -9,7 +9,7 @@
 > | [`DEV_ROADMAP.md`](./DEV_ROADMAP.md) | **历史执行记录**（MVP-H/F 已完成任务归档） |
 > | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | **逆向/运维知识**（签名、解密、设备坑）— 不写任务状态 |
 > | [`docs/release.md`](./docs/release.md) | **打包与首次运行**（阶段 C） |
-> | [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | **阶段 D 技术底座**（D-0～D-2 已编码；D-4/D-3 待完成） |
+> | [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | **阶段 D 技术底座**（D-0～D-4 全部完成 ✅） |
 > | [`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) | **商业产品 V1.0**（**D-4+D-3 出口之后**全面开发） |
 > | [`business_landing_architecture.md`](./business_landing_architecture.md) | **商业化蓝图总览** |
 >
@@ -31,8 +31,8 @@
 | **阶段 A** | 服务端稳定化 | Job 恢复/上限/列表/取消/日志 | ✅ 完成 |
 | **阶段 B** | UI 诚实闭环 | 无假成功、Jobs 轮询、设置 | ✅ 完成 |
 | **阶段 C** | 打包与分发 | PyWebView 桌面壳 + `build_exe` + release | ✅ 完成（`826250b` 评审修复） |
-| **阶段 D** | 商业化技术底座 | [`STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | 🔄 D-0～D-2 ✅；**D-4 → D-3** 待完成 |
-| **阶段 E** | 商业产品 V1.0 | [`COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) | 📋 **D-4+D-3 出口后启动** |
+| **阶段 D** | 商业化技术底座 | [`STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | ✅ D-0～D-4 全部完成（阶段 D 技术出口） |
+| **阶段 E** | 商业产品 V1.0 | [`COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) | 📋 **阶段 D 出口就绪，准备启动 E0** |
 
 ### 核心模块（当前）
 

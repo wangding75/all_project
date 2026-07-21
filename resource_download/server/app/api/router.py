@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -284,6 +285,18 @@ async def open_file(
         return FileOpenResponse(success=True, message=msg)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"无法打开文件或目录: {exc}") from exc
+
+
+@api_router.get("/v1/admin/sign-pool")
+async def admin_sign_pool(
+    identity: Identity = Depends(require_identity),
+) -> dict[str, Any]:
+    if not identity.is_ops:
+        raise HTTPException(status_code=403, detail="仅 API Key 运维权限可访问此接口")
+    from app.sign_pool import get_sign_pool
+
+    return get_sign_pool().get_summary()
+
 
 
 

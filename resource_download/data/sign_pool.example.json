@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    {
+      "id": "mock-1",
+      "base_url": "http://127.0.0.1:19101",
+      "labels": ["fanqie_sign"],
+      "capacity": 2,
+      "enabled": true
+    }
+  ]
+}

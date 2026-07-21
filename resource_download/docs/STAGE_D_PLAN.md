@@ -1,6 +1,6 @@
 # 阶段 D — 商业化基础实施方案
 
-> **状态**: D-0、D-1、D-2、D-4 ✅；**D-3** 待编码；全部完成后进入商业产品阶段  
+> **状态**: D-0、D-1、D-2、D-4、D-3 ✅ （全阶段 D 技术底座已完成，达阶段 D 技术出口出口线）；准备开 E0 商业产品阶段  
 > **关联**:  
 > - [`POST_MVP_PLAN.md`](../POST_MVP_PLAN.md)  
 > - [`COMMERCIAL_V1_PLAN.md`](./COMMERCIAL_V1_PLAN.md) ← **D 出口后的商业 V1.0（E0～E6）**  
@@ -49,8 +49,8 @@
 D-0  鉴权并存与配置开关     ✅
 D-1  SQLite + 用户 + JWT    ✅
 D-2  卡密核销 + VIP 门闸    ✅
-D-4  限流 + 日配额          ← 当前
-D-3  Redroid / 签名池       ← D-4 后；独立里程碑
+D-4  限流 + 日配额          ✅
+D-3  Redroid / 签名池       ✅ (阶段 D 技术出口)
         ↓
 阶段 E  商业产品 V1.0      → docs/COMMERCIAL_V1_PLAN.md
 ```

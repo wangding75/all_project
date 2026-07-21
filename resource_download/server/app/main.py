@@ -7,14 +7,15 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api import api_router
 from app.config import get_settings
 from app.jobs import get_job_manager
+from app.sign_pool import SignPoolUnavailableError
 
 
 @asynccontextmanager
@@ -44,6 +45,12 @@ async def lifespan(_app: FastAPI):
 
     manager = get_job_manager()
     await manager.load_jobs()
+
+    if settings.sign_pool_enabled:
+        from app.sign_pool import get_sign_pool
+
+        get_sign_pool()
+        logging.info("签名节点池已启用 (SIGN_POOL_ENABLED=True)")
     yield
 
 
@@ -53,6 +60,16 @@ app = FastAPI(
     description="MVP-1 中转服务端：番茄/红果下载链路（脚本与 UI 验收）",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(SignPoolUnavailableError)
+async def sign_pool_unavailable_exception_handler(_request: Request, exc: SignPoolUnavailableError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": exc.message},
+    )
+
+
 app.include_router(api_router)
 
 
