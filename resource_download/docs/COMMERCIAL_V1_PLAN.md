@@ -84,7 +84,7 @@
 
 ```text
 E0  发布门禁与履约质量     ✅ 完成
-E1  多用户隔离与归属
+E1  多用户隔离与数据归属   ✅ 完成
 E2  客户端商业闭环
 E3  生产安全默认
 E4  最小运营能力
@@ -133,19 +133,19 @@ E6  正式发行与上线清单     ← V1.0 打标签
 
 ### 工作项
 
-| 任务 | 说明 |
-|------|------|
-| E1-1 | Job 记录增加 `owner_user_id`（JSON 字段或迁 SQLite `jobs` 表） |
-| E1-2 | `GET /v1/jobs`、`GET /v1/jobs/{id}`：user 仅己；ops 可全量 |
-| E1-3 | `GET /v1/files`、`GET/POST files/*`：校验 file 所属 job 的 owner |
-| E1-4 | 路径穿越与 IDOR 单测 |
-| E1-5 | ops Key 行为文档化（超管，仅运维） |
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| E1-1 | Job 记录增加 `owner_user_id`（JSON 字段或迁 SQLite `jobs` 表） | ✅ |
+| E1-2 | `GET /v1/jobs`、`GET /v1/jobs/{id}`：user 仅己；ops 可全量 | ✅ |
+| E1-3 | `GET /v1/files`、`GET/POST files/*`：校验 file 所属 job 的 owner | ✅ |
+| E1-4 | 路径穿越与 IDOR 单测 | ✅ |
+| E1-5 | ops Key 行为文档化（超管，仅运维） | ✅ |
 
 ### 验收
 
-- [ ] 用户 A token 无法读 B 的 job/file（403/404）  
-- [ ] ops Key 仍可运维  
-- [ ] 相关 pytest 全绿  
+- [x] 用户 A token 无法读 B 的 job/file（404 防探测）  
+- [x] ops Key 仍可运维  
+- [x] 相关 pytest 全绿  
 
 ### 预估
 

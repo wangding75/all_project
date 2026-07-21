@@ -12,7 +12,7 @@
   $env:PYTHONPATH="server"
   python -m pytest server/tests -q
   ```
-  - **验收**: 所有单元测试 (包含认证 `test_auth`, 配额 `test_quota`, 签名池 `test_sign_pool` 及错误映射测试) `28+ passed` 零 FAIL。
+  - **验收**: 所有单元测试 (包含认证 `test_auth`, VIP/卡密 `test_auth_d2`, 配额 `test_quota`, 多租户隔离 `test_isolation_e1`, 签名池 `test_sign_pool` 及错误映射测试) `41+ passed` 零 FAIL。
 
 - [ ] **2. 冒烟服务探活 (Smoke Health)**
   ```powershell

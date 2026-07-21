@@ -117,6 +117,9 @@ async def create_job(
     from app.quota import check_job_quota, increment_job_quota
     check_job_quota(identity, db)
 
+    owner_user_id = identity.user_id if identity.kind == "user" else None
+    owner_kind = identity.kind if identity.kind == "user" else "ops"
+
     manager = get_job_manager()
     try:
         record = await manager.create_job(
@@ -124,6 +127,8 @@ async def create_job(
             item_id=body.id,
             range_spec=body.range,
             options=body.options,
+            owner_user_id=owner_user_id,
+            owner_kind=owner_kind,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -138,10 +143,10 @@ async def list_jobs(
     status: JobStatus | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    _: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_identity),
 ) -> JobListResponse:
     manager = get_job_manager()
-    records, total = await manager.list_jobs(status=status, page=page, page_size=page_size)
+    records, total = await manager.list_jobs_for(identity, status=status, page=page, page_size=page_size)
     return JobListResponse(
         total=total,
         page=page,
@@ -152,20 +157,20 @@ async def list_jobs(
 
 @api_router.get("/v1/jobs/summary", response_model=JobsSummaryResponse)
 async def jobs_summary(
-    _: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_identity),
 ) -> JobsSummaryResponse:
     manager = get_job_manager()
-    data = await manager.summary()
+    data = await manager.summary_for(identity)
     return JobsSummaryResponse(**data)
 
 
 @api_router.get("/v1/jobs/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: str,
-    _: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_identity),
 ) -> JobResponse:
     manager = get_job_manager()
-    record = await manager.get_job(job_id)
+    record = await manager.get_job_for(job_id, identity)
     if record is None:
         raise HTTPException(status_code=404, detail="job not found")
     return record.to_response()
@@ -174,10 +179,14 @@ async def get_job(
 @api_router.delete("/v1/jobs/{job_id}")
 async def cancel_job(
     job_id: str,
-    _: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_identity),
 ) -> dict[str, str]:
     manager = get_job_manager()
-    cancelled = await manager.cancel_job(job_id)
+    record = await manager.get_job_for(job_id, identity)
+    if record is None:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    cancelled = await manager.cancel_job_for(job_id, identity)
     if not cancelled:
         raise HTTPException(status_code=400, detail="Job 无法取消（可能已完成、已失败或不存在）")
     return {"message": "Job successfully cancelled", "job_id": job_id}
@@ -199,8 +208,9 @@ async def get_version(
 
 @api_router.get("/v1/files", response_model=FileListResponse)
 async def list_files(
-    _: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_identity),
 ) -> FileListResponse:
+    manager = get_job_manager()
     settings = get_settings()
     out_dir = settings.outputs_dir.resolve()
     items: list[FileItemResponse] = []
@@ -209,6 +219,10 @@ async def list_files(
         for entry in out_dir.rglob("*"):
             ext = entry.suffix.lower()
             if entry.is_file() and ext in [".mp4", ".txt", ".m4a"]:
+                rel_id = str(entry.relative_to(out_dir)).replace("\\", "/")
+                if not manager.can_access_file(rel_id, identity):
+                    continue
+
                 size_bytes = entry.stat().st_size
                 mtime = datetime.fromtimestamp(entry.stat().st_mtime).isoformat()
                 if ext == ".mp4":
@@ -220,8 +234,6 @@ async def list_files(
                 else:
                     media_type = "text/plain"
                     platform = "fanqie"
-
-                rel_id = str(entry.relative_to(out_dir)).replace("\\", "/")
 
                 # 计算人类可读文件大小
                 if size_bytes >= 1024 * 1024 * 1024:
@@ -249,9 +261,11 @@ async def list_files(
 @api_router.get("/v1/files/{file_id:path}")
 async def get_file(
     file_id: str,
-    _: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_identity),
 ) -> FileResponse:
     manager = get_job_manager()
+    if not manager.can_access_file(file_id, identity):
+        raise HTTPException(status_code=404, detail="指定文件不存在")
     path = manager.resolve_file(file_id)
     if path is None or not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="指定文件不存在")
@@ -262,9 +276,11 @@ async def get_file(
 async def open_file(
     file_id: str,
     body: FileOpenRequest,
-    _: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_identity),
 ) -> FileOpenResponse:
     manager = get_job_manager()
+    if not manager.can_access_file(file_id, identity):
+        raise HTTPException(status_code=404, detail="指定文件或目录不存在")
     path = manager.resolve_file(file_id)
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="指定文件或目录不存在")

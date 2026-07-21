@@ -8,11 +8,14 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.config import Settings, get_settings
 from app.models import JobFile, JobResponse, JobStatus, PlatformName
 from platforms.registry import get_platform
+
+if TYPE_CHECKING:
+    from app.auth import Identity
 
 
 def _utc_now() -> str:
@@ -33,8 +36,19 @@ class JobRecord:
     files: list[JobFile] = field(default_factory=list)
     created_at: str = field(default_factory=_utc_now)
     updated_at: str = field(default_factory=_utc_now)
+    owner_user_id: int | None = None
+    owner_kind: str | None = None
 
     def to_response(self) -> JobResponse:
+        extra_dict: dict[str, Any] = {
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+        if self.owner_user_id is not None:
+            extra_dict["owner_user_id"] = self.owner_user_id
+        if self.owner_kind is not None:
+            extra_dict["owner_kind"] = self.owner_kind
+
         return JobResponse(
             job_id=self.job_id,
             platform=self.platform,
@@ -44,7 +58,7 @@ class JobRecord:
             message=self.message,
             error=self.error,
             files=list(self.files),
-            extra={"created_at": self.created_at, "updated_at": self.updated_at},
+            extra=extra_dict,
         )
 
 
@@ -55,6 +69,36 @@ class JobManager:
         self.settings.outputs_dir.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, JobRecord] = {}
         self._lock = asyncio.Lock()
+
+    def can_access_job(self, record: JobRecord, identity: Identity) -> bool:
+        if identity.is_ops or identity.kind == "api_key":
+            return True
+        if identity.kind == "user":
+            return (
+                record.owner_kind == "user"
+                and record.owner_user_id is not None
+                and record.owner_user_id == identity.user_id
+            )
+        return False
+
+    def can_access_file(self, file_id: str, identity: Identity) -> bool:
+        if identity.is_ops or identity.kind == "api_key":
+            return True
+        file_id_clean = file_id.strip()
+        if not file_id_clean:
+            return False
+        # Extract potential job_id prefix (e.g. "a1b2c3d4e5f6/file.mp4" -> "a1b2c3d4e5f6")
+        job_id_prefix = file_id_clean.split("/")[0].split("\\")[0]
+        record = self._jobs.get(job_id_prefix)
+        if record is not None:
+            return self.can_access_job(record, identity)
+        # Search all jobs if file_id matches any JobFile
+        for r in self._jobs.values():
+            for f in r.files:
+                if f.file_id == file_id_clean:
+                    return self.can_access_job(r, identity)
+        # Disk files without job records: user invisible; ops visible
+        return False
 
     async def load_jobs(self) -> None:
         """从磁盘加载持久化的 Job 记录。若在运行中掉电/重启，则将其置为 failed 并同步写回磁盘。"""
@@ -87,6 +131,8 @@ class JobManager:
                         files=files,
                         created_at=data.get("created_at", _utc_now()),
                         updated_at=data.get("updated_at", _utc_now()),
+                        owner_user_id=data.get("owner_user_id"),
+                        owner_kind=data.get("owner_kind"),
                     )
                     self._jobs[job_id] = record
                     if was_active:
@@ -101,6 +147,8 @@ class JobManager:
         range_spec: str = "all",
         options: dict[str, Any] | None = None,
         max_active: int = 5,
+        owner_user_id: int | None = None,
+        owner_kind: str | None = None,
     ) -> JobRecord:
         async with self._lock:
             active_count = sum(
@@ -116,6 +164,8 @@ class JobManager:
                 item_id=item_id,
                 range_spec=range_spec or "all",
                 options=options or {},
+                owner_user_id=owner_user_id,
+                owner_kind=owner_kind,
             )
             self._jobs[job_id] = record
 
@@ -127,6 +177,13 @@ class JobManager:
         async with self._lock:
             return self._jobs.get(job_id)
 
+    async def get_job_for(self, job_id: str, identity: Identity) -> JobRecord | None:
+        async with self._lock:
+            record = self._jobs.get(job_id)
+            if record is not None and self.can_access_job(record, identity):
+                return record
+            return None
+
     async def list_jobs(
         self,
         status: JobStatus | None = None,
@@ -135,6 +192,23 @@ class JobManager:
     ) -> tuple[list[JobRecord], int]:
         async with self._lock:
             filtered = list(self._jobs.values())
+            if status is not None:
+                filtered = [j for j in filtered if j.status == status]
+            filtered.sort(key=lambda j: j.created_at, reverse=True)
+            total = len(filtered)
+            start = (page - 1) * page_size
+            end = start + page_size
+            return filtered[start:end], total
+
+    async def list_jobs_for(
+        self,
+        identity: Identity,
+        status: JobStatus | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[JobRecord], int]:
+        async with self._lock:
+            filtered = [j for j in self._jobs.values() if self.can_access_job(j, identity)]
             if status is not None:
                 filtered = [j for j in filtered if j.status == status]
             filtered.sort(key=lambda j: j.created_at, reverse=True)
@@ -157,11 +231,47 @@ class JobManager:
             return True
         return False
 
+    async def cancel_job_for(self, job_id: str, identity: Identity) -> bool:
+        to_persist: JobRecord | None = None
+        async with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None or not self.can_access_job(record, identity):
+                return False
+            if record.status in (JobStatus.pending, JobStatus.running):
+                record.status = JobStatus.cancelled
+                record.message = "cancelled"
+                record.updated_at = _utc_now()
+                to_persist = record
+        if to_persist:
+            await self._persist_async(to_persist)
+            return True
+        return False
+
     async def summary(self) -> dict[str, Any]:
         import shutil
         async with self._lock:
             active = sum(1 for j in self._jobs.values() if j.status in (JobStatus.pending, JobStatus.running))
             completed = sum(1 for j in self._jobs.values() if j.status == JobStatus.success)
+
+        try:
+            stat = shutil.disk_usage(self.settings.outputs_dir)
+            disk_free_human = f"{stat.free / (1024**3):.1f} GB"
+        except Exception:  # noqa: BLE001
+            disk_free_human = "未知"
+
+        return {
+            "active_jobs": active,
+            "completed_jobs": completed,
+            "total_speed_human": "0.0 MB/s",
+            "disk_free_human": disk_free_human,
+        }
+
+    async def summary_for(self, identity: Identity) -> dict[str, Any]:
+        import shutil
+        async with self._lock:
+            accessible_jobs = [j for j in self._jobs.values() if self.can_access_job(j, identity)]
+            active = sum(1 for j in accessible_jobs if j.status in (JobStatus.pending, JobStatus.running))
+            completed = sum(1 for j in accessible_jobs if j.status == JobStatus.success)
 
         try:
             stat = shutil.disk_usage(self.settings.outputs_dir)
@@ -295,6 +405,8 @@ class JobManager:
             "files": [f.model_dump() for f in record.files],
             "created_at": record.created_at,
             "updated_at": record.updated_at,
+            "owner_user_id": record.owner_user_id,
+            "owner_kind": record.owner_kind,
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 

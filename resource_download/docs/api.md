@@ -51,6 +51,16 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 - **VIP 每日任务配额**：非 ops 的普通 VIP 用户每日可建任务数（`POST /v1/jobs`）受 `VIP_JOBS_PER_DAY`（默认 `50`）限制，超过日配额将返回 **429 Too Many Requests**，返回细节为 `{"detail": "今日下载配额已用尽"}`。
 - **管理员 (ops / X-API-Key) 豁免**：使用有效 API Key 发起的请求完全不受每日配额计数及配额限制的影响。
 
+### 多租户资源隔离与防探测（E1）
+
+多用户环境下，系统按用户身份对 Job 记录与产物文件实施归属隔离：
+
+- **Job 记录归属**：`POST /v1/jobs` 会将当前请求身份的 `owner_user_id` 与 `owner_kind` 写入任务记录。普通用户（`kind=user`）仅可查看、列表、取消属于自己的 Job 记录；`extra` 字段返回对应的归属信息。
+- **产物文件归属**：文件接口（`GET /v1/files`、`GET /v1/files/{id}`、`POST /v1/files/{id}/open`）优先根据文件路径中的 `job_id` 前缀校验 Job 归属。用户只能访问属于自己 Job 的产物文件。
+- **防探测 (404 Semantics)**：无权限访问他人 Job 或文件时统一返回 **404 Not Found**，防止非法枚举与探测（IDOR 防御）。
+- **运维 (ops / X-API-Key) 权限**：使用 `X-API-Key` 鉴权时（`is_ops=true`）可访问与管理全量 Job 和磁盘文件。
+- **历史 Job 兼容**：未关联 owner 的历史 Job 或磁盘孤立文件仅 ops 可见，对普通用户隐藏。
+
 ---
 
 ## GET /health
