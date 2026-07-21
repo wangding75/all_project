@@ -12,7 +12,7 @@
     <div class="titlebar-brand">
       <span class="icon-logo">🚀</span>
       <span>全能短剧/小说资源下载器</span>
-      <span class="titlebar-version">v0.2.0</span>
+      <span class="titlebar-version" id="titlebarVersionTag">v0.2.0</span>
     </div>
     <div class="titlebar-controls">
       <button class="win-btn btn-min" title="最小化" onclick="if(window.pywebview) pywebview.api.minimize()">—</button>
@@ -26,19 +26,28 @@
     <!-- 左侧固定边栏 (240px) -->
     <aside class="app-sidebar">
       <div>
-        <!-- VIP 状态与卡密兑换卡片 -->
+        <!-- VIP 状态与卡密兑换/账号卡片 -->
         <div class="vip-status-card">
           <div class="vip-user-info">
-            <div class="vip-avatar">👑</div>
+            <div class="vip-avatar" id="vipUserAvatar">👤</div>
             <div class="vip-details">
-              <span class="vip-name">VIP 会员</span>
-              <span class="vip-expire">有效期至: 2026-08-19</span>
+              <span class="vip-name" id="vipUsername">未登录</span>
+              <span class="vip-expire" id="vipExpireDate">未登录 (商业默认路径)</span>
             </div>
           </div>
-          <button class="btn-redeem-key" id="btnRedeemKey">
-            <span>🔑</span>
-            <span>卡密兑换</span>
-          </button>
+          <div class="vip-card-actions">
+            <button class="btn-redeem-key" id="btnOpenAuthModal">
+              <span>🔐</span>
+              <span>登录 / 注册</span>
+            </button>
+            <button class="btn-redeem-key" id="btnRedeemKey" style="display: none;">
+              <span>🔑</span>
+              <span>卡密兑换</span>
+            </button>
+            <button class="btn-secondary" id="btnLogoutBtn" style="display: none; width: 100%; margin-top: 6px; padding: 4px 0; font-size: 11px; text-align: center;">
+              🚪 退出登录
+            </button>
+          </div>
         </div>
 
         <!-- 平台切换器 -->
@@ -54,7 +63,7 @@
           </div>
           <div class="nav-item" data-page="page-jobs">
             <span>📥 下载任务</span>
-            <span class="nav-badge" id="jobCountBadge">3</span>
+            <span class="nav-badge" id="jobCountBadge">0</span>
           </div>
           <div class="nav-item" data-page="page-library">
             <span>📚 本地资源</span>
@@ -164,95 +173,30 @@
             <div class="jobs-stats-list">
               <div class="jobs-stat-item">
                 <span class="jobs-stat-label">正在下载</span>
-                <span class="jobs-stat-val" style="color: var(--color-hongguo);">2</span>
+                <span class="jobs-stat-val" style="color: var(--color-hongguo);">0</span>
               </div>
               <div class="jobs-stat-item">
                 <span class="jobs-stat-label">已完成</span>
-                <span class="jobs-stat-val" style="color: var(--color-success);">1</span>
+                <span class="jobs-stat-val" style="color: var(--color-success);">0</span>
               </div>
               <div class="jobs-stat-item">
                 <span class="jobs-stat-label">总传输速度</span>
-                <span class="jobs-stat-val">4.8 MB/s</span>
+                <span class="jobs-stat-val">0 B/s</span>
               </div>
               <div class="jobs-stat-item">
                 <span class="jobs-stat-label">磁盘剩余容量</span>
-                <span class="jobs-stat-val">128.4 GB</span>
+                <span class="jobs-stat-val">--</span>
               </div>
             </div>
             <div class="jobs-actions-group">
-              <button class="btn-secondary">▶️ 全部开始</button>
-              <button class="btn-secondary">⏸️ 全部暂停</button>
-              <button class="btn-secondary">🗑️ 清空已完成</button>
               <button class="btn-primary" id="btnOpenOutputDir">📂 打开下载目录</button>
             </div>
           </div>
 
           <!-- 任务卡片列表 -->
           <div class="jobs-list" id="jobsList">
-            <!-- 任务 1 (进行中) -->
-            <div class="job-item-card">
-              <img src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=120" class="job-item-thumb" alt="封面">
-              <div class="job-item-info">
-                <div class="job-item-header">
-                  <span class="job-item-title">🔴 霸总的秘密情人 (80集全)</span>
-                  <span class="job-item-speed">⚡ 3.2 MB/s</span>
-                </div>
-                <div class="job-progress-bar-bg">
-                  <div class="job-progress-bar-fill" style="width: 65%;"></div>
-                </div>
-                <div class="job-item-footer">
-                  <span>状态: 正在下载... (52/80集)</span>
-                  <div class="job-controls">
-                    <button class="btn-secondary">⏸️ 暂停</button>
-                    <button class="btn-secondary">✕ 取消</button>
-                    <button class="btn-secondary">📂 目录</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 任务 2 (解密中) -->
-            <div class="job-item-card">
-              <img src="https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=120" class="job-item-thumb" alt="封面">
-              <div class="job-item-info">
-                <div class="job-item-header">
-                  <span class="job-item-title">🍅 宇宙职业选手 (全本)</span>
-                  <span class="job-item-speed" style="color: var(--color-fanqie);">⚡ 1.6 MB/s</span>
-                </div>
-                <div class="job-progress-bar-bg">
-                  <div class="job-progress-bar-fill" style="width: 90%; background: var(--color-fanqie-gradient);"></div>
-                </div>
-                <div class="job-item-footer">
-                  <span>状态: Frida 字体解密合并中... (810/900章)</span>
-                  <div class="job-controls">
-                    <button class="btn-secondary">⏸️ 暂停</button>
-                    <button class="btn-secondary">✕ 取消</button>
-                    <button class="btn-secondary">📂 目录</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 任务 3 (已完成) -->
-            <div class="job-item-card">
-              <img src="https://images.unsplash.com/photo-1514565131-fce0801e5785?w=120" class="job-item-thumb" alt="封面">
-              <div class="job-item-info">
-                <div class="job-item-header">
-                  <span class="job-item-title">🔴 都市龙神兵王 (120集全)</span>
-                  <span class="job-item-speed" style="color: var(--color-success);">✅ 完成</span>
-                </div>
-                <div class="job-progress-bar-bg">
-                  <div class="job-progress-bar-fill" style="width: 100%; background: var(--color-success);"></div>
-                </div>
-                <div class="job-item-footer">
-                  <span>状态: ✅ 已完成 (120/120集 - 1.4 GB)</span>
-                  <div class="job-controls">
-                    <button class="btn-primary" style="padding: 4px 10px; font-size: 11px;">▶️ 播放</button>
-                    <button class="btn-secondary">📂 目录</button>
-                    <button class="btn-secondary">🗑️ 删除</button>
-                  </div>
-                </div>
-              </div>
+            <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+              暂无下载任务，请在资源搜索页面新建任务。
             </div>
           </div>
         </div>
@@ -264,70 +208,20 @@
           <!-- 过滤与搜索行 -->
           <div class="library-filter-bar">
             <div class="filter-tabs-group">
-              <div class="filter-tab-pill active">全部 (12)</div>
-              <div class="filter-tab-pill">🔴 短剧视频 (8)</div>
-              <div class="filter-tab-pill">🍅 小说文本 (4)</div>
+              <div class="filter-tab-pill active">全部 (0)</div>
+              <div class="filter-tab-pill">🔴 短剧视频 (0)</div>
+              <div class="filter-tab-pill">🍅 小说文本 (0)</div>
             </div>
             <div style="display: flex; gap: 8px;">
               <input type="text" class="input-control" placeholder="搜索本地文件名..." style="width: 200px;">
-              <button class="btn-primary">📂 打开所在文件夹</button>
+              <button class="btn-primary" id="btnLibraryOpenDir">📂 打开所在文件夹</button>
             </div>
           </div>
 
           <!-- 资源网格 Grid -->
           <div class="library-grid">
-            <!-- 资源 1 -->
-            <div class="media-card-item">
-              <div class="media-thumb-wrapper">
-                <span class="media-type-tag">🔴 MP4</span>
-                <img src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=300" alt="封面">
-              </div>
-              <div class="media-body">
-                <div>
-                  <div class="media-title">霸总的秘密情人.mp4</div>
-                  <div class="media-meta">大小: 1.2 GB | 80集全 | 1080p</div>
-                </div>
-                <div class="media-actions">
-                  <button class="btn-primary">▶️ 播放视频</button>
-                  <button class="btn-secondary">📂 目录</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- 资源 2 -->
-            <div class="media-card-item">
-              <div class="media-thumb-wrapper">
-                <span class="media-type-tag" style="background: var(--color-fanqie);">🍅 TXT</span>
-                <img src="https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=300" alt="封面">
-              </div>
-              <div class="media-body">
-                <div>
-                  <div class="media-title">宇宙职业选手.txt</div>
-                  <div class="media-meta">大小: 4.8 MB | 900章全本</div>
-                </div>
-                <div class="media-actions">
-                  <button class="btn-secondary" style="border-color: var(--color-fanqie); color: var(--color-fanqie);">📖 阅读小说</button>
-                  <button class="btn-secondary">📂 目录</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- 资源 3 -->
-            <div class="media-card-item">
-              <div class="media-thumb-wrapper">
-                <span class="media-type-tag">🔴 MP4</span>
-                <img src="https://images.unsplash.com/photo-1514565131-fce0801e5785?w=300" alt="封面">
-              </div>
-              <div class="media-body">
-                <div>
-                  <div class="media-title">都市龙神兵王.mp4</div>
-                  <div class="media-meta">大小: 1.4 GB | 120集全 | 1080p</div>
-                </div>
-                <div class="media-actions">
-                  <button class="btn-primary">▶️ 播放视频</button>
-                  <button class="btn-secondary">📂 目录</button>
-                </div>
-              </div>
+            <div style="grid-column: 1 / -1; text-align: center; padding: 60px; color: var(--text-muted);">
+              加载本地资源中...
             </div>
           </div>
         </div>
@@ -336,9 +230,29 @@
       <!-- 子页面 4: ⚙️ 系统设置 -->
       <section class="subpage" id="page-settings">
         <div class="settings-page-container">
+          <!-- 卡片 0: 用户账号与 VIP 认证状态 -->
+          <div class="settings-card">
+            <h3 class="settings-card-title">🔐 账号与 VIP 状态</h3>
+            <div class="form-group">
+              <label class="form-label">当前登录用户</label>
+              <div class="form-row-inline" style="align-items: center; justify-content: space-between;">
+                <span style="font-size: 14px; font-weight: 700; color: var(--text-primary);" id="settingUsernameVal">未登录</span>
+                <div>
+                  <button class="btn-primary" id="settingBtnAuthModal" style="padding: 6px 14px; font-size: 12px;">登录 / 注册</button>
+                  <button class="btn-secondary" id="settingBtnLogout" style="display: none; padding: 6px 14px; font-size: 12px;">退出登录</button>
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">VIP 会员到期时间</label>
+              <span style="font-size: 13px; color: var(--color-fanqie); font-weight: 600;" id="settingVipExpireVal">未开通 VIP</span>
+              <span class="form-hint">商业多租户模式 (AUTH_MODE=dual/jwt_only) 下需登录并兑换 VIP 卡密后方可创建下载任务。</span>
+            </div>
+          </div>
+
           <!-- 卡片 1: 基础服务配置 -->
           <div class="settings-card">
-            <h3 class="settings-card-title">🖥️ 基础服务配置</h3>
+            <h3 class="settings-card-title">🖥️ 基础服务与运维配置</h3>
             
             <div class="form-group">
               <label class="form-label">API 服务端地址</label>
@@ -347,19 +261,18 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label">API Key (鉴权密钥)</label>
+              <label class="form-label">API Key (高级/运维模式)</label>
               <div class="form-row-inline">
                 <input type="password" class="input-control" id="settingApiKey" value="dev-key-change-me">
-                <button class="btn-secondary" style="white-space: nowrap;">重置为默认</button>
+                <button class="btn-secondary" id="btnResetApiKey" style="white-space: nowrap;">重置为默认</button>
               </div>
-              <span class="form-hint">本地 MVP 开发测试密钥，免配置即可直连本地后端。</span>
+              <span class="form-hint">仅在未登录 User Token 时作为 Dev / E2E / Ops 旁路备用。商业默认路径使用 Bearer Token。</span>
             </div>
 
             <div class="form-group">
               <label class="form-label">默认下载保存目录</label>
               <div class="form-row-inline">
                 <input type="text" class="input-control" id="settingOutputDir" value="D:\github\all_project\resource_download\data\outputs">
-                <button class="btn-secondary" style="white-space: nowrap;">浏览...</button>
               </div>
               <span class="form-hint">所有下载完成的短剧 MP4 视频与小说 TXT 文本存放路径。</span>
             </div>
@@ -387,23 +300,16 @@
             </div>
           </div>
 
-          <!-- 卡片 3: 客户端升级与版本 (保留) -->
+          <!-- 卡片 3: 客户端升级与版本 -->
           <div class="settings-card">
             <h3 class="settings-card-title">🚀 客户端升级与版本</h3>
 
             <div class="form-group">
               <label class="form-label">当前客户端版本</label>
               <div class="form-row-inline" style="align-items: center;">
-                <span style="font-size: 14px; font-weight: 700; color: var(--text-primary);">v2.1.0-desktop</span>
+                <span style="font-size: 14px; font-weight: 700; color: var(--text-primary);" id="settingAppVersionVal">v0.2.0-desktop</span>
                 <button class="btn-primary" id="btnCheckUpdate" style="padding: 6px 14px; font-size: 12px;">🔍 检查更新</button>
               </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
-                <input type="checkbox" checked style="accent-color: var(--color-hongguo);">
-                <span>启动时自动检测版本更新</span>
-              </label>
             </div>
           </div>
 
@@ -418,7 +324,35 @@
     </main>
   </div>
 
-  <!-- 3. 卡密兑换全局 Modal 弹窗 -->
+  <!-- 3. 用户登录 / 注册全局 Modal 弹窗 -->
+  <div class="modal-overlay" id="modalAuth">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="authModalTitle">🔐 用户登录 / 注册</h3>
+        <button class="modal-close" id="btnAuthModalClose">✕</button>
+      </div>
+      <div class="auth-tabs" style="display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+        <button class="auth-tab-btn active" id="tabAuthLogin" style="flex: 1; padding: 6px 0; font-size: 13px; font-weight: 600; background: var(--bg-card-hover); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); color: var(--text-primary); cursor: pointer;">登录账号</button>
+        <button class="auth-tab-btn" id="tabAuthRegister" style="flex: 1; padding: 6px 0; font-size: 13px; font-weight: 600; background: transparent; border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); color: var(--text-secondary); cursor: pointer;">注册新账号</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+        <div class="form-group">
+          <label class="form-label">用户名</label>
+          <input type="text" class="input-control" id="inputAuthUsername" placeholder="请输入用户名 (如 testuser)" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">密码</label>
+          <input type="password" class="input-control" id="inputAuthPassword" placeholder="请输入密码" autocomplete="current-password">
+        </div>
+        <div id="authErrorMessage" style="font-size: 12px; color: var(--color-error); display: none; padding: 6px 10px; background: rgba(239, 68, 68, 0.1); border-radius: var(--border-radius-sm); border: 1px solid var(--color-error);"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" id="btnAuthSubmit">立即登录</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. 卡密兑换全局 Modal 弹窗 -->
   <div class="modal-overlay" id="modalRedeemKey">
     <div class="modal-card">
       <div class="modal-header">
@@ -426,8 +360,9 @@
         <button class="modal-close" id="btnModalClose">✕</button>
       </div>
       <div class="modal-body">
-        <p class="modal-hint">请输入发卡网获取的 16 位卡密序列号 (如 VIP-30D-XXXX-XXXX):</p>
+        <p class="modal-hint">请输入发卡网获取的卡密序列号 (如 VIP-30D-XXXX-XXXX):</p>
         <input type="text" class="input-control" id="inputCardKey" placeholder="VIP-XXXX-XXXX-XXXX" autocomplete="off">
+        <div id="redeemErrorMessage" style="font-size: 12px; color: var(--color-error); display: none; margin-top: 10px; padding: 6px 10px; background: rgba(239, 68, 68, 0.1); border-radius: var(--border-radius-sm); border: 1px solid var(--color-error);"></div>
       </div>
       <div class="modal-footer">
         <button class="btn-primary" id="btnModalSubmit">立即兑换</button>

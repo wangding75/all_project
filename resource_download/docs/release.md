@@ -68,7 +68,27 @@ python scripts/build_exe.py
 
 ---
 
-## 4. 生产环境安全指引
+## 4. 商业 dual 模式与客户端闭环
+
+桌面客户端已全面接入 **E2 商业闭环**，支持多租户注册/登录、Bearer Token 自动附带、卡密兑换与 VIP 实时刷新：
+
+1. **商业默认路径 (AUTH_MODE=dual / jwt_only)**:
+   - 用户打开客户端后，在侧边栏或设置页面点击「登录 / 注册」。
+   - **注册**: `POST /v1/auth/register`，提交用户名与密码。
+   - **登录**: `POST /v1/auth/login`，成功后获取 JWT `access_token` 并保存在 `localStorage` 中。
+   - **身份拉取**: 客户端发起后续 API 请求均自动携带 `Authorization: Bearer <token>`；启动或登录后调用 `GET /v1/auth/me` 刷出当前用户身份与 `vip_expires_at`。
+2. **卡密兑换与 VIP 到期**:
+   - 登录后点击侧边栏「卡密兑换」唤起弹窗，输入发卡网获取的 16 位卡密。
+   - 请求 `POST /v1/auth/redeem` `{ card_code: key }`。仅当 API 返回 `success === true` 时自动关闭弹窗并即时刷新 `me` 摘要；若兑换失败保持弹窗开放并给出诚实错误提示。
+3. **未 VIP / 403 / 429 诚实提示**:
+   - 未开通 VIP 用户尝试新建下载任务时，服务端返回 HTTP 403，客户端引导提示并自动弹出卡密兑换窗口。
+   - 当任务创建受每日配额限制时返回 429（detail 区分「配额用尽」与「请求频繁」），客户端进行明细区分提示，杜绝假成功。
+4. **开发 / 运维旁路 (AUTH_MODE=dev + API Key)**:
+   - 在设置 ->「高级/运维模式」中保留 `API Key` 配置项。仅当未存储 Access Token 时，`apiFetch` 会退化为发送 `X-API-Key` 标头，用于 CI/E2E 自动化测试与 ops 运维调测。
+
+---
+
+## 5. 生产环境安全指引
 
 - **覆盖默认 API Key**:
   - 打包生成默认的 `dev-key-change-me` 仅供本地快速测试，防止启动报错。

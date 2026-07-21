@@ -1,5 +1,6 @@
 /* ==========================================================================
    全能短剧/小说资源下载器 - 客户端 REST API 绑定与 UI 控制 (App.js)
+   E2 商业闭环：多租户登录/注册 -> 兑卡 -> 见 VIP -> 建任务 -> 进度 -> 打开产物
    ========================================================================== */
 
 (function () {
@@ -16,6 +17,23 @@
       .replace(/'/g, "&#039;");
   }
 
+  // 格式化 ISO 日期时间
+  function formatDate(isoStr) {
+    if (!isoStr) return "未开通";
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const min = String(d.getMinutes()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+    } catch (_) {
+      return isoStr;
+    }
+  }
+
   // 全局应用状态 State
   const state = {
     theme: localStorage.getItem("theme") || "light",
@@ -23,6 +41,9 @@
     activePage: "page-search",
     apiBase: localStorage.getItem("apiBase") || "http://127.0.0.1:8000",
     apiKey: localStorage.getItem("apiKey") || "dev-key-change-me",
+    accessToken: localStorage.getItem("accessToken") || "",
+    user: null, // me 摘要 { id, username, is_active, vip_expires_at, is_vip }
+    authMode: "login", // login 或 register
     currentDetail: null,
     searchResults: [],
     selectedEpisodes: new Set(),
@@ -35,10 +56,19 @@
   // DOM 元素缓存
   const elements = {
     appHtml: document.documentElement,
+    titlebarVersionTag: document.getElementById("titlebarVersionTag"),
     themeToggleBtn: document.getElementById("themeToggleBtn"),
     platformTabs: document.querySelectorAll(".platform-tab"),
     navItems: document.querySelectorAll(".nav-item"),
     subpages: document.querySelectorAll(".subpage"),
+
+    // 侧栏 VIP & 账号区
+    vipUserAvatar: document.getElementById("vipUserAvatar"),
+    vipUsername: document.getElementById("vipUsername"),
+    vipExpireDate: document.getElementById("vipExpireDate"),
+    btnOpenAuthModal: document.getElementById("btnOpenAuthModal"),
+    btnRedeemKey: document.getElementById("btnRedeemKey"),
+    btnLogoutBtn: document.getElementById("btnLogoutBtn"),
 
     // 搜索页面
     inputSearchQuery: document.getElementById("inputSearchQuery"),
@@ -77,21 +107,38 @@
     libraryGrid: document.querySelector(".library-grid"),
     libraryFilterTabs: document.querySelectorAll(".filter-tab-pill"),
     librarySearchInput: document.querySelector(".library-filter-bar input"),
+    btnLibraryOpenDir: document.getElementById("btnLibraryOpenDir"),
 
     // 设置页面
+    settingUsernameVal: document.getElementById("settingUsernameVal"),
+    settingVipExpireVal: document.getElementById("settingVipExpireVal"),
+    settingBtnAuthModal: document.getElementById("settingBtnAuthModal"),
+    settingBtnLogout: document.getElementById("settingBtnLogout"),
     settingApiBase: document.getElementById("settingApiBase"),
     settingApiKey: document.getElementById("settingApiKey"),
     settingOutputDir: document.getElementById("settingOutputDir"),
+    settingAppVersionVal: document.getElementById("settingAppVersionVal"),
+    btnResetApiKey: document.getElementById("btnResetApiKey"),
     btnSaveSettings: document.getElementById("btnSaveSettings"),
     btnResetSettings: document.getElementById("btnResetSettings"),
     btnCheckUpdate: document.getElementById("btnCheckUpdate"),
 
+    // 登录 / 注册弹窗
+    modalAuth: document.getElementById("modalAuth"),
+    btnAuthModalClose: document.getElementById("btnAuthModalClose"),
+    tabAuthLogin: document.getElementById("tabAuthLogin"),
+    tabAuthRegister: document.getElementById("tabAuthRegister"),
+    inputAuthUsername: document.getElementById("inputAuthUsername"),
+    inputAuthPassword: document.getElementById("inputAuthPassword"),
+    authErrorMessage: document.getElementById("authErrorMessage"),
+    btnAuthSubmit: document.getElementById("btnAuthSubmit"),
+
     // 卡密弹窗
-    btnRedeemKey: document.getElementById("btnRedeemKey"),
     modalRedeemKey: document.getElementById("modalRedeemKey"),
     btnModalClose: document.getElementById("btnModalClose"),
     btnModalSubmit: document.getElementById("btnModalSubmit"),
     inputCardKey: document.getElementById("inputCardKey"),
+    redeemErrorMessage: document.getElementById("redeemErrorMessage"),
 
     // 状态栏
     serverStatusText: document.getElementById("serverStatusText"),
@@ -103,22 +150,203 @@
     return fileId.split("/").map(encodeURIComponent).join("/");
   }
 
-
-  // 通用 REST Fetch 辅助函数
+  // 通用 REST Fetch 辅助函数 (E2 统一鉴权: Bearer token 优先; 无 token 时用 X-API-Key)
   async function apiFetch(endpoint, options = {}) {
     const baseUrl = state.apiBase.replace(/\/+$/, "");
     const url = `${baseUrl}${endpoint}`;
     const headers = {
       "Content-Type": "application/json",
-      "X-API-Key": state.apiKey,
       ...(options.headers || {}),
     };
+
+    if (state.accessToken) {
+      headers["Authorization"] = `Bearer ${state.accessToken}`;
+    } else if (state.apiKey) {
+      headers["X-API-Key"] = state.apiKey;
+    }
+
     const response = await fetch(url, { ...options, headers });
     if (!response.ok) {
       const errData = await response.json().catch(() => ({ detail: response.statusText }));
-      throw new Error(errData.detail || `HTTP ${response.status}`);
+      const errorDetail = errData.detail || `HTTP ${response.status}`;
+
+      // 401: token 过期或无效
+      if (response.status === 401 && state.accessToken && !endpoint.includes("/v1/auth/login")) {
+        state.accessToken = "";
+        localStorage.removeItem("accessToken");
+        state.user = null;
+        updateAuthUI();
+        alert("登录凭证已失效或过期，请重新登录！");
+      }
+      throw new Error(errorDetail);
     }
     return response.json();
+  }
+
+  // 获取 /v1/auth/me 并更新状态
+  async function fetchMe() {
+    if (!state.accessToken) {
+      state.user = null;
+      updateAuthUI();
+      return;
+    }
+    try {
+      const me = await apiFetch("/v1/auth/me");
+      state.user = me;
+    } catch (err) {
+      console.warn("拉取用户信息失败 (可能未登录或凭证无效):", err.message);
+      state.user = null;
+    } finally {
+      updateAuthUI();
+    }
+  }
+
+  // 更新所有与账号/VIP相关的 UI
+  function updateAuthUI() {
+    const u = state.user;
+    if (u) {
+      // 登录状态
+      if (elements.vipUsername) elements.vipUsername.textContent = u.username;
+      if (elements.vipUserAvatar) elements.vipUserAvatar.textContent = u.is_vip ? "👑" : "👤";
+      if (elements.vipExpireDate) {
+        if (u.is_vip && u.vip_expires_at) {
+          elements.vipExpireDate.textContent = `VIP 到期: ${formatDate(u.vip_expires_at)}`;
+        } else {
+          elements.vipExpireDate.textContent = "未开通 VIP";
+        }
+      }
+
+      if (elements.btnOpenAuthModal) elements.btnOpenAuthModal.style.display = "none";
+      if (elements.btnRedeemKey) elements.btnRedeemKey.style.display = "flex";
+      if (elements.btnLogoutBtn) elements.btnLogoutBtn.style.display = "block";
+
+      // 设置页面
+      if (elements.settingUsernameVal) elements.settingUsernameVal.textContent = `${u.username} (${u.is_vip ? "VIP 会员" : "普通用户"})`;
+      if (elements.settingVipExpireVal) {
+        elements.settingVipExpireVal.textContent = u.is_vip && u.vip_expires_at ? formatDate(u.vip_expires_at) : "未开通 VIP";
+      }
+      if (elements.settingBtnAuthModal) elements.settingBtnAuthModal.style.display = "none";
+      if (elements.settingBtnLogout) elements.settingBtnLogout.style.display = "inline-block";
+    } else {
+      // 未登录状态
+      if (elements.vipUsername) elements.vipUsername.textContent = "未登录";
+      if (elements.vipUserAvatar) elements.vipUserAvatar.textContent = "👤";
+      if (elements.vipExpireDate) elements.vipExpireDate.textContent = "未登录 (商业默认路径)";
+
+      if (elements.btnOpenAuthModal) elements.btnOpenAuthModal.style.display = "flex";
+      if (elements.btnRedeemKey) elements.btnRedeemKey.style.display = "none";
+      if (elements.btnLogoutBtn) elements.btnLogoutBtn.style.display = "none";
+
+      // 设置页面
+      if (elements.settingUsernameVal) elements.settingUsernameVal.textContent = "未登录";
+      if (elements.settingVipExpireVal) elements.settingVipExpireVal.textContent = "未开通 VIP";
+      if (elements.settingBtnAuthModal) elements.settingBtnAuthModal.style.display = "inline-block";
+      if (elements.settingBtnLogout) elements.settingBtnLogout.style.display = "none";
+    }
+  }
+
+  // Auth 弹窗控制
+  function openAuthModal(mode = "login") {
+    state.authMode = mode;
+    setAuthTab(mode);
+    if (elements.authErrorMessage) elements.authErrorMessage.style.display = "none";
+    if (elements.inputAuthUsername) elements.inputAuthUsername.value = "";
+    if (elements.inputAuthPassword) elements.inputAuthPassword.value = "";
+    if (elements.modalAuth) elements.modalAuth.classList.add("active");
+  }
+
+  function closeAuthModal() {
+    if (elements.modalAuth) elements.modalAuth.classList.remove("active");
+  }
+
+  function setAuthTab(mode) {
+    state.authMode = mode;
+    if (elements.tabAuthLogin) {
+      elements.tabAuthLogin.classList.toggle("active", mode === "login");
+      elements.tabAuthLogin.style.background = mode === "login" ? "var(--bg-card-hover)" : "transparent";
+      elements.tabAuthLogin.style.color = mode === "login" ? "var(--text-primary)" : "var(--text-secondary)";
+    }
+    if (elements.tabAuthRegister) {
+      elements.tabAuthRegister.classList.toggle("active", mode === "register");
+      elements.tabAuthRegister.style.background = mode === "register" ? "var(--bg-card-hover)" : "transparent";
+      elements.tabAuthRegister.style.color = mode === "register" ? "var(--text-primary)" : "var(--text-secondary)";
+    }
+    if (elements.btnAuthSubmit) {
+      elements.btnAuthSubmit.textContent = mode === "login" ? "立即登录" : "立即注册";
+    }
+  }
+
+  // 登录/注册操作
+  async function doAuthSubmit() {
+    const username = elements.inputAuthUsername.value.trim();
+    const password = elements.inputAuthPassword.value.trim();
+
+    if (!username || !password) {
+      showAuthError("用户名和密码不能为空");
+      return;
+    }
+
+    elements.btnAuthSubmit.disabled = true;
+    if (elements.authErrorMessage) elements.authErrorMessage.style.display = "none";
+
+    if (state.authMode === "login") {
+      try {
+        const res = await apiFetch("/v1/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ username, password }),
+        });
+
+        state.accessToken = res.access_token;
+        localStorage.setItem("accessToken", res.access_token);
+        await fetchMe();
+        closeAuthModal();
+        alert(`✅ 登录成功！欢迎回来 ${username}`);
+      } catch (err) {
+        showAuthError(`登录失败: ${err.message}`);
+      } finally {
+        elements.btnAuthSubmit.disabled = false;
+      }
+    } else {
+      // 注册
+      try {
+        await apiFetch("/v1/auth/register", {
+          method: "POST",
+          body: JSON.stringify({ username, password }),
+        });
+
+        alert("🎉 注册成功！正在为您自动登录...");
+        // 自动登录
+        const res = await apiFetch("/v1/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ username, password }),
+        });
+        state.accessToken = res.access_token;
+        localStorage.setItem("accessToken", res.access_token);
+        await fetchMe();
+        closeAuthModal();
+      } catch (err) {
+        showAuthError(`注册失败: ${err.message}`);
+      } finally {
+        elements.btnAuthSubmit.disabled = false;
+      }
+    }
+  }
+
+  function showAuthError(msg) {
+    if (elements.authErrorMessage) {
+      elements.authErrorMessage.textContent = msg;
+      elements.authErrorMessage.style.display = "block";
+    } else {
+      alert(msg);
+    }
+  }
+
+  function doLogout() {
+    state.accessToken = "";
+    localStorage.removeItem("accessToken");
+    state.user = null;
+    updateAuthUI();
+    alert("已成功退出登录。");
   }
 
   // 1. 初始化主题与配置
@@ -328,10 +556,18 @@
     }
   }
 
-  // 6. 创建下载任务
+  // 6. 创建下载任务 (E2 VIP 403 与 429 诚实提示)
   async function createDownloadJob(rangeSpec) {
     if (!state.currentDetail) {
       alert("请先选择要下载的资源！");
+      return;
+    }
+
+    // 检查是否未登录
+    if (!state.accessToken && (!state.apiKey || state.apiKey === "dev-key-change-me")) {
+      if (confirm("⚠️ 商业多租户模式需要登录账号并开通 VIP。是否现在登录账号？")) {
+        openAuthModal("login");
+      }
       return;
     }
 
@@ -347,10 +583,20 @@
         }),
       });
 
-      alert(`🚀 下载任务已建立！Job ID: ${res.job_id}`);
+      alert(`🚀 下载任务已成功建立！Job ID: ${res.job_id}`);
       switchPage("page-jobs");
     } catch (e) {
-      alert(`任务创建失败: ${e.message}`);
+      const msg = e.message || "";
+      if (msg.includes("VIP") || msg.includes("403")) {
+        alert(`⚠️ VIP 权限不足或未开通: ${msg}\n\n正在为您自动打开卡密兑换窗口...`);
+        if (elements.modalRedeemKey) elements.modalRedeemKey.classList.add("active");
+      } else if (msg.includes("配额") || msg.includes("quota")) {
+        alert(`⚠️ 今日任务创建失败: ${msg}\n(提示: 普通 VIP 每日受配额限制，Ops/Key 免配额，明日将自动重置)`);
+      } else if (msg.includes("频繁") || msg.includes("上限")) {
+        alert(`⚠️ 创建任务受限: ${msg}`);
+      } else {
+        alert(`任务创建失败: ${msg}`);
+      }
     }
   }
 
@@ -556,17 +802,20 @@
   async function checkVersion() {
     try {
       const data = await apiFetch("/v1/version");
-      alert(`ℹ️ 客户端版本信息:\n当前版本: v2.1.0-desktop\n最新版本: ${data.latest_version}\n说明: ${data.release_notes}`);
+      alert(`ℹ️ 客户端版本信息:\n服务端最新版本: ${data.latest_version}\n说明: ${data.release_notes}`);
     } catch (e) {
       alert(`检查版本失败: ${e.message}`);
     }
   }
 
-  // 10. 检查服务端健康状态
+  // 10. 检查服务端健康状态 (自动拉取并对齐 /health 版本)
   async function checkServerHealth() {
     try {
       const data = await apiFetch("/health");
-      if (elements.serverStatusText) elements.serverStatusText.textContent = `服务正常 (${data.version})`;
+      const verStr = data.version || "0.2.0";
+      if (elements.titlebarVersionTag) elements.titlebarVersionTag.textContent = `v${verStr}`;
+      if (elements.settingAppVersionVal) elements.settingAppVersionVal.textContent = `v${verStr}-desktop`;
+      if (elements.serverStatusText) elements.serverStatusText.textContent = `服务正常 (v${verStr})`;
       if (elements.serverStatusDot) elements.serverStatusDot.style.backgroundColor = "var(--color-success)";
     } catch (e) {
       if (elements.serverStatusText) elements.serverStatusText.textContent = "服务不可达 (127.0.0.1:8000)";
@@ -579,6 +828,9 @@
     initTheme();
     initSettingsForm();
     setPlatform(state.platform);
+
+    // 拉取当前用户登录态
+    fetchMe();
 
     if (elements.themeToggleBtn) {
       elements.themeToggleBtn.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
@@ -615,7 +867,33 @@
       });
     }
 
-    // 设置页面绑定
+    // 账号 Login / Logout 事件绑定
+    if (elements.btnOpenAuthModal) {
+      elements.btnOpenAuthModal.addEventListener("click", () => openAuthModal("login"));
+    }
+    if (elements.settingBtnAuthModal) {
+      elements.settingBtnAuthModal.addEventListener("click", () => openAuthModal("login"));
+    }
+    if (elements.btnAuthModalClose) {
+      elements.btnAuthModalClose.addEventListener("click", closeAuthModal);
+    }
+    if (elements.tabAuthLogin) {
+      elements.tabAuthLogin.addEventListener("click", () => setAuthTab("login"));
+    }
+    if (elements.tabAuthRegister) {
+      elements.tabAuthRegister.addEventListener("click", () => setAuthTab("register"));
+    }
+    if (elements.btnAuthSubmit) {
+      elements.btnAuthSubmit.addEventListener("click", doAuthSubmit);
+    }
+    if (elements.btnLogoutBtn) {
+      elements.btnLogoutBtn.addEventListener("click", doLogout);
+    }
+    if (elements.settingBtnLogout) {
+      elements.settingBtnLogout.addEventListener("click", doLogout);
+    }
+
+    // 设置页面保存与重置绑定
     if (elements.btnSaveSettings) {
       elements.btnSaveSettings.addEventListener("click", () => {
         if (elements.settingApiBase) {
@@ -628,6 +906,15 @@
         }
         alert("⚙️ 系统配置已成功保存！");
         checkServerHealth();
+      });
+    }
+
+    if (elements.btnResetApiKey) {
+      elements.btnResetApiKey.addEventListener("click", () => {
+        state.apiKey = "dev-key-change-me";
+        localStorage.removeItem("apiKey");
+        if (elements.settingApiKey) elements.settingApiKey.value = "dev-key-change-me";
+        alert("API Key 已重置为默认开发 Key ('dev-key-change-me')！");
       });
     }
 
@@ -649,9 +936,24 @@
       });
     }
 
-    // 卡密兑换弹窗
+    if (elements.btnLibraryOpenDir) {
+      elements.btnLibraryOpenDir.addEventListener("click", () => {
+        openFileRemote(".", "folder");
+      });
+    }
+
+    // VIP 卡密兑换弹窗 (E2 硬约束: success===true 才能关弹窗并刷新 me)
     if (elements.btnRedeemKey) {
-      elements.btnRedeemKey.addEventListener("click", () => elements.modalRedeemKey.classList.add("active"));
+      elements.btnRedeemKey.addEventListener("click", () => {
+        if (!state.accessToken) {
+          if (confirm("请先登录账号后再兑换 VIP 卡密。是否立即登录？")) {
+            openAuthModal("login");
+          }
+          return;
+        }
+        if (elements.redeemErrorMessage) elements.redeemErrorMessage.style.display = "none";
+        elements.modalRedeemKey.classList.add("active");
+      });
     }
     if (elements.btnModalClose) {
       elements.btnModalClose.addEventListener("click", () => elements.modalRedeemKey.classList.remove("active"));
@@ -659,23 +961,45 @@
     if (elements.btnModalSubmit) {
       elements.btnModalSubmit.addEventListener("click", async () => {
         const key = elements.inputCardKey.value.trim();
-        if (!key) return alert("请输入有效的卡密序列号！");
+        if (!key) {
+          showRedeemError("卡密序列号不能为空！");
+          return;
+        }
+
+        elements.btnModalSubmit.disabled = true;
+        if (elements.redeemErrorMessage) elements.redeemErrorMessage.style.display = "none";
+
         try {
           const res = await apiFetch("/v1/auth/redeem", {
             method: "POST",
             body: JSON.stringify({ card_code: key }),
           });
-          alert(res.message);
-          if (res.success) {
+
+          // 硬约束: success === true 才能关弹窗并刷新 me
+          if (res && res.success === true) {
             elements.modalRedeemKey.classList.remove("active");
             elements.inputCardKey.value = "";
+            await fetchMe();
+            alert(`🎉 ${res.message || '卡密兑换成功！VIP 有效期已重置/延长。'}`);
+          } else {
+            showRedeemError(res.message || "卡密兑换失败，请核对卡密后重试！");
           }
         } catch (e) {
-          alert(`卡密兑换失败: ${e.message}`);
+          showRedeemError(`卡密兑换失败: ${e.message}`);
+        } finally {
+          elements.btnModalSubmit.disabled = false;
         }
       });
     }
 
+    function showRedeemError(msg) {
+      if (elements.redeemErrorMessage) {
+        elements.redeemErrorMessage.textContent = msg;
+        elements.redeemErrorMessage.style.display = "block";
+      } else {
+        alert(msg);
+      }
+    }
 
     // 本地资源库过滤绑定
     if (elements.libraryFilterTabs) {
