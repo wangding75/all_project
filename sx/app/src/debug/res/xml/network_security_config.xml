@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- debug 专用：允许 10.0.2.2（模拟器访问宿主机）明文 HTTP -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">10.0.2.2</domain>
-    </domain-config>
-    <!-- 局域网真机调试 -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">192.168.0.0</domain>
-    </domain-config>
+    <!-- debug 专用：允许所有明文 HTTP，方便开发调试 -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
 </network-security-config>
