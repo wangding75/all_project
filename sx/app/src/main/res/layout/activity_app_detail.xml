@@ -58,11 +58,25 @@
         android:text="@string/action_create_shortcut" />
 
     <com.google.android.material.button.MaterialButton
-        android:id="@+id/btn_independent"
+        android:id="@+id/btn_independent_loc"
         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/action_independent" />
+        android:text="独立定位设置" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_independent_device"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="独立设备伪装" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_independent_network"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="独立网络伪装" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_clear"

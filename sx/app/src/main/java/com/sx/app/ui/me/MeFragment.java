@@ -34,6 +34,10 @@ public class MeFragment extends Fragment {
             startActivity(new Intent(getContext(), LicenseActivity.class));
         });
 
+        view.findViewById(R.id.btn_probe).setOnClickListener(v -> {
+            startActivity(new Intent(getContext(), com.sx.app.ui.probe.SpoofProbeActivity.class));
+        });
+
         return view;
     }
 }

@@ -21,11 +21,7 @@ public class HostAppScanner {
         for (ResolveInfo info : apps) {
             if (info.activityInfo != null && info.activityInfo.applicationInfo != null) {
                 String pkg = info.activityInfo.packageName;
-                // Exclude self package and debug build
-                if (pkg.equals(selfPkg) || pkg.startsWith("com.sx.app.debug") || pkg.equals("com.sx.app")) {
-                    continue;
-                }
-                // Hide system apps by default in Phase 0
+                // Note (Requirement M7): Allow host app to be imported into sandbox for Probe verification.
                 boolean isSystem = (info.activityInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
                 if (isSystem) {
                     continue;

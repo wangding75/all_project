@@ -28,17 +28,28 @@ public class LocationSettingsActivity extends AppCompatActivity {
     private MaterialButton mBtnToggleService;
 
     private LocationConfig mConfig;
+    private String mPkg;
+    private int mUserId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_location_settings);
 
+        if (getIntent() != null) {
+            mPkg = getIntent().getStringExtra("package_name");
+            mUserId = getIntent().getIntExtra("user_id", 0);
+        }
+
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setTitle(R.string.module_location);
+            if (!TextUtils.isEmpty(mPkg)) {
+                getSupportActionBar().setTitle(getString(R.string.module_location) + " (" + mPkg + ":" + mUserId + ")");
+            } else {
+                getSupportActionBar().setTitle(R.string.module_location);
+            }
         }
         toolbar.setNavigationOnClickListener(v -> finish());
 
@@ -52,7 +63,7 @@ public class LocationSettingsActivity extends AppCompatActivity {
         mSwitchAntiMock = findViewById(R.id.switch_anti_mock);
         mBtnToggleService = findViewById(R.id.btn_toggle_service);
 
-        mConfig = LocationConfig.load(this);
+        mConfig = LocationConfig.load(this, mPkg, mUserId);
         loadConfigUI();
 
         if (!PermissionHelper.hasLocationPermission(this)) {
@@ -70,7 +81,6 @@ public class LocationSettingsActivity extends AppCompatActivity {
                 mEtLat.setText(String.format(java.util.Locale.US, "%.6f", lat));
                 mEtLng.setText(String.format(java.util.Locale.US, "%.6f", lng));
             } catch (Exception e) {
-                // If inputs are empty or invalid, randomize based on config defaults
                 double lat = mConfig.latitude + (Math.random() - 0.5) * 0.005;
                 double lng = mConfig.longitude + (Math.random() - 0.5) * 0.005;
                 mEtLat.setText(String.format(java.util.Locale.US, "%.6f", lat));
@@ -85,7 +95,7 @@ public class LocationSettingsActivity extends AppCompatActivity {
 
         mBtnToggleService.setOnClickListener(v -> {
             if (saveConfig(false)) {
-                Toast.makeText(this, "已保存。Phase 0 不启动系统模拟定位服务。", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "已保存。Phase 2 伪装生效于沙箱分身。", Toast.LENGTH_LONG).show();
             }
         });
     }
@@ -124,7 +134,15 @@ public class LocationSettingsActivity extends AppCompatActivity {
             mConfig.intervalMs = Long.parseLong(mEtInterval.getText().toString());
             mConfig.microDrift = mSwitchDrift.isChecked();
             mConfig.antiMockDetect = mSwitchAntiMock.isChecked();
-            mConfig.save(this);
+            mConfig.save(this, mPkg, mUserId);
+
+            // Send package-bound broadcast (M9)
+            String hostPkg = getPackageName();
+            Intent broadcast = new Intent(hostPkg + ".action.UPDATE_CONFIG");
+            broadcast.setPackage(hostPkg);
+            broadcast.putExtra("package_name", mPkg);
+            broadcast.putExtra("user_id", mUserId);
+            sendBroadcast(broadcast);
 
             mTvCoord.setText(getString(R.string.loc_coord, lat, lng));
             if (showSavedToast) {

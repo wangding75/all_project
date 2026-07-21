@@ -3,7 +3,6 @@ package com.sx.app.license;
 import android.content.Context;
 import android.text.TextUtils;
 
-import com.sx.app.BuildConfig;
 import com.sx.app.data.SxPrefs;
 import com.sx.app.util.CryptoUtil;
 import com.sx.app.util.DeviceIdGenerator;
@@ -20,6 +19,8 @@ import java.util.Locale;
  * Production would bind server-side; here we issue a local signed token.
  */
 public final class LicenseManager {
+
+    public static final String HMAC_SECRET = "sx-secret-key-phase1";
 
     private LicenseManager() {}
 
@@ -99,7 +100,7 @@ public final class LicenseManager {
 
     private static String issueToken(String deviceId, long expireAt) {
         String payload = deviceId + "|" + expireAt;
-        String sig = CryptoUtil.hmacSha256(payload, BuildConfig.LICENSE_HMAC_SECRET);
+        String sig = CryptoUtil.hmacSha256(payload, HMAC_SECRET);
         return CryptoUtil.b64Encode(payload) + "." + sig;
     }
 
@@ -114,7 +115,7 @@ public final class LicenseManager {
         if (TextUtils.isEmpty(payload) || !payload.contains("|")) {
             return false;
         }
-        String expect = CryptoUtil.hmacSha256(payload, BuildConfig.LICENSE_HMAC_SECRET);
+        String expect = CryptoUtil.hmacSha256(payload, HMAC_SECRET);
         if (!expect.equalsIgnoreCase(sig)) {
             return false;
         }

@@ -26,11 +26,21 @@ public class DeviceProfile {
     public String operatorName = "中国移动";
 
     public static DeviceProfile load(Context context) {
-        return fromJson(SxPrefs.getJson(context, SxPrefs.KEY_DEVICE));
+        return load(context, null, 0);
+    }
+
+    public static DeviceProfile load(Context context, String pkg, int userId) {
+        String key = SxPrefs.makeKey(SxPrefs.KEY_DEVICE, pkg, userId);
+        return fromJson(SxPrefs.getJson(context, key));
     }
 
     public void save(Context context) {
-        SxPrefs.putJson(context, SxPrefs.KEY_DEVICE, toJson());
+        save(context, null, 0);
+    }
+
+    public void save(Context context, String pkg, int userId) {
+        String key = SxPrefs.makeKey(SxPrefs.KEY_DEVICE, pkg, userId);
+        SxPrefs.putJson(context, key, toJson());
     }
 
     public void randomize() {

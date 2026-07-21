@@ -62,6 +62,17 @@ public class AppDetailActivity extends AppCompatActivity {
         }
 
         findViewById(R.id.btn_launch).setOnClickListener(v -> {
+            if (!com.sx.app.license.LicenseManager.isActivated(this)) {
+                new AlertDialog.Builder(this)
+                        .setTitle("未激活或已过期")
+                        .setMessage("软件授权未激活或已过期，无法启动沙箱分身。请前往【我的 -> 授权管理】输入有效卡密激活。")
+                        .setPositiveButton("去激活", (dialog, which) -> {
+                            startActivity(new Intent(this, com.sx.app.ui.license.LicenseActivity.class));
+                        })
+                        .setNegativeButton("取消", null)
+                        .show();
+                return;
+            }
             mEngine.launch(mPackageName, mUserId);
             Toast.makeText(this, "正在启动 " + appInfo.displayName() + "...", Toast.LENGTH_SHORT).show();
         });
@@ -85,8 +96,22 @@ public class AppDetailActivity extends AppCompatActivity {
             }
         });
 
-        findViewById(R.id.btn_independent).setOnClickListener(v -> {
+        findViewById(R.id.btn_independent_loc).setOnClickListener(v -> {
             Intent intent = new Intent(this, LocationSettingsActivity.class);
+            intent.putExtra("package_name", mPackageName);
+            intent.putExtra("user_id", mUserId);
+            startActivity(intent);
+        });
+
+        findViewById(R.id.btn_independent_device).setOnClickListener(v -> {
+            Intent intent = new Intent(this, com.sx.app.ui.device.DeviceSettingsActivity.class);
+            intent.putExtra("package_name", mPackageName);
+            intent.putExtra("user_id", mUserId);
+            startActivity(intent);
+        });
+
+        findViewById(R.id.btn_independent_network).setOnClickListener(v -> {
+            Intent intent = new Intent(this, com.sx.app.ui.network.NetworkSettingsActivity.class);
             intent.putExtra("package_name", mPackageName);
             intent.putExtra("user_id", mUserId);
             startActivity(intent);

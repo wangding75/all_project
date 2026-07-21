@@ -58,6 +58,14 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
     public void onAppCreate() {
         try {
             BlackBoxCore.get().doCreate();
+            BlackBoxCore.get().addAppLifecycleCallback(new top.niunaijun.blackbox.app.configuration.AppLifecycleCallback() {
+                @Override
+                public void beforeCreateApplication(String packageName, String processName, Context context, int userId) {
+                    String hostPkg = BlackBoxCore.getHostPkg();
+                    Log.d(TAG, "beforeCreateApplication: pkg=" + packageName + " process=" + processName + " user=" + userId + " hostPkg=" + hostPkg);
+                    com.sx.app.sandbox.spoof.SpoofRuntime.onVirtualClientStart(context, packageName, userId, hostPkg);
+                }
+            });
             mReady = true;
             Log.d(TAG, "BlackBoxCore doCreate completed. Engine is ready.");
         } catch (Exception e) {
@@ -184,6 +192,10 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
     @Override
     public boolean launch(String packageName, int userId) {
         if (!mReady) return false;
+        if (mApp != null && !com.sx.app.license.LicenseManager.isActivated(mApp)) {
+            Log.w(TAG, "Launch blocked: License is not activated or has expired.");
+            return false;
+        }
         try {
             Log.d(TAG, "Launching " + packageName + " for user " + userId);
             return BlackBoxCore.get().launchApk(packageName, userId);

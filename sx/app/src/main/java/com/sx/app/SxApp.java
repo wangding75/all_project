@@ -16,5 +16,6 @@ public class SxApp extends Application {
     public void onCreate() {
         super.onCreate();
         SandboxProvider.getEngine().onAppCreate();
+        com.sx.app.util.TimeGuard.refreshNetworkTimeAsync(this);
     }
 }

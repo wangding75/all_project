@@ -26,17 +26,28 @@ public class DeviceSettingsActivity extends AppCompatActivity {
     private EditText mEtOperator;
 
     private DeviceProfile mProfile;
+    private String mPkg;
+    private int mUserId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_device_settings);
 
+        if (getIntent() != null) {
+            mPkg = getIntent().getStringExtra("package_name");
+            mUserId = getIntent().getIntExtra("user_id", 0);
+        }
+
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setTitle(R.string.module_device);
+            if (mPkg != null && !mPkg.isEmpty()) {
+                getSupportActionBar().setTitle(getString(R.string.module_device) + " (" + mPkg + ":" + mUserId + ")");
+            } else {
+                getSupportActionBar().setTitle(R.string.module_device);
+            }
         }
         toolbar.setNavigationOnClickListener(v -> finish());
 
@@ -54,7 +65,7 @@ public class DeviceSettingsActivity extends AppCompatActivity {
         mEtIccid = findViewById(R.id.et_iccid);
         mEtOperator = findViewById(R.id.et_operator);
 
-        mProfile = DeviceProfile.load(this);
+        mProfile = DeviceProfile.load(this, mPkg, mUserId);
         loadProfileUI();
 
         findViewById(R.id.btn_random).setOnClickListener(v -> {
@@ -84,7 +95,15 @@ public class DeviceSettingsActivity extends AppCompatActivity {
             mProfile.iccid = mEtIccid.getText().toString();
             mProfile.operatorName = mEtOperator.getText().toString();
 
-            mProfile.save(this);
+            mProfile.save(this, mPkg, mUserId);
+
+            String hostPkg = getPackageName();
+            android.content.Intent broadcast = new android.content.Intent(hostPkg + ".action.UPDATE_CONFIG");
+            broadcast.setPackage(hostPkg);
+            broadcast.putExtra("package_name", mPkg);
+            broadcast.putExtra("user_id", mUserId);
+            sendBroadcast(broadcast);
+
             Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show();
         });
     }

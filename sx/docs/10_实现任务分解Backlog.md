@@ -86,16 +86,16 @@
 
 | ID | 任务 | 状态 | 规模 | 依赖 | 验收要点 |
 |----|------|------|------|------|----------|
-| D-01 | 虚拟进程启动回调 SpoofRuntime | todo | L | C-05 | 日志可见 |
-| D-02 | ProfileRepository 全局/分身 merge | todo | M | B-10+ | resolve 正确 |
-| D-03 | Location Hook + 时间戳更新 | todo | L | D-01 | Probe 坐标对 |
-| D-04 | 反 Mock 检测 | todo | M | D-03 | isFromMock=false |
-| D-05 | Device Hook 全字段 | todo | L | D-01 | Probe 通过 |
-| D-06 | WiFi Hook | todo | M | D-01 | SSID/BSSID |
-| D-07 | Cell Hook | todo | M | D-01 | 伪造或屏蔽 |
-| D-08 | （可选）MockLocationService | todo | M | B-10 | 辅助通道 |
-| D-09 | SpoofProbe 测试包或调试页 | todo | M | D-03 | 可重复验收 |
-| D-10 | 独立设置作用域联调 | todo | M | D-02 | 仅单分身生效 |
+| D-01 | 虚拟进程启动回调 SpoofRuntime | done | L | C-05 | 日志可见 |
+| D-02 | ProfileRepository 全局/分身 merge | done | M | B-10+ | resolve 正确 |
+| D-03 | Location Hook + 时间戳更新 | done | L | D-01 | Probe 坐标对 |
+| D-04 | 反 Mock 检测 | done | M | D-03 | isFromMock=false |
+| D-05 | Device Hook 全字段 | done | L | D-01 | Probe 通过 |
+| D-06 | WiFi Hook | done | M | D-01 | SSID/BSSID |
+| D-07 | Cell Hook | done | M | D-01 | 伪造或屏蔽 |
+| D-08 | （可选）MockLocationService | done | M | B-10 | 辅助通道 |
+| D-09 | SpoofProbe 测试包或调试页 | done | M | D-03 | 可重复验收 |
+| D-10 | 独立设置作用域联调 | done | M | D-02 | 仅单分身生效 |
 
 **DoD：** docs/06 测试矩阵 P0 项通过。
 

@@ -41,3 +41,13 @@
 | Xiaomi 12 (真机) | Android 13 (API 33) | 基础应用, 部分第三方社交应用 | **通过** (分身数据独立隔离, 快捷方式启动正常) | 稳定可靠 |
 | Pixel 7 (真机/模拟器) | Android 14 (API 34) | 任何三方应用 | **部分受限/不可用** (隐藏 API 调用在 Android 14 被拦截导致挂载崩溃) | 记录为已知兼容问题 |
 | Emulator | Android 15 (API 35) | 任何三方应用 | **暂不支持** (系统进程启动机制发生变更导致沙箱子进程启动失败) | 记录为已知兼容问题 |
+
+---
+
+## 附录：Phase 2 配置通道与生命周期回调
+
+- **配置 ContentProvider**：`com.sx.app.data.ConfigProvider`（authority: `${applicationId}.config.provider`，以 `BlackBoxCore.getHostPkg()` 为基准指明宿主包，限制仅宿主及同签名/包名调用方读写）
+- **引擎生命周期回调**：`top.niunaijun.blackbox.app.configuration.AppLifecycleCallback.beforeCreateApplication`
+- **Hook 注入与仓储入口**：`com.sx.app.sandbox.spoof.SpoofRuntime.onVirtualClientStart` & `com.sx.app.data.ProfileRepository`
+- **基站伪装策略 (Cell Strategy)**：`TelephonyManager.getAllCellInfo()` 返回空列表拦截真实基站纠偏，`TelephonyManager.getCellLocation()` 返回构造的 `GsmCellLocation(lac, cid)`
+- **热更新与冷启动机制**：配置保存时向宿主及分身发送 `UPDATE_CONFIG` 广播做缓存热刷新；分身进程若重新冷启动必加载最新配置。

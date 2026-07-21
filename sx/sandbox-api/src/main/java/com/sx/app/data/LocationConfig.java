@@ -19,11 +19,21 @@ public class LocationConfig {
     public String address = "";
 
     public static LocationConfig load(Context context) {
-        return fromJson(SxPrefs.getJson(context, SxPrefs.KEY_LOCATION));
+        return load(context, null, 0);
+    }
+
+    public static LocationConfig load(Context context, String pkg, int userId) {
+        String key = SxPrefs.makeKey(SxPrefs.KEY_LOCATION, pkg, userId);
+        return fromJson(SxPrefs.getJson(context, key));
     }
 
     public void save(Context context) {
-        SxPrefs.putJson(context, SxPrefs.KEY_LOCATION, toJson());
+        save(context, null, 0);
+    }
+
+    public void save(Context context, String pkg, int userId) {
+        String key = SxPrefs.makeKey(SxPrefs.KEY_LOCATION, pkg, userId);
+        SxPrefs.putJson(context, key, toJson());
     }
 
     public JSONObject toJson() {

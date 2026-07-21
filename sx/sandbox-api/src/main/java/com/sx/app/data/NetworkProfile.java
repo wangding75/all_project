@@ -39,11 +39,21 @@ public class NetworkProfile {
     }
 
     public static NetworkProfile load(Context context) {
-        return fromJson(SxPrefs.getJson(context, SxPrefs.KEY_NETWORK));
+        return load(context, null, 0);
+    }
+
+    public static NetworkProfile load(Context context, String pkg, int userId) {
+        String key = SxPrefs.makeKey(SxPrefs.KEY_NETWORK, pkg, userId);
+        return fromJson(SxPrefs.getJson(context, key));
     }
 
     public void save(Context context) {
-        SxPrefs.putJson(context, SxPrefs.KEY_NETWORK, toJson());
+        save(context, null, 0);
+    }
+
+    public void save(Context context, String pkg, int userId) {
+        String key = SxPrefs.makeKey(SxPrefs.KEY_NETWORK, pkg, userId);
+        SxPrefs.putJson(context, key, toJson());
     }
 
     public void randomize() {

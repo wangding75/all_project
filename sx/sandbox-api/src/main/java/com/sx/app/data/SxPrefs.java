@@ -8,13 +8,14 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * 闪现配置存储（Phase 0：MODE_PRIVATE）。
- * 分身列表、定位/设备/网络/相机/授权等 JSON 配置。
- * 若后续 LSPosed 需跨进程读配置，再单独评估可读策略，勿在 Phase 0 使用 MODE_WORLD_READABLE。
+ * 闪现配置存储（Phase 2：sandbox-api 迁移版）。
+ * 保持 PREFS_NAME = "sx_config", MODE_PRIVATE 兼容性。
  */
 public final class SxPrefs {
 
     public static final String PREFS_NAME = "sx_config";
+    public static final String KEY_GLOBAL = "global";
+
     public static final String KEY_LOCATION = "location";
     public static final String KEY_DEVICE = "device";
     public static final String KEY_NETWORK = "network";
@@ -31,6 +32,13 @@ public final class SxPrefs {
 
     public static SharedPreferences getPrivate(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    }
+
+    public static String makeKey(String baseKey, String pkg, int userId) {
+        if (pkg == null || pkg.trim().isEmpty()) {
+            return baseKey;
+        }
+        return baseKey + "_" + pkg.trim() + ":" + userId;
     }
 
     public static void putJson(Context context, String key, JSONObject obj) {

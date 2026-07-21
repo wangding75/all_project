@@ -66,7 +66,6 @@ public final class DeviceIdGenerator {
 
     public static String generateImei() {
         StringBuilder sb = new StringBuilder(14);
-        // TAC-like prefix
         sb.append("86");
         for (int i = 0; i < 12; i++) {
             sb.append(R.nextInt(10));
@@ -91,7 +90,6 @@ public final class DeviceIdGenerator {
     }
 
     public static String randomMac() {
-        // Locally administered unicast MAC
         byte[] mac = new byte[6];
         R.nextBytes(mac);
         mac[0] = (byte) ((mac[0] | 0x02) & 0xFE);

@@ -118,6 +118,11 @@
             android:exported="false"
             android:label="应用设置" />
 
+        <activity
+            android:name=".ui.probe.SpoofProbeActivity"
+            android:exported="false"
+            android:label="环境伪装探针" />
+
         <!-- Desktop shortcut target for sandbox instances -->
         <activity
             android:name=".ui.sandbox.ShortcutLaunchActivity"
@@ -135,6 +140,11 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <provider
+            android:name=".data.ConfigProvider"
+            android:authorities="${applicationId}.config.provider"
+            android:exported="true" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

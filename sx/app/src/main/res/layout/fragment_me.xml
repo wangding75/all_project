@@ -34,4 +34,12 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="20dp"
         android:text="@string/module_license" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_probe"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="环境伪装探针" />
 </LinearLayout>

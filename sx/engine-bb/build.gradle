@@ -14,4 +14,6 @@ android {
 dependencies {
     implementation project(':sandbox-api')
     implementation project(':Bcore')
+    implementation project(':Bcore:pine-core')
+    implementation project(':Bcore:pine-xposed')
 }

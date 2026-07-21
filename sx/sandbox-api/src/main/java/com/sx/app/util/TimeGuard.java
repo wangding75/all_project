@@ -79,10 +79,9 @@ public final class TimeGuard {
             java.io.FileOutputStream fos = new java.io.FileOutputStream(f);
             fos.write(String.valueOf(millis).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             fos.close();
-            // Keep mtime monotonic
             long m = f.lastModified();
             if (m < millis) {
-                // no-op; FS mtime is current
+                // Keep mtime monotonic
             }
         } catch (Exception ignored) {
         }

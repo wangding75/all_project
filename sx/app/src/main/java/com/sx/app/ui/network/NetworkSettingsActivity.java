@@ -22,17 +22,28 @@ public class NetworkSettingsActivity extends AppCompatActivity {
     private EditText mEtScanList;
 
     private NetworkProfile mProfile;
+    private String mPkg;
+    private int mUserId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_network_settings);
 
+        if (getIntent() != null) {
+            mPkg = getIntent().getStringExtra("package_name");
+            mUserId = getIntent().getIntExtra("user_id", 0);
+        }
+
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setTitle(R.string.module_network);
+            if (mPkg != null && !mPkg.isEmpty()) {
+                getSupportActionBar().setTitle(getString(R.string.module_network) + " (" + mPkg + ":" + mUserId + ")");
+            } else {
+                getSupportActionBar().setTitle(R.string.module_network);
+            }
         }
         toolbar.setNavigationOnClickListener(v -> finish());
 
@@ -46,7 +57,7 @@ public class NetworkSettingsActivity extends AppCompatActivity {
         mEtCid = findViewById(R.id.et_cid);
         mEtScanList = findViewById(R.id.et_scan_list);
 
-        mProfile = NetworkProfile.load(this);
+        mProfile = NetworkProfile.load(this, mPkg, mUserId);
         loadProfileUI();
 
         findViewById(R.id.btn_random).setOnClickListener(v -> {
@@ -75,7 +86,15 @@ public class NetworkSettingsActivity extends AppCompatActivity {
             } catch (Exception ignored) {}
 
             mProfile.parseScanListText(mEtScanList.getText().toString());
-            mProfile.save(this);
+            mProfile.save(this, mPkg, mUserId);
+
+            String hostPkg = getPackageName();
+            android.content.Intent broadcast = new android.content.Intent(hostPkg + ".action.UPDATE_CONFIG");
+            broadcast.setPackage(hostPkg);
+            broadcast.putExtra("package_name", mPkg);
+            broadcast.putExtra("user_id", mUserId);
+            sendBroadcast(broadcast);
+
             Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show();
         });
     }
