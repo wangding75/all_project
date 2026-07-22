@@ -84,13 +84,15 @@ foreach ($summaryFile in $summaryFiles) {
         $logcatPath = Join-Path $runDirectory "logcat-all.txt"
         $processAfterPath = Join-Path $runDirectory "process-after.txt"
 
-        $evidenceLines = @()
+        $evidenceLines = [System.Collections.Generic.List[string]]::new()
         if (Test-Path -LiteralPath $logcatPath -PathType Leaf) {
-            $evidenceLines = @(
-                Select-String -LiteralPath $logcatPath -Pattern $linePattern -CaseSensitive:$false |
-                    Select-Object -First $MaximumEvidenceLinesPerRun |
-                    ForEach-Object { $_.Line }
-            )
+            $regex = [regex]::new($linePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            foreach ($line in [System.IO.File]::ReadLines($logcatPath)) {
+                if ($regex.IsMatch($line)) {
+                    $evidenceLines.Add($line)
+                    if ($evidenceLines.Count -ge $MaximumEvidenceLinesPerRun) { break }
+                }
+            }
         }
 
         $processLines = @()
