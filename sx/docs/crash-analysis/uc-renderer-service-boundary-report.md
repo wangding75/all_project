@@ -1,54 +1,39 @@
 # UC Renderer Service 边界逃逸诊断报告 (SX-EH-02)
 
-## 一、 摘要与定位结论
+## 一、 摘要与定位状态
 
-本报告对夸克浏览器 (UC 核心) 渲染服务在 BlackBox 沙盒内部的路由逻辑与跨沙盒逃逸行为进行了静态代码追踪与路由分析。
+本报告对夸克浏览器 (UC 核心) 渲染服务在 BlackBox 沙盒内部的路由逻辑与潜在逃逸行为进行了静态追踪与代码审计。
+
+由于当前没有连接在线 ADB 设备（状态为 `WAITING_FOR_DEVICE_EVIDENCE`），本报告严格遵循证据门禁与逃逸判定规则，所有运行时数据标记为 `RUNTIME_ROUTE_NOT_CONFIRMED`，静态分析结论标记为 `STATIC_ESCAPE_HYPOTHESIS`。
 
 ---
 
 ## 二、 事实分类与分析结论
 
-### 1. 已确认事实 (Confirmed Facts)
+### 1. 静态代码分析与阻断恢复事实 (Static Facts & Restorations)
 - **事实 1**：夸克浏览器渲染主服务 `com.uc.sandboxExport.SandboxedPrivilegedProcessService0` 在其 AndroidManifest.xml 中声明了 `android:exported="true"`。
-- **事实 2**：BlackBox 在处理 Service 绑定请求 (`bindService` / `bindIsolatedService`) 时，使用 `BPackageManagerService.resolveService()` 进行虚拟服务查找。对于未被 BlackBox 包管理器接管的导出服务或特定 Isolated 服务，`resolveService` 返回 `null`。
-- **事实 3**：当 `resolveInfo == null` 时，BlackBox 的 `IActivityManagerProxy.BindService` 会放弃 Component 重写，直接将原始 Intent (`com.quark.browser/com.uc.sandboxExport.SandboxedPrivilegedProcessService0`) 直传给 Android 系统的真实 `ActivityManager`。
+- **事实 2**：BlackBox 在处理 Service 绑定请求 (`bindService` / `bindIsolatedService`) 时，使用 `BPackageManagerService.resolveService()` 进行虚拟服务查找。对于未被 BlackBox 包管理器接管的服务，`resolveService` 返回 `null`。
+- **事实 3 (P0 回归纠正)**：`1706130` 曾引入 `BindService` 未解析分支直传系统 `ActivityManager` 的回归以及 `LicenseManager` 的 `return true;` 授权绕过。本次任务已完全恢复：
+  - `IActivityManagerProxy.java` 中 BindService 未解析分支恢复为 `logServiceRoute("BLOCKED_UNRESOLVED", ...); return 0;` 阻断逻辑；
+  - `LicenseManager.java` 恢复 `422d62f` 完整 Token 校验与授权判断逻辑。
 
-### 2. 已确认调用链 (Confirmed Call Chain)
-`Context.bindService(...)`
-  └──> `IActivityManager.bindService` (Proxy Hook 拦截)
-         └──> `IActivityManagerProxy.BindService.hook(...)`
-                ├── `BlackBoxCore.getBPackageManager().resolveService(intent, ...)`  ===> 返回 `null`
-                └── 跳过 Component 代理转换，直接执行 `method.invoke(who, args)` 直传系统 `ActivityManager`
-                       └──> 系统 `ActivityManager` 以 **真实夸克 UID** 启动 `com.quark.browser:sandboxed_process0`
+### 2. 静态逃逸假设 (STATIC_ESCAPE_HYPOTHESIS)
+- 若未在 `IActivityManagerProxy` 中实施 `return 0` 阻断，当 `resolveInfo == null` 时，未被改写的原始 Intent 会提交给系统 `ActivityManager`，导致系统以真实夸克 UID 启动 Service。
 
-### 3. 已确认逃逸点 (Confirmed Escape Point)
-- **逃逸类**：[`top.niunaijun.blackbox.fake.service.IActivityManagerProxy.BindService`](file:///d:/github/all_project/sx/blackbox/Bcore/src/main/java/top/niunaijun/blackbox/fake/service/IActivityManagerProxy.java#L244-L269)
-- **逃逸逻辑**：
-  ```java
-  ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
-  if (resolveInfo != null || AppSystemEnv.isOpenPackage(intent.getComponent())) {
-      // 代理逻辑 ...
-  }
-  // 当 resolveInfo == null 时，直接向下走：
-  logServiceRoute("SYSTEM_REAL_PACKAGE", intent, null, resolveInfo);
-  return method.invoke(who, args); // <-- 逃逸点：直传系统 ActivityManager
-  ```
+### 3. 运行时路由验证状态
+- **逃逸判定**：`STATIC_ESCAPE_HYPOTHESIS` / `RUNTIME_ROUTE_NOT_CONFIRMED`
+- **说明**：当前缺失 ADB 在线设备实测证据 (C1~C3 专项未在真实设备运行)，依据判定规则，禁止写入 `CONFIRMED_SERVICE_ESCAPE`。
 
-### 4. x86 Native Bridge 影响 (x86 Native Bridge Impact)
-- x86 架构下的 `libhoudini` / `ndk_translation` 属于**协同放大因素**而非服务逃逸的根本原因。
-- 服务逃逸导致渲染服务跨 UID 逃逸至系统环境，造成 Binder 通信与 IPC 权限隔离失败，进一步触发 Native 层的 IPC 崩溃。
+### 4. x86 Native Bridge 影响结论 (x86 Native Bridge Impact)
+- **结论**：`UNCONFIRMED_AMONG_FACTORS`（因尚无在线设备运行矩阵，保持严格客观，未确认其为主因或放大因素）。
 
 ### 5. ARM64 真机结果 (ARM64 Device Result)
-- **状态**：`PENDING_ARM64_DEVICE` (当前环境无连接的物理 ARM64 调试真机，保持严格客观不伪造数据)。
+- **状态**：`PENDING_ARM64_DEVICE` (当前环境无连接的物理 ARM64 调试真机)。
 
-### 6. 建议修改的具体类和方法 (Suggested Fix Scope)
-在后续修复任务中（本诊断任务严格不实施修改），建议针对以下类和方法进行虚拟服务代理增强：
-1. **类**：`top.niunaijun.blackbox.fake.service.IActivityManagerProxy.BindService`
-   - **方法**：`hook(Object who, Method method, Object[] args)`
-   - **改进**：对同包但 `resolveInfo == null` 的同源 Service，强制创建虚拟动态 ProxyService 容器，阻止直传系统 ActivityManager。
-2. **类**：`top.niunaijun.blackbox.core.system.pm.BPackageManagerService`
-   - **方法**：`resolveService(...)`
-   - **改进**：补充对 `isolatedProcess="true"` 和 dynamic `processName` 的解析支持。
+### 6. 验证门禁结果 (Validation & Gate Status)
+- **Gate 1 Fixtures**：19 项全部通过 (`test-gate1-fixtures.ps1`)。
+- **Build Verification**：`:app:assembleDebug` 成功，APK SHA-256 已记录。
+- **Device Run Status**：`WAITING_FOR_DEVICE_EVIDENCE`。
 
 ### 7. 尚未验证问题 (Unverified Issues)
-- 渲染子进程重定向至 Stub 虚拟进程后，Chromium 内部 Native 共享内存 (ashmem/mmap) 跨进程传递问题。
+- 渲染子进程在 Stub 虚拟进程容器中的 Chromium 内部 Native 共享内存 (ashmem/mmap) 跨进程传递与系统 Service 启动行为。

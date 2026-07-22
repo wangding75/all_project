@@ -265,8 +265,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     return method.invoke(who, args);
                 }
             }
-            logServiceRoute("SYSTEM_REAL_PACKAGE", intent, null, resolveInfo);
-            return method.invoke(who, args);
+            logServiceRoute("BLOCKED_UNRESOLVED", intent, null, resolveInfo);
+            return 0;
         }
 
         private static void logServiceRoute(String routeType, Intent originalIntent, Intent proxyIntent, ResolveInfo resolveInfo) {
