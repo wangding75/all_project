@@ -398,7 +398,7 @@ if ($ReportPath) {
         }
 
         $hasBoundaryCombos = ($countByCombo.ContainsKey("C1") -and $countByCombo.ContainsKey("C2") -and $countByCombo.ContainsKey("C3"))
-        if (-not $hasBoundaryCombos -and $reportText -match "(?i)CONFIRMED_SERVICE_ESCAPE|CONFIRMED[_ ]ROOT[_ ]CAUSE|已确认服务逃逸") {
+        if (-not $hasBoundaryCombos -and $reportText -match "(?i)CONFIRMED_SERVICE_ESCAPE|CONFIRMED[_ ]ROOT[_ ]CAUSE|\u5DF2\u786E\u8BA4\u670D\u52A1\u9003\u9038") {
             Add-Error "Report claims a confirmed service escape/root cause without valid C1-C3 evidence"
         }
     }
