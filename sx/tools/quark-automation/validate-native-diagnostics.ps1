@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Validate SX native-crash evidence and fail closed.
 
@@ -113,10 +113,15 @@ if (-not (Test-Path -LiteralPath $summaryFullPath)) {
     Add-Error "Artifacts directory is missing: $artifactsFullPath"
 }
 
-$summaryRows = @()
+$summaryRows = [System.Collections.Generic.List[object]]::new()
 if ($script:Errors.Count -eq 0) {
     try {
-        $summaryRows = @(Get-Content -LiteralPath $summaryFullPath -Raw | ConvertFrom-Json)
+        $parsedJson = Get-Content -LiteralPath $summaryFullPath -Raw | ConvertFrom-Json
+        if ($parsedJson -is [System.Collections.IEnumerable] -and -not ($parsedJson -is [string])) {
+            foreach ($item in $parsedJson) { $summaryRows.Add($item) }
+        } elseif ($null -ne $parsedJson) {
+            $summaryRows.Add($parsedJson)
+        }
     } catch {
         Add-Error "Summary JSON cannot be parsed: $($_.Exception.Message)"
     }
