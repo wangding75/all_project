@@ -72,7 +72,13 @@ $linePattern = "SX_SERVICE_ROUTE|SX_TARGET_BOUND|BindService|resolveService|Prox
 $runSummaries = [System.Collections.Generic.List[object]]::new()
 
 foreach ($summaryFile in $summaryFiles) {
-    $items = @(Get-Content -LiteralPath $summaryFile.FullName -Raw | ConvertFrom-Json)
+    $rawItems = Get-Content -LiteralPath $summaryFile.FullName -Raw | ConvertFrom-Json
+    $items = [System.Collections.Generic.List[object]]::new()
+    if ($rawItems -is [System.Collections.IEnumerable] -and -not ($rawItems -is [string])) {
+        foreach ($item in $rawItems) { $items.Add($item) }
+    } elseif ($null -ne $rawItems) {
+        $items.Add($rawItems)
+    }
     foreach ($result in $items) {
         $runDirectory = Get-RunDirectory -Root $sxRoot -Result $result -SummaryDirectory $summaryFile.Directory.FullName
         $logcatPath = Join-Path $runDirectory "logcat-all.txt"
