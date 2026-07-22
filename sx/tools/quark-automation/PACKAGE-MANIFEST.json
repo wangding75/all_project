@@ -1,0 +1,15 @@
+{
+  "package": "sx-quark-automation-scripts",
+  "version": 2,
+  "install_directory": "tools/quark-automation",
+  "validated_script_manifest": [
+    "collect-native-crash.ps1",
+    "run-native-ab-matrix.ps1",
+    "validate-native-diagnostics.ps1",
+    "test-gate1-fixtures.ps1",
+    "run-quark-diagnostics.ps1",
+    "summarize-quark-diagnostics.ps1",
+    "test-quark-automation-scripts.ps1"
+  ],
+  "legacy_scripts_are_not_scanned": true
+}

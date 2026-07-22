@@ -1,0 +1,41 @@
+{
+  "required_scripts_present": true,
+  "manifest_count": 7,
+  "delimiter_balance": {
+    "collect-native-crash.ps1": {
+      "paren": -5,
+      "brace": 0,
+      "bracket": 0
+    },
+    "run-native-ab-matrix.ps1": {
+      "paren": 0,
+      "brace": 0,
+      "bracket": 0
+    },
+    "validate-native-diagnostics.ps1": {
+      "paren": 0,
+      "brace": 0,
+      "bracket": 0
+    },
+    "test-gate1-fixtures.ps1": {
+      "paren": 0,
+      "brace": 0,
+      "bracket": 0
+    },
+    "run-quark-diagnostics.ps1": {
+      "paren": 0,
+      "brace": 0,
+      "bracket": 0
+    },
+    "summarize-quark-diagnostics.ps1": {
+      "paren": 0,
+      "brace": 0,
+      "bracket": 0
+    },
+    "test-quark-automation-scripts.ps1": {
+      "paren": 0,
+      "brace": 0,
+      "bracket": 0
+    }
+  }
+}
