@@ -141,6 +141,14 @@ $q0Runs = @($allRuns | Where-Object { $_.combo -eq "A7" })
 $q1Runs = @($allRuns | Where-Object { $_.combo -eq "A1" })
 $q2Runs = @($allRuns | Where-Object { $_.combo -eq "A6" })
 
+$totalRouteLines = 0
+$hasRouteLines = $false
+foreach ($rItem in $allRuns) {
+    $cnt = [int]$rItem.route_evidence_count
+    $totalRouteLines += $cnt
+    if ($cnt -gt 0) { $hasRouteLines = $true }
+}
+
 $summary = [ordered]@{
     schema_version = 1
     generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
@@ -160,8 +168,8 @@ $summary = [ordered]@{
         statuses = @($q2Runs | ForEach-Object { $_.status })
     }
     route_evidence = [ordered]@{
-        total_matching_lines = [int](($allRuns | Measure-Object -Property route_evidence_count -Sum).Sum)
-        state = if (@($allRuns | Where-Object { $_.route_evidence_count -gt 0 }).Count -gt 0) { "EVIDENCE_COLLECTED" } else { "NO_ROUTE_LOG_LINES" }
+        total_matching_lines = $totalRouteLines
+        state = if ($hasRouteLines) { "EVIDENCE_COLLECTED" } else { "NO_ROUTE_LOG_LINES" }
     }
     conclusion = "EVIDENCE_ONLY_ROOT_CAUSE_NOT_AUTO_CONFIRMED"
     runs = $allRuns
