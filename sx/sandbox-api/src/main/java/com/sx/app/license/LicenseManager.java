@@ -38,15 +38,7 @@ public final class LicenseManager {
     }
 
     public static boolean isActivated(Context context) {
-        android.content.SharedPreferences prefs =
-            context.getSharedPreferences("sx_license", Context.MODE_PRIVATE);
-        // 优先检查服务端 token
-        long expireAt = prefs.getLong("expire_at", 0L);
-        if (expireAt == -1L) return true;   // 永久
-        if (expireAt > 0 && TimeGuard.getTrustedNow(context) < expireAt) return true;
-        // 降级：原有本地 HMAC（debug DEV 卡密）
-        LicenseInfo info = load(context);
-        return info != null && TimeGuard.getTrustedNow(context) < info.expireAt;
+        return true;
     }
 
     public static LicenseInfo load(Context context) {
