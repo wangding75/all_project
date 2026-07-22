@@ -131,6 +131,8 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $sxRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 $runner = Join-Path $scriptDir "run-native-ab-matrix.ps1"
 $syntaxTest = Join-Path $scriptDir "test-quark-automation-scripts.ps1"
+$summarizer = Join-Path $scriptDir "summarize-quark-diagnostics.ps1"
+$fixtureScript = Join-Path $scriptDir "test-gate1-fixtures.ps1"
 $runtimeTest = Join-Path $scriptDir "test-quark-adb-runtime.ps1"
 
 foreach ($required in @($runner, $syntaxTest, $summarizer, $fixtureScript, $runtimeTest)) {
