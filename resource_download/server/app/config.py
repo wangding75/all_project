@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     vip_jobs_per_day: int = 50
 
     # ADB 与 Frida 配置（番茄 App 会话）
-    adb_path: str = r"D:\install\Netease\MuMu\nx_main\adb.exe"
+    adb_path: str = "adb"
     adb_device: str = "127.0.0.1:16384"
     frida_host: str = "127.0.0.1:27042"
     fanqie_pkg: str = "com.dragon.read"

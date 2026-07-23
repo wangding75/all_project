@@ -75,6 +75,9 @@ def run_build():
         "--exclude-module=tkinter",
         "--exclude-module=matplotlib",
         "--exclude-module=IPython",
+        "--exclude-module=pytest",
+        "--exclude-module=unittest",
+        "--exclude-module=ruff",
     ]
 
     # 默认不包含 vendor 源码，仅在环境变量 INCLUDE_VENDOR == "1" 时打包
