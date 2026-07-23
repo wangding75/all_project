@@ -50,6 +50,8 @@ async def lifespan(_app: FastAPI):
         get_sign_pool()
         logging.info("签名节点池已启用 (SIGN_POOL_ENABLED=True)")
     yield
+    logging.info("服务端收到退出信号，开始执行优雅关机流程...")
+    await manager.shutdown()
 
 
 app = FastAPI(

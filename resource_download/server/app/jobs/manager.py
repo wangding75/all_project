@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -13,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 from app.config import Settings, get_settings
 from app.models import JobFile, JobResponse, JobStatus, PlatformName
 from platforms.registry import get_platform
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.auth import Identity
@@ -102,9 +106,9 @@ class JobManager:
         return False
 
     async def load_jobs(self) -> None:
-        """从磁盘加载持久化的 Job 记录。若在运行中掉电/重启，则将其置为 failed 并同步写回磁盘。"""
+        """从磁盘加载持久化的 Job 记录。若在运行中掉电/重启，则将其置为 failed。若文件坏损，归档为 .corrupted"""
         async with self._lock:
-            for file_path in self.settings.jobs_dir.glob("*.json"):
+            for file_path in list(self.settings.jobs_dir.glob("*.json")):
                 try:
                     data = json.loads(file_path.read_text(encoding="utf-8"))
                     job_id = data.get("job_id")
@@ -112,7 +116,7 @@ class JobManager:
                         continue
                     status_str = data.get("status", "pending")
                     status = JobStatus(status_str) if status_str in JobStatus.__members__ else JobStatus.failed
-                    was_active = status in (JobStatus.pending, JobStatus.running)
+                    was_active = status in (JobStatus.pending, JobStatus.running, JobStatus.cancelling)
                     if was_active:
                         status = JobStatus.failed
                         data["error"] = "服务重启，任务已被中断"
@@ -138,8 +142,24 @@ class JobManager:
                     self._jobs[job_id] = record
                     if was_active:
                         self._persist(record)
-                except Exception:  # noqa: BLE001
-                    continue
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("读取坏损任务 JSON 文件失败: %s, 错误: %s", file_path, exc)
+                    try:
+                        corrupted_path = file_path.with_name(file_path.name + ".corrupted")
+                        os.replace(file_path, corrupted_path)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+    async def shutdown(self) -> None:
+        """优雅关闭：通知所有运行中的任务取消，等待 Task 结束并持久化最终状态。"""
+        async with self._lock:
+            running_job_ids = [
+                j_id for j_id, j in self._jobs.items()
+                if j.status in (JobStatus.pending, JobStatus.running, JobStatus.cancelling)
+            ]
+        for job_id in running_job_ids:
+            await self.cancel_job(job_id)
+        logger.info("JobManager 已完成优雅关闭与任务状态持久化")
 
     async def create_job(
         self,
@@ -438,7 +458,8 @@ class JobManager:
         await asyncio.to_thread(self._persist, record)
 
     def _persist(self, record: JobRecord) -> None:
-        path = self.settings.jobs_dir / f"{record.job_id}.json"
+        target_path = self.settings.jobs_dir / f"{record.job_id}.json"
+        tmp_path = self.settings.jobs_dir / f"{record.job_id}.json.tmp"
         payload = {
             "job_id": record.job_id,
             "platform": record.platform.value,
@@ -455,7 +476,12 @@ class JobManager:
             "owner_user_id": record.owner_user_id,
             "owner_kind": record.owner_kind,
         }
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        content = json.dumps(payload, ensure_ascii=False, indent=2)
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, target_path)
 
 
 _manager: JobManager | None = None
