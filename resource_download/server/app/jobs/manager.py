@@ -68,6 +68,7 @@ class JobManager:
         self.settings.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.settings.outputs_dir.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, JobRecord] = {}
+        self._running_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
     def can_access_job(self, record: JobRecord, identity: Identity) -> bool:
@@ -171,7 +172,8 @@ class JobManager:
             self._evict_old_completed_jobs(max_history_jobs=200)
 
         await self._persist_async(record)
-        asyncio.create_task(self._run_job(job_id))
+        task = asyncio.create_task(self._run_job(job_id))
+        self._running_tasks[job_id] = task
         return record
 
     def _evict_old_completed_jobs(self, max_history_jobs: int = 200) -> None:
@@ -238,33 +240,42 @@ class JobManager:
 
     async def cancel_job(self, job_id: str) -> bool:
         to_persist: JobRecord | None = None
+        task_to_cancel: asyncio.Task | None = None
         async with self._lock:
             record = self._jobs.get(job_id)
-            if record is not None and record.status in (JobStatus.pending, JobStatus.running):
+            if record is not None and record.status in (JobStatus.pending, JobStatus.running, JobStatus.cancelling):
+                record.status = JobStatus.cancelling
+                record.message = "cancelling"
+                record.updated_at = _utc_now()
+                to_persist = record
+                task_to_cancel = self._running_tasks.get(job_id)
+
+        if task_to_cancel and not task_to_cancel.done():
+            task_to_cancel.cancel()
+            try:
+                await asyncio.wait_for(asyncio.shield(task_to_cancel), timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                pass
+
+        async with self._lock:
+            record = self._jobs.get(job_id)
+            if record is not None and record.status == JobStatus.cancelling:
                 record.status = JobStatus.cancelled
                 record.message = "cancelled"
                 record.updated_at = _utc_now()
                 to_persist = record
+
         if to_persist:
             await self._persist_async(to_persist)
             return True
         return False
 
     async def cancel_job_for(self, job_id: str, identity: Identity) -> bool:
-        to_persist: JobRecord | None = None
         async with self._lock:
             record = self._jobs.get(job_id)
             if record is None or not self.can_access_job(record, identity):
                 return False
-            if record.status in (JobStatus.pending, JobStatus.running):
-                record.status = JobStatus.cancelled
-                record.message = "cancelled"
-                record.updated_at = _utc_now()
-                to_persist = record
-        if to_persist:
-            await self._persist_async(to_persist)
-            return True
-        return False
+        return await self.cancel_job(job_id)
 
     async def summary(self) -> dict[str, Any]:
         import shutil
@@ -369,7 +380,7 @@ class JobManager:
 
             # 再次检查取消状态
             async with self._lock:
-                if record.status == JobStatus.cancelled:
+                if record.status in (JobStatus.cancelling, JobStatus.cancelled):
                     return
 
             files: list[JobFile] = []
@@ -389,7 +400,7 @@ class JobManager:
                     )
                 )
             async with self._lock:
-                if record.status != JobStatus.cancelled:
+                if record.status not in (JobStatus.cancelling, JobStatus.cancelled):
                     record.status = JobStatus.success
                     record.progress = 100.0
                     record.message = "success"
@@ -397,14 +408,31 @@ class JobManager:
                     record.error = None
                     record.updated_at = _utc_now()
             await self._persist_async(record)
+        except asyncio.CancelledError:
+            out_dir = self.settings.outputs_dir / job_id
+            if out_dir.exists():
+                import shutil
+                shutil.rmtree(out_dir, ignore_errors=True)
+            async with self._lock:
+                record = self._jobs.get(job_id)
+                if record:
+                    record.status = JobStatus.cancelled
+                    record.message = "cancelled"
+                    record.error = "task cancelled by user"
+                    record.updated_at = _utc_now()
+                    await self._persist_async(record)
+            raise
         except Exception as exc:  # noqa: BLE001 — 任务边界捕获
             async with self._lock:
-                if record.status != JobStatus.cancelled:
+                record = self._jobs.get(job_id)
+                if record and record.status not in (JobStatus.cancelling, JobStatus.cancelled):
                     record.status = JobStatus.failed
                     record.error = str(exc)
                     record.message = "failed"
                     record.updated_at = _utc_now()
-            await self._persist_async(record)
+                    await self._persist_async(record)
+        finally:
+            self._running_tasks.pop(job_id, None)
 
     async def _persist_async(self, record: JobRecord) -> None:
         await asyncio.to_thread(self._persist, record)

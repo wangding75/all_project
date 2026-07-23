@@ -16,6 +16,7 @@ class PlatformName(str, Enum):
 class JobStatus(str, Enum):
     pending = "pending"
     running = "running"
+    cancelling = "cancelling"
     success = "success"
     failed = "failed"
     cancelled = "cancelled"
