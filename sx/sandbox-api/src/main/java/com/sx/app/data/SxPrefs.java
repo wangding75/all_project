@@ -20,6 +20,7 @@ public final class SxPrefs {
     public static final String KEY_DEVICE = "device";
     public static final String KEY_NETWORK = "network";
     public static final String KEY_CAMERA = "camera";
+    public static final String KEY_BLUETOOTH = "bluetooth";
     public static final String KEY_SANDBOX_APPS = "sandbox_apps";
     public static final String KEY_LICENSE = "license";
     public static final String KEY_TIME_GUARD = "time_guard";

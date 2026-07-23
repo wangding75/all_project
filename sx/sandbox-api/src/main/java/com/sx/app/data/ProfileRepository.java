@@ -25,6 +25,7 @@ public class ProfileRepository {
     private final Map<String, DeviceProfile> mDeviceCache = new ConcurrentHashMap<>();
     private final Map<String, NetworkProfile> mNetworkCache = new ConcurrentHashMap<>();
     private final Map<String, CameraConfig> mCameraCache = new ConcurrentHashMap<>();
+    private final Map<String, BluetoothProfile> mBluetoothCache = new ConcurrentHashMap<>();
 
     private boolean mReceiverRegistered = false;
     private String mHostPkg;
@@ -81,6 +82,7 @@ public class ProfileRepository {
         mDeviceCache.clear();
         mNetworkCache.clear();
         mCameraCache.clear();
+        mBluetoothCache.clear();
     }
 
     public LocationConfig resolveLocation(Context context, String pkg, int userId) {
@@ -177,6 +179,30 @@ public class ProfileRepository {
 
         CameraConfig res = instanceConfig != null ? instanceConfig : new CameraConfig();
         mCameraCache.put(cacheKey, res);
+        return res;
+    }
+
+    public BluetoothProfile resolveBluetooth(Context context, String pkg, int userId) {
+        String cacheKey = (pkg == null ? "global" : pkg) + ":" + userId;
+        BluetoothProfile cached = mBluetoothCache.get(cacheKey);
+        if (cached != null) return cached;
+
+        BluetoothProfile instanceProfile = queryConfig(context, SxPrefs.KEY_BLUETOOTH, pkg, userId, BluetoothProfile::fromJson);
+        if (instanceProfile != null && instanceProfile.enabled) {
+            mBluetoothCache.put(cacheKey, instanceProfile);
+            return instanceProfile;
+        }
+
+        if (pkg != null && !pkg.isEmpty()) {
+            BluetoothProfile globalProfile = queryConfig(context, SxPrefs.KEY_BLUETOOTH, null, 0, BluetoothProfile::fromJson);
+            if (globalProfile != null && globalProfile.enabled) {
+                mBluetoothCache.put(cacheKey, globalProfile);
+                return globalProfile;
+            }
+        }
+
+        BluetoothProfile res = instanceProfile != null ? instanceProfile : new BluetoothProfile();
+        mBluetoothCache.put(cacheKey, res);
         return res;
     }
 

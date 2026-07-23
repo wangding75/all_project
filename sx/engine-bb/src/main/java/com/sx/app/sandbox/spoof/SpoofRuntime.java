@@ -3,11 +3,13 @@ package com.sx.app.sandbox.spoof;
 import android.content.Context;
 import android.util.Log;
 
+import com.sx.app.data.BluetoothProfile;
 import com.sx.app.data.CameraConfig;
 import com.sx.app.data.DeviceProfile;
 import com.sx.app.data.LocationConfig;
 import com.sx.app.data.NetworkProfile;
 import com.sx.app.data.ProfileRepository;
+import com.sx.app.sandbox.spoof.hook.BluetoothHook;
 import com.sx.app.sandbox.spoof.hook.CameraHook;
 import com.sx.app.sandbox.spoof.hook.CellHook;
 import com.sx.app.sandbox.spoof.hook.DeviceHook;
@@ -29,6 +31,7 @@ public class SpoofRuntime {
             DeviceProfile deviceProfile = repo.resolveDevice(context, packageName, userId);
             NetworkProfile netProfile = repo.resolveNetwork(context, packageName, userId);
             CameraConfig cameraConfig = repo.resolveCamera(context, packageName, userId);
+            BluetoothProfile btProfile = repo.resolveBluetooth(context, packageName, userId);
 
             ClassLoader cl = context.getClassLoader();
 
@@ -47,6 +50,10 @@ public class SpoofRuntime {
 
             if (cameraConfig != null && cameraConfig.enabled) {
                 CameraHook.install(context, cl, cameraConfig);
+            }
+
+            if (btProfile != null && btProfile.enabled) {
+                BluetoothHook.install(cl, btProfile);
             }
 
         } catch (Throwable e) {
