@@ -63,6 +63,19 @@ async def health() -> HealthResponse:
     )
 
 
+@api_router.get("/v1/version", response_model=VersionResponse)
+async def get_version() -> VersionResponse:
+    """获取应用权威当前版本及更新检视状态。"""
+    return VersionResponse(
+        version=__version__,
+        update_check_enabled=False,
+        latest_version=__version__,
+        has_update=False,
+        download_url="",
+        release_notes="ResourceDownloader 统一版本描述。",
+    )
+
+
 @api_router.get("/v1/search", response_model=list[SearchItem])
 async def search(
     platform: PlatformName = Query(...),

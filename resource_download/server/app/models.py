@@ -83,10 +83,12 @@ class HealthResponse(BaseModel):
 
 
 class VersionResponse(BaseModel):
-    latest_version: str = "v2.1.0"
+    version: str
+    update_check_enabled: bool = False
+    latest_version: str
     has_update: bool = False
     download_url: str = ""
-    release_notes: str = "最新纯白极简桌面端版本，支持红果短剧/番茄小说双平台与卡密兑换。"
+    release_notes: str = ""
 
 
 class RedeemRequest(BaseModel):

@@ -26,8 +26,12 @@ def check_dependencies():
 def run_build():
     check_dependencies()
 
+    # 导入权威版本源
+    sys.path.insert(0, str(ROOT_DIR / "server"))
+    from app.version import VERSION
+
     print("==================================================")
-    print("BUILD: Starting packaging with VirtualStore bypass...")
+    print(f"BUILD: Starting packaging for ResourceDownloader v{VERSION}...")
     print("==================================================")
 
     entry_script = ROOT_DIR / "desktop" / "main.py"

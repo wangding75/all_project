@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     api_key: str = "dev-key-change-me"
     host: str = "127.0.0.1"
     port: int = 8000
+    workers: int = 1
     data_dir: Path = DEFAULT_DATA_DIR
     # 番茄章节间隔（秒）
     fanqie_delay: float = 1.0

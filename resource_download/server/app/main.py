@@ -25,6 +25,10 @@ async def lifespan(_app: FastAPI):
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     settings = get_settings()
+    if settings.workers > 1:
+        raise RuntimeError(
+            f"本服务端仅支持单进程/单 Worker 模式运行 (WORKERS=1)，当前配置 WORKERS={settings.workers}"
+        )
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.jobs_dir.mkdir(parents=True, exist_ok=True)
     settings.outputs_dir.mkdir(parents=True, exist_ok=True)
