@@ -1,0 +1,92 @@
+"""一键全量质量门禁与校验入口 (CQ-06)。"""
+
+from __future__ import annotations
+
+import os
+import sys
+import py_compile
+import subprocess
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT_DIR / "server"))
+
+
+def run_phase(name: str, fn):
+    print(f"\n[QualityGate] Phase: {name} ...")
+    try:
+        fn()
+        print(f"[QualityGate] Phase: {name} -> PASS [OK]")
+    except Exception as exc:
+        print(f"[QualityGate] Phase: {name} -> FAILED [FAIL] Error: {exc}")
+        sys.exit(1)
+
+
+def check_python_compile():
+    """Phase 1: Python 编译与语法错误检查"""
+    py_files = list(ROOT_DIR.glob("**/*.py"))
+    for py_file in py_files:
+        if ".pytest_cache" in str(py_file) or "venv" in str(py_file) or "build" in str(py_file) or "dist" in str(py_file):
+            continue
+        try:
+            py_compile.compile(str(py_file), doraise=True)
+        except py_compile.PyCompileError as e:
+            raise RuntimeError(f"Python 编译错误在文件: {py_file}: {e}") from e
+
+
+def check_version_consistency():
+    """Phase 2: 全链路权威版本一致性检查"""
+    from app.version import VERSION, __version__
+    assert VERSION == "1.0.0", f"VERSION 不是 1.0.0: {VERSION}"
+    assert __version__ == VERSION, f"__version__ 不一致: {__version__}"
+
+    toml_path = ROOT_DIR / "pyproject.toml"
+    assert toml_path.exists(), "缺少 pyproject.toml"
+    content = toml_path.read_text(encoding="utf-8")
+    assert f'version = "{VERSION}"' in content, f"pyproject.toml 中版本未匹配 {VERSION}"
+
+
+def check_single_worker_constraint():
+    """Phase 3: WORKERS=1 单进程/单 Worker 运行约束检查"""
+    from app.config import get_settings
+    get_settings.cache_clear()
+    settings = get_settings()
+    assert settings.workers == 1, f"WORKERS 必须为 1，当前为 {settings.workers}"
+
+
+def check_dependency_layering():
+    """Phase 4: 依赖分层与配置文件校验"""
+    req_prod = ROOT_DIR / "requirements.txt"
+    req_dev = ROOT_DIR / "requirements-dev.txt"
+    assert req_prod.exists(), "缺少 requirements.txt"
+    assert req_dev.exists(), "缺少 requirements-dev.txt"
+
+
+def run_pytest_suite():
+    """Phase 5: 全量 pytest 自动化测试套件回归"""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(ROOT_DIR / "server")
+    cmd = [sys.executable, "-m", "pytest", "server/tests"]
+    result = subprocess.run(cmd, cwd=str(ROOT_DIR), env=env)
+    if result.returncode != 0:
+        raise RuntimeError(f"pytest 自动化测试套件存在失败, exit_code={result.returncode}")
+
+
+def main():
+    print("==================================================")
+    print("      RESOURCE DOWNLOADER QUALITY GATE (CQ-06)    ")
+    print("==================================================")
+
+    run_phase("1. Python 语法编译校验", check_python_compile)
+    run_phase("2. 权威版本源一致性校验", check_version_consistency)
+    run_phase("3. WORKERS=1 单进程约束校验", check_single_worker_constraint)
+    run_phase("4. 依赖分层文件校验", check_dependency_layering)
+    run_phase("5. pytest 全量自动化测试回归", run_pytest_suite)
+
+    print("\n==================================================")
+    print(" 🎉 ALL QUALITY GATE PHASES PASSED SUCCESSFULLY! ")
+    print("==================================================")
+
+
+if __name__ == "__main__":
+    main()
