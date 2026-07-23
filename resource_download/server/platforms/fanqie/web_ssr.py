@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import re
 import time
 import urllib.request
+
+logger = logging.getLogger(__name__)
 
 _BASE_HEADERS = {
     "User-Agent": (
@@ -127,57 +130,50 @@ def extract_initial_state(html: str) -> dict:
     if start == -1:
         raise ValueError("无法从页面中提取 __INITIAL_STATE__ 数据")
     start += len(marker)
-    depth = 0
-    end = start
-    for i in range(start, len(html)):
-        if html[i] == "{":
-            depth += 1
-        elif html[i] == "}":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-    return json.loads(html[start:end])
+    try:
+        data, _ = json.JSONDecoder().raw_decode(html[start:])
+        return data
+    except Exception as exc:
+        logger.warning(f"解析 __INITIAL_STATE__ JSON 失败: {exc}")
+        raise ValueError(f"解析 __INITIAL_STATE__ JSON 失败: {exc}") from exc
 
 
 def build_font_mapping(html: str, cookie: str | None = None) -> dict:
-    """从页面的自定义字体中构建 PUA → 真实字符 的映射表。
-
-    工作原理：
-    1. 从 CSS 中提取自定义字体的 woff2 URL
-    2. 下载字体文件，解析 cmap 表（PUA 码点 → glyph 名称如 "gid58670"）
-    3. 用 FONT_MAP 将 glyph ID 映射到真实字符
-    """
+    """从页面的自定义字体中构建 PUA → 真实字符 的映射表。"""
     try:
         from fontTools.ttLib import TTFont
     except ImportError:
-        print("警告: fontTools 未安装，无法解密字体。请运行: pip install fonttools brotli")
+        logger.warning("fontTools 未安装，无法解密字体。请运行: pip install fonttools brotli")
         return {}
 
-    # 从 __INITIAL_STATE__ 中提取 CSS
-    state = extract_initial_state(html)
-    css = state.get("common", {}).get("css", "")
-    if not css:
+    try:
+        state = extract_initial_state(html)
+        css = state.get("common", {}).get("css", "")
+        if not css:
+            logger.warning("页面中未查找到 common.css，无法提取 woff2 字体 URL")
+            return {}
+
+        font_url_match = re.search(r'url\((https://[^)]+\.woff2)\)', css)
+        if not font_url_match:
+            logger.warning("CSS 中未匹配到 woff2 字体 URL")
+            return {}
+
+        font_url = font_url_match.group(1)
+        font_data = fetch_bytes(font_url, cookie=cookie)
+        font = TTFont(io.BytesIO(font_data))
+        cmap = font.getBestCmap()
+
+        mapping = {}
+        for pua_codepoint, glyph_name in cmap.items():
+            gid = glyph_name.replace("gid", "")
+            if gid in FONT_MAP:
+                mapping[chr(pua_codepoint)] = FONT_MAP[gid]
+
+        return mapping
+    except Exception as exc:
+        logger.warning(f"构建字体映射表发生异常，将静默回退: {exc}")
         return {}
 
-    # 提取 woff2 字体 URL
-    font_url_match = re.search(r'url\((https://[^)]+\.woff2)\)', css)
-    if not font_url_match:
-        return {}
-
-    font_url = font_url_match.group(1)
-    font_data = fetch_bytes(font_url, cookie=cookie)
-    font = TTFont(io.BytesIO(font_data))
-    cmap = font.getBestCmap()
-
-    # 构建映射: PUA 字符 → 真实字符
-    mapping = {}
-    for pua_codepoint, glyph_name in cmap.items():
-        gid = glyph_name.replace("gid", "")
-        if gid in FONT_MAP:
-            mapping[chr(pua_codepoint)] = FONT_MAP[gid]
-
-    return mapping
 
 
 def decrypt_content(text: str, mapping: dict) -> str:

@@ -36,14 +36,34 @@ cd d:/github/all_project/resource_download
 
 # 2. 执行打包脚本 (默认不内嵌 vendor，在 dist/ 下输出 ResourceDownloader.exe)
 python scripts/build_exe.py
+
+# 3. 商业正式发版打包 (开启 --noconsole 隐藏控制台，日志自动落盘至 logs/desktop.log)
+python scripts/build_exe.py --noconsole
 ```
 
 > **可选高级选项**:
 > - 如需在生成的 EXE 中直接固化并集成 `vendor` 源码目录（全内嵌分发版本），可通过环境变量驱动：
 >   ```powershell
 >   $env:INCLUDE_VENDOR = "1"
->   python scripts/build_exe.py
+>   python scripts/build_exe.py --noconsole
 >   ```
+
+---
+
+## 6. 商业产品 v1.0.0 部署与发版专章
+
+### 1. 商业发布包无控制台打标
+在正式向客户发布时，必须使用 `--noconsole` 命令行参数构建无黑框产物：
+```powershell
+python scripts/build_exe.py --noconsole
+```
+构建成功后，EXE 启动时将不在桌面弹出 CMD 黑框，所有控制台与 Backend 日志将自动异步落盘记录到安装根目录下的 `logs/desktop.log` 中。
+
+### 2. 生产环境安全与排查 Checklist
+- **版本号对齐**: 确认服务端 `app.__init__.__version__`、桌面标题栏与 `/health` 探活返回版本号均为 `1.0.0`。
+- **免责与风控声明**: 产品仅用于合规的抓取中继与个人备份。涉及番茄/红果平台的数据解密及设备池操作必须遵守目标平台 ToS 及法律法规。
+- **Release Gate 表**: 发版前必须查阅并核对 [release_gate.md](file:///d:/github/all_project/resource_download/docs/release_gate.md) 中 C1~C10 全部检查项通过。
+
 
 ---
 

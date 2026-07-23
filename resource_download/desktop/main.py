@@ -36,6 +36,21 @@ if not env_path.is_file():
     env_path.write_text(default_env, encoding="utf-8")
     print(f"[INIT] 缺省配置文件已生成: {env_path}")
 
+# 日志重定向：在打包或无黑框模式下将日志输出至 logs/desktop.log
+logs_dir = REPO_ROOT / "logs"
+logs_dir.mkdir(parents=True, exist_ok=True)
+log_file = logs_dir / "desktop.log"
+
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(str(log_file), encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+
 from app.config import get_settings
 from app.main import app
 

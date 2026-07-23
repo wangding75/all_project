@@ -45,13 +45,18 @@ def run_build():
     temp_dist.mkdir(parents=True, exist_ok=True)
     temp_work.mkdir(parents=True, exist_ok=True)
 
+    use_noconsole = "--noconsole" in sys.argv or os.environ.get("NOCONSOLE") == "1"
+    console_flag = "--noconsole" if use_noconsole else "--console"
+    if use_noconsole:
+        print("[BUILD] 开启无黑框生产打包模式 (--noconsole)")
+
     pyinstaller_args = [
         sys.executable,
         "-m",
         "PyInstaller",
         "--name=ResourceDownloader",
         "--onefile",
-        "--console",  # 开启控制台，便于调试和查看日志
+        console_flag,
         "--noupx",
         "--clean",
         f"--distpath={temp_dist}",

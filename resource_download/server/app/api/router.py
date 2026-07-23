@@ -34,12 +34,15 @@ from app.models import (
 )
 from platforms.registry import get_platform, list_platforms
 from app.api.auth_router import auth_router
+from app.api.admin import admin_router
 from app.rate_limit import ip_rate_limiter
 from app.db import get_db
 from sqlalchemy.orm import Session
 
 api_router = APIRouter(dependencies=[Depends(ip_rate_limiter("global"))])
 api_router.include_router(auth_router)
+api_router.include_router(admin_router)
+
 
 
 
@@ -83,6 +86,8 @@ async def search(
 async def detail(
     platform: PlatformName = Query(...),
     id: str = Query(..., min_length=1, description="书/剧 ID 或 URL"),
+    page: int | None = Query(None, ge=1, description="可选选集页码"),
+    page_size: int | None = Query(None, ge=1, le=500, description="可选每页选集数量"),
     _: Identity = Depends(require_identity),
 ) -> DetailResponse:
     try:
@@ -95,6 +100,16 @@ async def detail(
         res = await impl.get_detail(id)
         if platform == PlatformName.hongguo:
             res.extra["qualities"] = ["1080p", "720p"]
+
+        if page is not None and page_size is not None:
+            total_segments = len(res.segments)
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            res.extra["total_segments"] = total_segments
+            res.extra["page"] = page
+            res.extra["page_size"] = page_size
+            res.segments = res.segments[start_idx:end_idx]
+
         return res
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"detail failed: {exc}") from exc

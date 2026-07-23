@@ -171,6 +171,19 @@ async def require_api_key(
     return identity
 
 
+async def require_ops(
+    identity: Identity = Depends(require_identity),
+) -> Identity:
+    """校验请求身份必须具有 ops 运维管理权限。"""
+    if identity.is_ops or identity.kind == "api_key":
+        return identity
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="需要运维管理员权限 (ops API Key)",
+    )
+
+
+
 async def require_vip(
     identity: Identity = Depends(require_identity),
     db: Session = Depends(get_db),

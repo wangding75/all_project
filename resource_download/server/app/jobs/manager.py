@@ -168,10 +168,29 @@ class JobManager:
                 owner_kind=owner_kind,
             )
             self._jobs[job_id] = record
+            self._evict_old_completed_jobs(max_history_jobs=200)
 
         await self._persist_async(record)
         asyncio.create_task(self._run_job(job_id))
         return record
+
+    def _evict_old_completed_jobs(self, max_history_jobs: int = 200) -> None:
+        """当内存中的 Job 总数超出上限时，安全淘汰最旧的已结束任务。"""
+        if len(self._jobs) <= max_history_jobs:
+            return
+
+        completed_jobs = [
+            j for j in self._jobs.values()
+            if j.status in (JobStatus.success, JobStatus.failed, JobStatus.cancelled)
+        ]
+        if not completed_jobs:
+            return
+
+        # 按 updated_at 升序排列（最旧的在前）
+        completed_jobs.sort(key=lambda j: j.updated_at)
+        overlimit_count = len(self._jobs) - max_history_jobs
+        for j in completed_jobs[:overlimit_count]:
+            self._jobs.pop(j.job_id, None)
 
     async def get_job(self, job_id: str) -> JobRecord | None:
         async with self._lock:
