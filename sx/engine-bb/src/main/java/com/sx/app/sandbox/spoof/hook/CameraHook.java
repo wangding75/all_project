@@ -3,12 +3,14 @@ package com.sx.app.sandbox.spoof.hook;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.hardware.Camera;
+import android.media.MediaMetadataRetriever;
 import android.util.Log;
 
 import com.sx.app.data.CameraConfig;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.nio.ByteBuffer;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam;
@@ -18,15 +20,24 @@ public class CameraHook {
 
     private static final String TAG = "SX-CameraHook";
     private static CameraConfig sConfig;
-    private static byte[] sNv21Frame;
-    private static byte[] sJpegData;
+    private static volatile byte[] sNv21Frame;
+    private static volatile byte[] sJpegData;
     private static int mFrameWidth = 640;
     private static int mFrameHeight = 480;
+    private static volatile boolean sIsVideoLoopRunning = false;
 
     public static void install(android.content.Context context, ClassLoader classLoader, CameraConfig config) {
         if (config == null || !config.enabled) return;
         sConfig = config;
-        prepareFakeMediaData(context);
+
+        boolean isVideo = CameraConfig.TYPE_VIDEO.equalsIgnoreCase(sConfig.sourceType)
+                          || (sConfig.mediaPath != null && sConfig.mediaPath.toLowerCase().endsWith(".mp4"));
+
+        if (isVideo) {
+            startVideoLoopPlayer(context);
+        } else {
+            prepareFakeMediaData(context);
+        }
 
         try {
             // 1. Camera1 PreviewCallback Hooks
@@ -102,10 +113,104 @@ public class CameraHook {
                         }
                     });
 
-            Log.d(TAG, "CameraHook installed successfully.");
+            // 3. Camera2 ImageReader Hooks (acquireLatestImage & acquireNextImage)
+            try {
+                Class<?> imageReaderClass = Class.forName("android.hardware.camera2.ImageReader");
+                XC_MethodHook imageHook = new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (sConfig != null && sConfig.enabled && param.getResult() != null) {
+                            final Object image = param.getResult();
+                            try {
+                                XposedHelpers.findAndHookMethod(image.getClass(), "getPlanes", new XC_MethodHook() {
+                                    @Override
+                                    protected void afterHookedMethod(MethodHookParam paramPlanes) {
+                                        byte[] fakeNv21 = getFakeNv21Data(0);
+                                        if (fakeNv21 != null && fakeNv21.length > 0) {
+                                            Object[] planes = (Object[]) paramPlanes.getResult();
+                                            if (planes != null && planes.length > 0) {
+                                                try {
+                                                    Object plane0 = planes[0];
+                                                    XposedHelpers.findAndHookMethod(plane0.getClass(), "getBuffer", new XC_MethodHook() {
+                                                        @Override
+                                                        protected void afterHookedMethod(MethodHookParam paramBuffer) {
+                                                            paramBuffer.setResult(ByteBuffer.wrap(fakeNv21));
+                                                        }
+                                                    });
+                                                } catch (Throwable ignored) {}
+                                            }
+                                        }
+                                    }
+                                });
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+                };
+                XposedHelpers.findAndHookMethod(imageReaderClass, "acquireLatestImage", imageHook);
+                XposedHelpers.findAndHookMethod(imageReaderClass, "acquireNextImage", imageHook);
+                Log.d(TAG, "Camera2 ImageReader hooks installed.");
+            } catch (Throwable t) {
+                Log.w(TAG, "Camera2 ImageReader hook unavailable", t);
+            }
+
+            Log.d(TAG, "CameraHook installed successfully (Camera1 + Camera2 + VideoLoop).");
         } catch (Throwable e) {
             Log.e(TAG, "Failed to install CameraHook", e);
         }
+    }
+
+    private static void startVideoLoopPlayer(android.content.Context context) {
+        if (sConfig == null || sConfig.mediaPath == null || sConfig.mediaPath.isEmpty()) return;
+        if (sIsVideoLoopRunning) return;
+        sIsVideoLoopRunning = true;
+
+        new Thread(() -> {
+            Log.d(TAG, "Starting MP4 Video Loop Player for path: " + sConfig.mediaPath);
+            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+            try {
+                File f = new File(sConfig.mediaPath);
+                if (f.exists() && f.canRead()) {
+                    retriever.setDataSource(f.getAbsolutePath());
+                } else {
+                    retriever.setDataSource(sConfig.mediaPath);
+                }
+                String durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                long durationMs = durStr != null ? Long.parseLong(durStr) : 5000L;
+                long currentUs = 0L;
+                long stepUs = 33000L; // ~30 fps
+
+                while (sConfig != null && sConfig.enabled && sIsVideoLoopRunning) {
+                    try {
+                        Bitmap frame = retriever.getFrameAtTime(currentUs, MediaMetadataRetriever.OPTION_CLOSEST);
+                        if (frame != null) {
+                            Bitmap scaled = Bitmap.createScaledBitmap(frame, mFrameWidth, mFrameHeight, true);
+                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                            scaled.compress(Bitmap.CompressFormat.JPEG, 90, baos);
+                            sJpegData = baos.toByteArray();
+                            sNv21Frame = getNV21(mFrameWidth, mFrameHeight, scaled);
+                        }
+                    } catch (Throwable t) {
+                        Log.w(TAG, "Error fetching video frame at " + currentUs + "us", t);
+                    }
+                    currentUs += stepUs;
+                    if (currentUs >= durationMs * 1000L) {
+                        currentUs = 0L;
+                    }
+                    try {
+                        Thread.sleep(33);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                }
+            } catch (Throwable t) {
+                Log.e(TAG, "VideoLoopPlayer encountered error", t);
+            } finally {
+                try {
+                    retriever.release();
+                } catch (Throwable ignored) {}
+                sIsVideoLoopRunning = false;
+            }
+        }, "SX-VideoLoopPlayer").start();
     }
 
     private static void prepareFakeMediaData(android.content.Context context) {
@@ -118,7 +223,6 @@ public class CameraHook {
             if (file.exists() && file.canRead()) {
                 bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
             } else if (context != null) {
-                // Fallback via ConfigProvider get_camera_bytes (F1 fix for cross-process storage isolation)
                 try {
                     String hostPkg = top.niunaijun.blackbox.BlackBoxCore.getHostPkg();
                     if (hostPkg == null || hostPkg.isEmpty()) {
