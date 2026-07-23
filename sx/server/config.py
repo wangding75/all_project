@@ -3,7 +3,7 @@ import os
 
 load_dotenv()
 
-SERVER_SECRET           = os.getenv("SERVER_SECRET", "dev_secret_change_in_prod")
+SERVER_SECRET           = os.getenv("SERVER_SECRET", "sx_dev_secret_2026")
 CARDNET_WEBHOOK_SECRET  = os.getenv("CARDNET_WEBHOOK_SECRET", "dev_webhook_secret")
 DATABASE_URL            = os.getenv("DATABASE_URL", "./sx_license.db")
 ADMIN_API_KEY           = os.getenv("ADMIN_API_KEY", "dev_admin_key")

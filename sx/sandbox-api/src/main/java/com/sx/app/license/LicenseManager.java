@@ -38,7 +38,21 @@ public final class LicenseManager {
     }
 
     public static boolean isActivated(Context context) {
-        return true;
+        LicenseInfo info = load(context);
+        if (info == null || TextUtils.isEmpty(info.card)) {
+            return false;
+        }
+        if (isDebug(context) && info.card.startsWith(LicenseConfig.DEV_KEY_PREFIX)) {
+            long expireAt = parseDevCard(info.card);
+            if (expireAt <= 0) return false;
+            long now = TimeGuard.getTrustedNow(context);
+            return now < expireAt;
+        }
+        if (info.expireAt == -1L) {
+            return true;
+        }
+        long now = TimeGuard.getTrustedNow(context);
+        return info.expireAt > 0 && now < info.expireAt;
     }
 
     public static LicenseInfo load(Context context) {
@@ -48,7 +62,7 @@ public final class LicenseManager {
         if (serverExpire != 0L) {
             LicenseInfo info = new LicenseInfo();
             info.card = prefs.getString("card_key", "");
-            info.token = prefs.getString("license_token", "");
+            info.token = prefs.getString("server_token", "");
             info.expireAt = serverExpire;
             info.deviceId = getDeviceId(context);
             return info;

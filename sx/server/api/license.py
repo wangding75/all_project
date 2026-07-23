@@ -121,7 +121,7 @@ async def unbind(req: UnbindRequest, db: aiosqlite.Connection = Depends(get_db))
     if req.admin_api_key != ADMIN_API_KEY:
         raise HTTPException(status_code=403, detail="无权限")
     await db.execute(
-        "UPDATE activations SET is_active=0 WHERE card_key=?", (req.card_key,)
+        "DELETE FROM activations WHERE card_key=?", (req.card_key,)
     )
     await db.execute(
         "UPDATE cards SET status='unused' WHERE card_key=?", (req.card_key,)
