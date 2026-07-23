@@ -11,7 +11,9 @@
  */
 HOOK_JNI(jstring, canonicalize0, JNIEnv *env, jobject obj, jstring path) {
     jstring redirect = IO::redirectPath(env, path);
-    return orig_canonicalize0(env, obj, redirect);
+    jstring res = orig_canonicalize0(env, obj, redirect);
+    if (redirect && redirect != path) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 /*
@@ -21,7 +23,9 @@ HOOK_JNI(jstring, canonicalize0, JNIEnv *env, jobject obj, jstring path) {
  */
 HOOK_JNI(jint, getBooleanAttributes0, JNIEnv *env, jobject obj, jstring abspath) {
     jstring redirect = IO::redirectPath(env, abspath);
-    return orig_getBooleanAttributes0(env, obj, redirect);
+    jint res = orig_getBooleanAttributes0(env, obj, redirect);
+    if (redirect && redirect != abspath) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 /*
@@ -31,7 +35,9 @@ HOOK_JNI(jint, getBooleanAttributes0, JNIEnv *env, jobject obj, jstring abspath)
  */
 HOOK_JNI(jlong, getLastModifiedTime0, JNIEnv *env, jobject obj, jobject path) {
     jobject redirect = IO::redirectPath(env, path);
-    return orig_getLastModifiedTime0(env, obj, redirect);
+    jlong res = orig_getLastModifiedTime0(env, obj, redirect);
+    if (redirect && redirect != path) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 /*
@@ -42,7 +48,9 @@ HOOK_JNI(jlong, getLastModifiedTime0, JNIEnv *env, jobject obj, jobject path) {
 HOOK_JNI(jboolean, setPermission0, JNIEnv *env, jobject obj, jobject file, jint access,
          jboolean enable, jboolean owneronly) {
     jobject redirect = IO::redirectPath(env, file);
-    return orig_setPermission0(env, obj, redirect, access, enable, owneronly);
+    jboolean res = orig_setPermission0(env, obj, redirect, access, enable, owneronly);
+    if (redirect && redirect != file) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 /*
@@ -52,7 +60,9 @@ HOOK_JNI(jboolean, setPermission0, JNIEnv *env, jobject obj, jobject file, jint 
  */
 HOOK_JNI(jboolean, createFileExclusively0, JNIEnv *env, jobject obj, jstring path) {
     jstring redirect = IO::redirectPath(env, path);
-    return orig_createFileExclusively0(env, obj, redirect);
+    jboolean res = orig_createFileExclusively0(env, obj, redirect);
+    if (redirect && redirect != path) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 /*
@@ -62,7 +72,9 @@ HOOK_JNI(jboolean, createFileExclusively0, JNIEnv *env, jobject obj, jstring pat
  */
 HOOK_JNI(jobjectArray, list0, JNIEnv *env, jobject obj, jobject file) {
     jobject redirect = IO::redirectPath(env, file);
-    return orig_list0(env, obj, redirect);
+    jobjectArray res = orig_list0(env, obj, redirect);
+    if (redirect && redirect != file) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 /*
@@ -72,7 +84,9 @@ HOOK_JNI(jobjectArray, list0, JNIEnv *env, jobject obj, jobject file) {
  */
 HOOK_JNI(jboolean, createDirectory0, JNIEnv *env, jobject obj, jobject path) {
     jobject redirect = IO::redirectPath(env, path);
-    return orig_createDirectory0(env, obj, redirect);
+    jboolean res = orig_createDirectory0(env, obj, redirect);
+    if (redirect && redirect != path) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 /*
@@ -82,7 +96,9 @@ HOOK_JNI(jboolean, createDirectory0, JNIEnv *env, jobject obj, jobject path) {
  */
 HOOK_JNI(jboolean, setLastModifiedTime0, JNIEnv *env, jobject obj, jobject file, jlong time) {
     jobject redirect = IO::redirectPath(env, file);
-    return orig_setLastModifiedTime0(env, obj, redirect, time);
+    jboolean res = orig_setLastModifiedTime0(env, obj, redirect, time);
+    if (redirect && redirect != file) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 /*
@@ -92,7 +108,9 @@ HOOK_JNI(jboolean, setLastModifiedTime0, JNIEnv *env, jobject obj, jobject file,
  */
 HOOK_JNI(jboolean, setReadOnly0, JNIEnv *env, jobject obj, jobject file) {
     jobject redirect = IO::redirectPath(env, file);
-    return orig_setReadOnly0(env, obj, redirect);
+    jboolean res = orig_setReadOnly0(env, obj, redirect);
+    if (redirect && redirect != file) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 /*
@@ -102,7 +120,9 @@ HOOK_JNI(jboolean, setReadOnly0, JNIEnv *env, jobject obj, jobject file) {
  */
 HOOK_JNI(jlong, getSpace0, JNIEnv *env, jobject obj, jobject file, jint t) {
     jobject redirect = IO::redirectPath(env, file);
-    return orig_getSpace0(env, obj, redirect, t);
+    jlong res = orig_getSpace0(env, obj, redirect, t);
+    if (redirect && redirect != file) env->DeleteLocalRef(redirect);
+    return res;
 }
 
 static_assert(std::is_same<decltype(new_canonicalize0(nullptr, nullptr, nullptr)), jstring>::value,

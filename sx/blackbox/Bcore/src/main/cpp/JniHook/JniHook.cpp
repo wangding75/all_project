@@ -117,7 +117,6 @@ bool CheckFlags(void *artMethod) {
         ALOGE("not native method");
         return false;
     }
-    ClearFastNativeFlag(method);
     return true;
 }
 
@@ -168,10 +167,6 @@ JniHook::HookJniFun(JNIEnv *env, const char *class_name, const char *method_name
     if (env->RegisterNatives(clazz, gMethods, 1) < 0) {
         ALOGE("jni hook error. class：%s, method：%s", class_name, method_name);
         return;
-    }
-    // FastNative
-    if (HookEnv.api_level == __ANDROID_API_O__ || HookEnv.api_level == __ANDROID_API_O_MR1__) {
-        AddAccessFlag((char *) artMethod, kAccFastNative);
     }
     ALOGD("register class：%s, method：%s success!", class_name, method_name);
 }

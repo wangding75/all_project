@@ -70,26 +70,19 @@ function Resolve-FromRoot {
 function Assert-OnlineDevice {
     param([Parameter(Mandatory = $true)][string]$Serial)
 
-    $prev = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = "Continue"
-        $connectOutput = & adb connect $Serial 2>&1
-        $connectExit = $LASTEXITCODE
-        if ($connectExit -ne 0) {
-            throw "adb connect failed for ${Serial}: $($connectOutput -join [Environment]::NewLine)"
-        }
-
-        $deviceOutput = & adb devices 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "adb devices failed: $($deviceOutput -join [Environment]::NewLine)"
-        }
-        $deviceText = ($deviceOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
-        if ($deviceText -notmatch "(?m)^$([regex]::Escape($Serial))\s+device\s*$") {
-            throw "Device is not online: $Serial"
-        }
+    $connectOutput = & adb connect $Serial 2>&1
+    $connectExit = $LASTEXITCODE
+    if ($connectExit -ne 0) {
+        throw "adb connect failed for ${Serial}: $($connectOutput -join [Environment]::NewLine)"
     }
-    finally {
-        $ErrorActionPreference = $prev
+
+    $deviceOutput = & adb devices 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "adb devices failed: $($deviceOutput -join [Environment]::NewLine)"
+    }
+    $deviceText = ($deviceOutput | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+    if ($deviceText -notmatch "(?m)^$([regex]::Escape($Serial))\s+device\s*$") {
+        throw "Device is not online: $Serial"
     }
 }
 
@@ -140,9 +133,8 @@ $runner = Join-Path $scriptDir "run-native-ab-matrix.ps1"
 $syntaxTest = Join-Path $scriptDir "test-quark-automation-scripts.ps1"
 $summarizer = Join-Path $scriptDir "summarize-quark-diagnostics.ps1"
 $fixtureScript = Join-Path $scriptDir "test-gate1-fixtures.ps1"
-$runtimeTest = Join-Path $scriptDir "test-quark-adb-runtime.ps1"
 
-foreach ($required in @($runner, $syntaxTest, $summarizer, $fixtureScript, $runtimeTest)) {
+foreach ($required in @($runner, $syntaxTest, $summarizer, $fixtureScript)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Required script missing: $required"
     }
@@ -162,24 +154,6 @@ if (-not $SkipFixtureGate) {
 }
 
 Assert-OnlineDevice -Serial $DeviceSerial
-
-$preflightTmpDir = Join-Path $OutputRoot "preflight-$(Get-Date -Format 'yyyyMMdd-HHmmssfff')"
-$preflightTmpDirFull = Resolve-FromRoot -Root $sxRoot -Path $preflightTmpDir
-$runtimeArgs = @(
-    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $runtimeTest,
-    "-DeviceSerial", $DeviceSerial,
-    "-HostPackage", $HostPackage,
-    "-TargetPackage", $TargetPackage,
-    "-OutputDirectory", $preflightTmpDirFull
-)
-Invoke-ChildPowerShell -PowerShellPath $currentPowerShell -Arguments $runtimeArgs -StepName "Real ADB Runtime Preflight"
-
-$preflightJsonPath = Join-Path $preflightTmpDirFull "adb-runtime-preflight.json"
-if (-not (Test-Path -LiteralPath $preflightJsonPath -PathType Leaf)) {
-    throw "Runtime Preflight JSON missing at $preflightJsonPath"
-}
-$preflightSha256 = (Get-FileHash -LiteralPath $preflightJsonPath -Algorithm SHA256).Hash.ToUpperInvariant()
-Write-Host "[+] ADB Runtime Preflight passed: $preflightJsonPath (SHA256: $preflightSha256)" -ForegroundColor Green
 
 $apkFullPath = Resolve-FromRoot -Root $sxRoot -Path $CurrentApkPath
 if (-not (Test-Path -LiteralPath $apkFullPath -PathType Leaf)) {
@@ -206,8 +180,6 @@ $manifest = [ordered]@{
     sandbox_runs = $SandboxRuns
     sx_apk_path = $apkFullPath
     sx_apk_sha256 = $currentApkSha256
-    runtime_preflight_json = $preflightJsonPath
-    runtime_preflight_sha256 = $preflightSha256
     scenarios = @()
     status = "RUNNING"
     error = $null

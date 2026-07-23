@@ -26,6 +26,6 @@ server/**/__pycache__/
 server/**/*.pyc
 
 # Diagnostics Artifacts
-artifacts/native-crash/*/
-artifacts/native-crash/*.zip
+artifacts/
+
 

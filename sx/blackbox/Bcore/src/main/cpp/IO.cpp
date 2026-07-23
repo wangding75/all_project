@@ -37,10 +37,21 @@ std::string IO::redirectPath(const std::string &path) {
 }
 
 jstring IO::redirectPath(JNIEnv *env, jstring path) {
-    return BoxCore::redirectPathString(env, path);
+    if (!path || !s_enable_redirect) return path;
+    const char *cpath = env->GetStringUTFChars(path, JNI_FALSE);
+    if (!cpath) return path;
+    std::string orig(cpath);
+    env->ReleaseStringUTFChars(path, cpath);
+
+    std::string redirected = redirectPath(orig);
+    if (redirected == orig) {
+        return path;
+    }
+    return env->NewStringUTF(redirected.c_str());
 }
 
 jobject IO::redirectPath(JNIEnv *env, jobject path) {
+    if (!path || !s_enable_redirect) return path;
     return BoxCore::redirectPathFile(env, path);
 }
 

@@ -72,27 +72,19 @@ $linePattern = "SX_SERVICE_ROUTE|SX_TARGET_BOUND|BindService|resolveService|Prox
 $runSummaries = [System.Collections.Generic.List[object]]::new()
 
 foreach ($summaryFile in $summaryFiles) {
-    $rawItems = Get-Content -LiteralPath $summaryFile.FullName -Raw | ConvertFrom-Json
-    $items = [System.Collections.Generic.List[object]]::new()
-    if ($rawItems -is [System.Collections.IEnumerable] -and -not ($rawItems -is [string])) {
-        foreach ($item in $rawItems) { $items.Add($item) }
-    } elseif ($null -ne $rawItems) {
-        $items.Add($rawItems)
-    }
+    $items = @(Get-Content -LiteralPath $summaryFile.FullName -Raw | ConvertFrom-Json)
     foreach ($result in $items) {
         $runDirectory = Get-RunDirectory -Root $sxRoot -Result $result -SummaryDirectory $summaryFile.Directory.FullName
         $logcatPath = Join-Path $runDirectory "logcat-all.txt"
         $processAfterPath = Join-Path $runDirectory "process-after.txt"
 
-        $evidenceLines = [System.Collections.Generic.List[string]]::new()
+        $evidenceLines = @()
         if (Test-Path -LiteralPath $logcatPath -PathType Leaf) {
-            $regex = [regex]::new($linePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-            foreach ($line in [System.IO.File]::ReadLines($logcatPath)) {
-                if ($regex.IsMatch($line)) {
-                    $evidenceLines.Add($line)
-                    if ($evidenceLines.Count -ge $MaximumEvidenceLinesPerRun) { break }
-                }
-            }
+            $evidenceLines = @(
+                Select-String -LiteralPath $logcatPath -Pattern $linePattern -CaseSensitive:$false |
+                    Select-Object -First $MaximumEvidenceLinesPerRun |
+                    ForEach-Object { $_.Line }
+            )
         }
 
         $processLines = @()
@@ -149,14 +141,6 @@ $q0Runs = @($allRuns | Where-Object { $_.combo -eq "A7" })
 $q1Runs = @($allRuns | Where-Object { $_.combo -eq "A1" })
 $q2Runs = @($allRuns | Where-Object { $_.combo -eq "A6" })
 
-$totalRouteLines = 0
-$hasRouteLines = $false
-foreach ($rItem in $allRuns) {
-    $cnt = [int]$rItem.route_evidence_count
-    $totalRouteLines += $cnt
-    if ($cnt -gt 0) { $hasRouteLines = $true }
-}
-
 $summary = [ordered]@{
     schema_version = 1
     generated_at_utc = (Get-Date).ToUniversalTime().ToString("o")
@@ -176,16 +160,15 @@ $summary = [ordered]@{
         statuses = @($q2Runs | ForEach-Object { $_.status })
     }
     route_evidence = [ordered]@{
-        total_matching_lines = $totalRouteLines
-        state = if ($hasRouteLines) { "EVIDENCE_COLLECTED" } else { "NO_ROUTE_LOG_LINES" }
+        total_matching_lines = [int](($allRuns | Measure-Object -Property route_evidence_count -Sum).Sum)
+        state = if (@($allRuns | Where-Object { $_.route_evidence_count -gt 0 }).Count -gt 0) { "EVIDENCE_COLLECTED" } else { "NO_ROUTE_LOG_LINES" }
     }
     conclusion = "EVIDENCE_ONLY_ROOT_CAUSE_NOT_AUTO_CONFIRMED"
-    runs = @($allRuns)
+    runs = $allRuns
 }
 
 $jsonPath = Join-Path $sessionRootFull "quark-diagnostic-summary.json"
-$jsonText = ConvertTo-Json -InputObject $summary -Depth 15
-$jsonText | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+$summary | ConvertTo-Json -Depth 50 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
 
 $markdown = [System.Collections.Generic.List[string]]::new()
 $markdown.Add("# Quark automated diagnostic summary")
