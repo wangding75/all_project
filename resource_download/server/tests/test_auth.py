@@ -277,7 +277,7 @@ def test_dev_bearer_only_unauthorized(client):
     token = login_resp.json()["access_token"]
 
     resp = client.get(
-        "/v1/version",
+        "/v1/auth/me",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 401
