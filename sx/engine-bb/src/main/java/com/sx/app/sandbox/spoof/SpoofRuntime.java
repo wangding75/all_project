@@ -56,6 +56,26 @@ public class SpoofRuntime {
                 BluetoothHook.install(cl, btProfile);
             }
 
+            if ("com.alibaba.android.rimet".equals(packageName)) {
+                try {
+                    de.robv.android.xposed.XposedHelpers.findAndHookMethod(android.view.View.class, "setLayerType", int.class, android.graphics.Paint.class, new de.robv.android.xposed.XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            param.args[0] = android.view.View.LAYER_TYPE_SOFTWARE;
+                        }
+                    });
+                    de.robv.android.xposed.XposedHelpers.findAndHookMethod(android.app.Activity.class, "onCreate", android.os.Bundle.class, new de.robv.android.xposed.XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            try {
+                                android.app.Activity activity = (android.app.Activity) param.thisObject;
+                                activity.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+                            } catch (Throwable ignored) {}
+                        }
+                    });
+                } catch (Throwable ignored) {}
+            }
+
         } catch (Throwable e) {
             Log.e(TAG, "Error in SpoofRuntime.onVirtualClientStart for " + packageName, e);
         }

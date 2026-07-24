@@ -37,4 +37,5 @@ static constexpr uint32_t kAccCorePlatformApi =       0x20000000;  // field, met
 // Reuse the values of kAccSkipAccessChecks and kAccMiranda which are not used for native methods.
 static constexpr uint32_t kAccFastNative =            0x00080000;  // method (runtime; native only)
 static constexpr uint32_t kAccCriticalNative =        0x00200000;  // method (runtime; native only)
+static constexpr uint32_t kAccCompileDontBother =      0x02000000;  // method (runtime; JIT ignore)
 #endif //ARTHOOK_ART_METHOD_H

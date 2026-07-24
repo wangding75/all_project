@@ -222,11 +222,22 @@ public class BlackBoxCore extends ClientConfiguration {
 
     public InstallResult installPackageAsUser(String packageName, int userId) {
         try {
-            PackageInfo packageInfo = getPackageManager().getPackageInfo(packageName, 0);
+            PackageManager pm = getPackageManager();
+            PackageInfo packageInfo = null;
+            try {
+                packageInfo = pm.getPackageInfo(packageName, PackageManager.GET_META_DATA);
+            } catch (Throwable t) {
+                try {
+                    packageInfo = pm.getPackageInfo(packageName, 0);
+                } catch (Throwable ignored) {}
+            }
+            if (packageInfo == null || packageInfo.applicationInfo == null || packageInfo.applicationInfo.sourceDir == null) {
+                return new InstallResult().installError("未能在系统中找到应用 " + packageName + " 的安装包路径");
+            }
             return getBPackageManager().installPackageAsUser(packageInfo.applicationInfo.sourceDir, InstallOption.installBySystem(), userId);
-        } catch (PackageManager.NameNotFoundException e) {
+        } catch (Throwable e) {
             e.printStackTrace();
-            return new InstallResult().installError(e.getMessage());
+            return new InstallResult().installError(e.getMessage() != null ? e.getMessage() : "安装失败");
         }
     }
 

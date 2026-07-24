@@ -123,6 +123,7 @@ public class IOCore {
 
             rule.put(String.format("/data/data/%s", packageName), packageInfo.dataDir);
             rule.put(String.format("/data/user/%d/%s", systemUserId, packageName), packageInfo.dataDir);
+            rule.put(String.format("/data/user_de/%d/%s", systemUserId, packageName), packageInfo.dataDir);
 
             if (BlackBoxCore.getContext().getExternalCacheDir() != null && context.getExternalCacheDir() != null) {
                 File external = BEnvironment.getExternalUserDir(BActivityThread.getUserId());

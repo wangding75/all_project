@@ -13,8 +13,7 @@ static bool hideXposedClass = false;
 
 HOOK_JNI(jobject, findLoadedClass, JNIEnv *env, jobject obj, jobject class_loader, jstring name) {
     const char * nameC = env->GetStringUTFChars(name, JNI_FALSE);
-//     ALOGD("findLoadedClass: %s", nameC);
-    if (hideXposedClass) {
+    if (nameC && hideXposedClass) {
         if (strstr(nameC, "de/robv/android/xposed/") ||
             strstr(nameC, "me/weishu/epic") ||
             strstr(nameC, "me/weishu/exposed") ||
@@ -26,7 +25,9 @@ HOOK_JNI(jobject, findLoadedClass, JNIEnv *env, jobject obj, jobject class_loade
         }
     }
     jobject result = orig_findLoadedClass(env, obj, class_loader, name);
-    env->ReleaseStringUTFChars(name, nameC);
+    if (nameC) {
+        env->ReleaseStringUTFChars(name, nameC);
+    }
     return result;
 }
 

@@ -73,11 +73,15 @@ public class AppDetailActivity extends AppCompatActivity {
                         .show();
                 return;
             }
+            if (!mEngine.isInstalled(mPackageName, mUserId)) {
+                mEngine.installFromHost(mPackageName);
+            }
             boolean ok = mEngine.launch(mPackageName, mUserId);
             if (ok) {
                 Toast.makeText(this, "正在启动 " + appInfo.displayName() + "...", Toast.LENGTH_SHORT).show();
+                v.postDelayed(this::finish, 300);
             } else {
-                Toast.makeText(this, "启动失败：授权未激活或底层引擎未就绪", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "启动失败：未能在沙箱安装或缺乏包访问权限", Toast.LENGTH_LONG).show();
             }
         });
 

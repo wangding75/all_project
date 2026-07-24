@@ -39,6 +39,16 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
                 }
 
                 @Override
+                public boolean isHideRoot() {
+                    return true;
+                }
+
+                @Override
+                public boolean isHideXposed() {
+                    return true;
+                }
+
+                @Override
                 public boolean isEnableDaemonService() {
                     return false;
                 }
@@ -49,7 +59,7 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
                 }
             });
             Log.d(TAG, "BlackBoxCore doAttachBaseContext completed.");
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.e(TAG, "Failed to attach base context for BlackBoxCore", e);
         }
     }
@@ -68,8 +78,9 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
             });
             mReady = true;
             Log.d(TAG, "BlackBoxCore doCreate completed. Engine is ready.");
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.e(TAG, "Failed to call doCreate for BlackBoxCore", e);
+            mReady = true;
         }
     }
 
@@ -191,15 +202,39 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
 
     @Override
     public boolean launch(String packageName, int userId) {
-        if (!mReady) return false;
+        if (!mReady) {
+            try {
+                BlackBoxCore.get().doCreate();
+                mReady = true;
+            } catch (Throwable t) {
+                Log.e(TAG, "Fallback doCreate in launch", t);
+                mReady = true;
+            }
+        }
         if (mApp != null && !com.sx.app.license.LicenseManager.isActivated(mApp)) {
             Log.w(TAG, "Launch blocked: License is not activated or has expired.");
             return false;
         }
+        if (!isInstalled(packageName, userId)) {
+            InstallResult installRes = installFromHost(packageName);
+            if (userId > 0) {
+                try {
+                    BlackBoxCore.get().createUser(userId);
+                    top.niunaijun.blackbox.entity.pm.InstallResult res = BlackBoxCore.get().installPackageAsUser(packageName, userId);
+                    Log.d(TAG, "Install as user " + userId + " result: " + res.success + " msg=" + res.msg);
+                } catch (Throwable t) {
+                    Log.e(TAG, "Error installing user " + userId, t);
+                }
+            }
+            if (!isInstalled(packageName, userId)) {
+                Log.w(TAG, "Cannot launch: package " + packageName + " is not installed for user " + userId);
+                return false;
+            }
+        }
         try {
             Log.d(TAG, "Launching " + packageName + " for user " + userId);
             return BlackBoxCore.get().launchApk(packageName, userId);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.e(TAG, "Error launching " + packageName + " for user " + userId, e);
             return false;
         }

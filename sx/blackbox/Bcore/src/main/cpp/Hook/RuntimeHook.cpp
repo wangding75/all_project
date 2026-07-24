@@ -10,9 +10,16 @@
 HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject class_loader) {
     jstring redirect = IO::redirectPath(env, name);
     const char *nameC = env->GetStringUTFChars(redirect, JNI_FALSE);
-    ALOGD("nativeLoad: %s", nameC);
+    if (nameC) {
+        ALOGD("nativeLoad: %s", nameC);
+    }
     jstring result = orig_nativeLoad(env, obj, redirect, class_loader);
-    env->ReleaseStringUTFChars(redirect, nameC);
+    if (nameC) {
+        env->ReleaseStringUTFChars(redirect, nameC);
+    }
+    if (redirect && redirect != name) {
+        env->DeleteLocalRef(redirect);
+    }
     return result;
 }
 
@@ -20,9 +27,16 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
          jobject caller) {
     jstring redirect = IO::redirectPath(env, name);
     const char *nameC = env->GetStringUTFChars(redirect, JNI_FALSE);
-    ALOGD("nativeLoad2: %s", nameC);
+    if (nameC) {
+        ALOGD("nativeLoad2: %s", nameC);
+    }
     jstring result = orig_nativeLoad2(env, obj, redirect, class_loader, caller);
-    env->ReleaseStringUTFChars(redirect, nameC);
+    if (nameC) {
+        env->ReleaseStringUTFChars(redirect, nameC);
+    }
+    if (redirect && redirect != name) {
+        env->DeleteLocalRef(redirect);
+    }
     return result;
 }
 

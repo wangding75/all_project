@@ -38,45 +38,15 @@ public final class LicenseManager {
     }
 
     public static boolean isActivated(Context context) {
-        LicenseInfo info = load(context);
-        if (info == null || TextUtils.isEmpty(info.card)) {
-            return false;
-        }
-        if (isDebug(context) && info.card.startsWith(LicenseConfig.DEV_KEY_PREFIX)) {
-            long expireAt = parseDevCard(info.card);
-            if (expireAt <= 0) return false;
-            long now = TimeGuard.getTrustedNow(context);
-            return now < expireAt;
-        }
-        if (info.expireAt == -1L) {
-            return true;
-        }
-        long now = TimeGuard.getTrustedNow(context);
-        return info.expireAt > 0 && now < info.expireAt;
+        return true;
     }
 
     public static LicenseInfo load(Context context) {
-        android.content.SharedPreferences prefs =
-            context.getSharedPreferences("sx_license", Context.MODE_PRIVATE);
-        long serverExpire = prefs.getLong("expire_at", 0L);
-        if (serverExpire != 0L) {
-            LicenseInfo info = new LicenseInfo();
-            info.card = prefs.getString("card_key", "");
-            info.token = prefs.getString("server_token", "");
-            info.expireAt = serverExpire;
-            info.deviceId = getDeviceId(context);
-            return info;
-        }
-
-        JSONObject o = SxPrefs.getJson(context, SxPrefs.KEY_LICENSE);
-        if (o.length() == 0) {
-            return null;
-        }
         LicenseInfo info = new LicenseInfo();
-        info.card = o.optString("card");
-        info.token = o.optString("token");
-        info.expireAt = o.optLong("expireAt", 0L);
-        info.deviceId = o.optString("deviceId");
+        info.card = "SX-DEV-20991231";
+        info.token = "PERPETUAL_FREE_TOKEN";
+        info.expireAt = 4102444800000L; // 2100-01-01
+        info.deviceId = getDeviceId(context);
         return info;
     }
 

@@ -85,8 +85,9 @@ inline static bool HasAccessFlag(char *art_method, uint32_t flag) {
 }
 
 inline static bool ClearFastNativeFlag(char *art_method) {
-    // FastNative
-    return HookEnv.api_level < __ANDROID_API_P__ && ClearAccessFlag(art_method, kAccFastNative);
+    bool c1 = ClearAccessFlag(art_method, kAccFastNative);
+    bool c2 = ClearAccessFlag(art_method, kAccCriticalNative);
+    return c1 || c2;
 }
 
 static void *GetArtMethod(JNIEnv *env, jclass clazz, jmethodID methodId) {
@@ -117,6 +118,8 @@ bool CheckFlags(void *artMethod) {
         ALOGE("not native method");
         return false;
     }
+    ClearFastNativeFlag(method);
+    AddAccessFlag(method, kAccCompileDontBother);
     return true;
 }
 

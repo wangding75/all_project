@@ -147,6 +147,19 @@ public class BActivityThread extends IBActivityThread.Stub {
         return currentActivityThread().mInitialApplication;
     }
 
+    public static ClassLoader getAppClassLoader() {
+        if (getApplication() != null) {
+            return getApplication().getClassLoader();
+        }
+        if (currentActivityThread().mBoundApplication != null && currentActivityThread().mBoundApplication.info != null) {
+            try {
+                return BRLoadedApk.get(currentActivityThread().mBoundApplication.info).getClassLoader();
+            } catch (Throwable ignored) {
+            }
+        }
+        return BActivityThread.class.getClassLoader();
+    }
+
     public static int getAppPid() {
         return getAppConfig() == null ? -1 : getAppConfig().bpid;
     }
