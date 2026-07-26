@@ -25,6 +25,12 @@ public class CameraHook {
     private static int mFrameWidth = 640;
     private static int mFrameHeight = 480;
     private static volatile boolean sIsVideoLoopRunning = false;
+    private static volatile boolean sPlaneHooksInstalled = false;
+
+    /** Hot-refresh config without re-installing hooks. */
+    public static void updateConfig(CameraConfig config) {
+        sConfig = config;
+    }
 
     public static void install(android.content.Context context, ClassLoader classLoader, CameraConfig config) {
         if (config == null || !config.enabled) return;
@@ -113,41 +119,20 @@ public class CameraHook {
                         }
                     });
 
-            // 3. Camera2 ImageReader Hooks (acquireLatestImage & acquireNextImage)
+            // 3. Camera2 ImageReader: hook Image.getPlanes / Plane.getBuffer once (no per-frame re-hook)
             try {
+                installCamera2PlaneHooksOnce();
                 Class<?> imageReaderClass = Class.forName("android.hardware.camera2.ImageReader");
-                XC_MethodHook imageHook = new XC_MethodHook() {
+                // acquire hooks only need to exist so Image objects flow through our plane hooks;
+                // no nested findAndHookMethod here.
+                XC_MethodHook imageAcquireHook = new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (sConfig != null && sConfig.enabled && param.getResult() != null) {
-                            final Object image = param.getResult();
-                            try {
-                                XposedHelpers.findAndHookMethod(image.getClass(), "getPlanes", new XC_MethodHook() {
-                                    @Override
-                                    protected void afterHookedMethod(MethodHookParam paramPlanes) {
-                                        byte[] fakeNv21 = getFakeNv21Data(0);
-                                        if (fakeNv21 != null && fakeNv21.length > 0) {
-                                            Object[] planes = (Object[]) paramPlanes.getResult();
-                                            if (planes != null && planes.length > 0) {
-                                                try {
-                                                    Object plane0 = planes[0];
-                                                    XposedHelpers.findAndHookMethod(plane0.getClass(), "getBuffer", new XC_MethodHook() {
-                                                        @Override
-                                                        protected void afterHookedMethod(MethodHookParam paramBuffer) {
-                                                            paramBuffer.setResult(ByteBuffer.wrap(fakeNv21));
-                                                        }
-                                                    });
-                                                } catch (Throwable ignored) {}
-                                            }
-                                        }
-                                    }
-                                });
-                            } catch (Throwable ignored) {}
-                        }
+                        // Intentionally empty: plane/buffer hooks replace data when clients read Image.
                     }
                 };
-                XposedHelpers.findAndHookMethod(imageReaderClass, "acquireLatestImage", imageHook);
-                XposedHelpers.findAndHookMethod(imageReaderClass, "acquireNextImage", imageHook);
+                XposedHelpers.findAndHookMethod(imageReaderClass, "acquireLatestImage", imageAcquireHook);
+                XposedHelpers.findAndHookMethod(imageReaderClass, "acquireNextImage", imageAcquireHook);
                 Log.d(TAG, "Camera2 ImageReader hooks installed.");
             } catch (Throwable t) {
                 Log.w(TAG, "Camera2 ImageReader hook unavailable", t);
@@ -158,6 +143,53 @@ public class CameraHook {
             Log.e(TAG, "Failed to install CameraHook", e);
         }
     }
+
+    private static synchronized void installCamera2PlaneHooksOnce() {
+        if (sPlaneHooksInstalled) {
+            return;
+        }
+        try {
+            Class<?> imageClass = Class.forName("android.media.Image");
+            XposedHelpers.findAndHookMethod(imageClass, "getPlanes", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam paramPlanes) {
+                    if (sConfig == null || !sConfig.enabled) {
+                        return;
+                    }
+                    byte[] fakeNv21 = getFakeNv21Data(0);
+                    if (fakeNv21 == null || fakeNv21.length == 0) {
+                        return;
+                    }
+                    Object[] planes = (Object[]) paramPlanes.getResult();
+                    if (planes == null || planes.length == 0) {
+                        return;
+                    }
+                    // Replace plane0 buffer content via already-installed Plane.getBuffer hook.
+                    // Stash frame on thread-local for getBuffer after-hook.
+                    sPendingPlaneBytes.set(fakeNv21);
+                }
+            });
+            Class<?> planeClass = Class.forName("android.media.Image$Plane");
+            XposedHelpers.findAndHookMethod(planeClass, "getBuffer", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam paramBuffer) {
+                    if (sConfig == null || !sConfig.enabled) {
+                        return;
+                    }
+                    byte[] fake = sPendingPlaneBytes.get();
+                    if (fake != null && fake.length > 0) {
+                        paramBuffer.setResult(ByteBuffer.wrap(fake));
+                    }
+                }
+            });
+            sPlaneHooksInstalled = true;
+            Log.d(TAG, "Camera2 Image/Plane hooks installed once.");
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to install Camera2 plane hooks once", t);
+        }
+    }
+
+    private static final ThreadLocal<byte[]> sPendingPlaneBytes = new ThreadLocal<>();
 
     private static void startVideoLoopPlayer(android.content.Context context) {
         if (sConfig == null || sConfig.mediaPath == null || sConfig.mediaPath.isEmpty()) return;

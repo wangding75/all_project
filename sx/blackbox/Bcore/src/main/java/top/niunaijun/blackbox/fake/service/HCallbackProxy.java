@@ -111,8 +111,14 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
 
     private Object getLaunchActivityItem(Object clientTransaction) {
         List<Object> mActivityCallbacks = BRClientTransaction.get(clientTransaction).mActivityCallbacks();
+        if (mActivityCallbacks == null || mActivityCallbacks.isEmpty()) {
+            return null;
+        }
 
         for (Object obj : mActivityCallbacks) {
+            if (obj == null) {
+                continue;
+            }
             if (BRLaunchActivityItem.getRealClass().getName().equals(obj.getClass().getCanonicalName())) {
                 return obj;
             }
@@ -176,18 +182,35 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
             int taskId = BRIActivityManager.get(BRActivityManagerNative.get().getDefault()).getTaskForActivity(token, false);
             BlackBoxCore.getBActivityManager().onActivityCreated(taskId, token, stubRecord.mActivityRecord);
 
-            if (BuildCompat.isS()) {
-                Object record = BRActivityThread.get(BlackBoxCore.mainThread()).getLaunchingActivity(token);
-                ActivityThreadActivityClientRecordContext clientRecordContext = BRActivityThreadActivityClientRecord.get(record);
-                clientRecordContext._set_intent(stubRecord.mTarget);
-                clientRecordContext._set_activityInfo(activityInfo);
-                clientRecordContext._set_packageInfo(BActivityThread.currentActivityThread().getPackageInfo());
-
-                checkActivityClient();
-            } else if (BuildCompat.isPie()) {
-                LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(r);
-                launchActivityItemContext._set_mIntent(stubRecord.mTarget);
-                launchActivityItemContext._set_mInfo(activityInfo);
+            if (BuildCompat.isPie()) {
+                // Always rewrite LaunchActivityItem. On Android 12–16, performLaunchActivity
+                // still reads mInfo/mIntent from the ClientTransaction item; only patching
+                // getLaunchingActivity leaves ProxyActivity as the real instance, which then
+                // finish() tears down the guest virtual activity (HyperOS DeskClock flash).
+                try {
+                    LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(r);
+                    launchActivityItemContext._set_mIntent(stubRecord.mTarget);
+                    launchActivityItemContext._set_mInfo(activityInfo);
+                    Slog.d(TAG, "rewrote LaunchActivityItem -> " + activityInfo.name);
+                } catch (Throwable t) {
+                    Slog.w(TAG, "rewrite LaunchActivityItem failed", t);
+                }
+                if (BuildCompat.isS()) {
+                    try {
+                        Object record = BRActivityThread.get(BlackBoxCore.mainThread()).getLaunchingActivity(token);
+                        if (record != null) {
+                            ActivityThreadActivityClientRecordContext clientRecordContext =
+                                    BRActivityThreadActivityClientRecord.get(record);
+                            clientRecordContext._set_intent(stubRecord.mTarget);
+                            clientRecordContext._set_activityInfo(activityInfo);
+                            clientRecordContext._set_packageInfo(
+                                    BActivityThread.currentActivityThread().getPackageInfo());
+                        }
+                    } catch (Throwable t) {
+                        Slog.w(TAG, "rewrite getLaunchingActivity failed", t);
+                    }
+                    checkActivityClient();
+                }
             } else {
                 ActivityThreadActivityClientRecordContext clientRecordContext = BRActivityThreadActivityClientRecord.get(r);
                 clientRecordContext._set_intent(stubRecord.mTarget);

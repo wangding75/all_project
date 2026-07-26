@@ -45,10 +45,23 @@ public class IJobServiceProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             JobInfo jobInfo = (JobInfo) args[0];
-            JobInfo proxyJobInfo = BlackBoxCore.getBJobManager()
-                    .schedule(jobInfo);
+            if (jobInfo == null) {
+                return 0; // JobScheduler.RESULT_FAILURE
+            }
+            JobInfo proxyJobInfo = BlackBoxCore.getBJobManager().schedule(jobInfo);
+            if (proxyJobInfo == null) {
+                // BlackBox job remap failed (service not resolved / process not ready).
+                // Do not pass null into system JobScheduler (NPE on JobInfo.getService()).
+                // Soft-fail so guest apps like DeskClock can finish onCreate.
+                return 0;
+            }
             args[0] = proxyJobInfo;
-            return method.invoke(who, args);
+            try {
+                return method.invoke(who, args);
+            } catch (Throwable t) {
+                android.util.Log.w(TAG, "system JobScheduler.schedule failed: " + t.getMessage());
+                return 0;
+            }
         }
     }
 
@@ -77,10 +90,20 @@ public class IJobServiceProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             JobInfo jobInfo = (JobInfo) args[0];
-            JobInfo proxyJobInfo = BlackBoxCore.getBJobManager()
-                    .schedule(jobInfo);
+            if (jobInfo == null) {
+                return 0;
+            }
+            JobInfo proxyJobInfo = BlackBoxCore.getBJobManager().schedule(jobInfo);
+            if (proxyJobInfo == null) {
+                return 0;
+            }
             args[0] = proxyJobInfo;
-            return method.invoke(who, args);
+            try {
+                return method.invoke(who, args);
+            } catch (Throwable t) {
+                android.util.Log.w(TAG, "system JobScheduler.enqueue failed: " + t.getMessage());
+                return 0;
+            }
         }
     }
 

@@ -95,14 +95,8 @@ public class DeviceSettingsActivity extends AppCompatActivity {
             mProfile.iccid = mEtIccid.getText().toString();
             mProfile.operatorName = mEtOperator.getText().toString();
 
+            // save() notifies host + virtual clients via ConfigBroadcast
             mProfile.save(this, mPkg, mUserId);
-
-            String hostPkg = getPackageName();
-            android.content.Intent broadcast = new android.content.Intent(hostPkg + ".action.UPDATE_CONFIG");
-            broadcast.setPackage(hostPkg);
-            broadcast.putExtra("package_name", mPkg);
-            broadcast.putExtra("user_id", mUserId);
-            sendBroadcast(broadcast);
 
             Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show();
         });

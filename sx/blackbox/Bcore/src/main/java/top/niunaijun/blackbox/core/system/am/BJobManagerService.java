@@ -42,11 +42,18 @@ public class BJobManagerService extends IBJobManagerService.Stub implements ISys
 
     @Override
     public JobInfo schedule(JobInfo info, int userId) throws RemoteException {
+        if (info == null) {
+            return null;
+        }
         ComponentName componentName = info.getService();
+        if (componentName == null) {
+            return info;
+        }
         Intent intent = new Intent();
         intent.setComponent(componentName);
         ResolveInfo resolveInfo = BPackageManagerService.get().resolveService(intent, PackageManager.GET_META_DATA, null, userId);
-        if (resolveInfo == null) {
+        if (resolveInfo == null || resolveInfo.serviceInfo == null) {
+            // Service not in sandbox package map yet; keep original JobInfo (host will reject).
             return info;
         }
         ServiceInfo serviceInfo = resolveInfo.serviceInfo;
@@ -55,8 +62,8 @@ public class BJobManagerService extends IBJobManagerService.Stub implements ISys
             processRecord = BProcessManagerService.get().
                     startProcessLocked(serviceInfo.packageName, serviceInfo.processName, userId, -1, Binder.getCallingPid());
             if (processRecord == null) {
-                throw new RuntimeException(
-                        "Unable to create Process " + serviceInfo.processName);
+                // Don't crash guest process during Application.onCreate JobScheduler setup.
+                return null;
             }
         }
         return scheduleJob(processRecord, info, serviceInfo);

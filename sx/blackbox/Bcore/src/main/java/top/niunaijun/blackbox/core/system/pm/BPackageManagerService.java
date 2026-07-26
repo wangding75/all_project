@@ -15,6 +15,7 @@ import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.net.Uri;
 import android.os.Binder;
+import android.os.Build;
 import android.os.RemoteException;
 import android.text.TextUtils;
 
@@ -78,8 +79,15 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         filter.addAction("android.intent.action.PACKAGE_ADDED");
         filter.addAction("android.intent.action.PACKAGE_REMOVED");
         filter.addDataScheme("package");
-        BlackBoxCore.getContext()
-                .registerReceiver(mPackageChangedHandler, filter);
+        // Android 13+ requires explicit export flag for dynamic receivers.
+        // RECEIVER_EXPORTED = 0x2 (API 33); Bcore compiles against older SDK.
+        if (Build.VERSION.SDK_INT >= 33) {
+            BlackBoxCore.getContext()
+                    .registerReceiver(mPackageChangedHandler, filter, 0x2);
+        } else {
+            BlackBoxCore.getContext()
+                    .registerReceiver(mPackageChangedHandler, filter);
+        }
     }
 
     private final BroadcastReceiver mPackageChangedHandler = new BroadcastReceiver() {

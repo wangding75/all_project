@@ -31,6 +31,7 @@ public class CameraConfig {
     public void save(Context context, String pkg, int userId) {
         String key = SxPrefs.makeKey(SxPrefs.KEY_CAMERA, pkg, userId);
         SxPrefs.putJson(context, key, toJson());
+        ConfigBroadcast.notifyChanged(context, pkg, userId);
     }
 
     public JSONObject toJson() {

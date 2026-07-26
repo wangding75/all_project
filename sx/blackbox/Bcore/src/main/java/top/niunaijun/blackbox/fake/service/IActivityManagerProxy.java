@@ -235,9 +235,17 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Intent intent = (Intent) args[2];
-            String resolvedType = (String) args[3];
-            IServiceConnection connection = (IServiceConnection) args[4];
+            int intentIndex = indexOfFirst(args, Intent.class);
+            int connIndex = indexOfFirst(args, IServiceConnection.class);
+            if (intentIndex < 0) {
+                return method.invoke(who, args);
+            }
+            Intent intent = (Intent) args[intentIndex];
+            String resolvedType = null;
+            if (intentIndex + 1 < args.length && args[intentIndex + 1] instanceof String) {
+                resolvedType = (String) args[intentIndex + 1];
+            }
+            IServiceConnection connection = connIndex >= 0 ? (IServiceConnection) args[connIndex] : null;
 
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
@@ -247,26 +255,46 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                         connection == null ? null : connection.asBinder(),
                         resolvedType,
                         userId);
-                if (connection != null) {
+                if (connection != null && connIndex >= 0) {
                     if (intent.getComponent() == null && resolveInfo != null) {
                         intent.setComponent(new ComponentName(resolveInfo.serviceInfo.packageName, resolveInfo.serviceInfo.name));
                     }
                     IServiceConnection proxy = ServiceConnectionDelegate.createProxy(connection, intent);
-                    args[4] = proxy;
+                    args[connIndex] = proxy;
 
-                    WeakReference<?> weakReference = BRLoadedApkServiceDispatcherInnerConnection.get(connection).mDispatcher();
-                    if (weakReference != null) {
-                        BRLoadedApkServiceDispatcher.get(weakReference.get())._set_mConnection(proxy);
+                    try {
+                        WeakReference<?> weakReference = BRLoadedApkServiceDispatcherInnerConnection.get(connection).mDispatcher();
+                        if (weakReference != null) {
+                            BRLoadedApkServiceDispatcher.get(weakReference.get())._set_mConnection(proxy);
+                        }
+                    } catch (Throwable ignored) {
                     }
                 }
                 if (proxyIntent != null) {
-                    args[2] = proxyIntent;
+                    args[intentIndex] = proxyIntent;
                     logServiceRoute("VIRTUAL_PROXY", intent, proxyIntent, resolveInfo);
-                    return method.invoke(who, args);
+                    try {
+                        return method.invoke(who, args);
+                    } catch (Throwable t) {
+                        Throwable cause = t.getCause() != null ? t.getCause() : t;
+                        Log.w(TAG, "bindService proxy invoke failed, soft-fail: " + cause.getMessage());
+                        return 0;
+                    }
                 }
             }
             logServiceRoute("BLOCKED_UNRESOLVED", intent, null, resolveInfo);
+            // Never fall through to host AMS for guest package services (SecurityException).
             return 0;
+        }
+
+        private static int indexOfFirst(Object[] args, Class<?> type) {
+            if (args == null) return -1;
+            for (int i = 0; i < args.length; i++) {
+                if (type.isInstance(args[i])) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         private static void logServiceRoute(String routeType, Intent originalIntent, Intent proxyIntent, ResolveInfo resolveInfo) {
@@ -331,6 +359,32 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         protected Object beforeHook(Object who, Method method, Object[] args) throws Throwable {
             // instanceName
             args[6] = null;
+            return super.beforeHook(who, method, args);
+        }
+    }
+
+    /**
+     * Android 14+ ContextImpl.bindServiceCommon calls bindServiceInstance instead of bindService.
+     * Without this, guest apps bind the host-system copy of their services and crash with
+     * SecurityException (not exported) — HyperOS DeskClock StopWatchService.
+     */
+    @ProxyMethod("bindServiceInstance")
+    public static class BindServiceInstance extends BindService {
+        @Override
+        protected Object beforeHook(Object who, Method method, Object[] args) throws Throwable {
+            // Clear instanceName if present (varies by API; typically near the end).
+            if (args != null) {
+                for (int i = args.length - 1; i >= 0; i--) {
+                    if (args[i] instanceof String && i > 4) {
+                        // Likely instanceName; null it so AMS treats as normal bind via proxy.
+                        // Do not clear resolvedType (args[3]).
+                        if (i != 3) {
+                            args[i] = null;
+                            break;
+                        }
+                    }
+                }
+            }
             return super.beforeHook(who, method, args);
         }
     }

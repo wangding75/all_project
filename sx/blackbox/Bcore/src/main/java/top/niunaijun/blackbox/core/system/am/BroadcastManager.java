@@ -1,6 +1,8 @@
 package top.niunaijun.blackbox.core.system.am;
 
 import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -85,7 +87,14 @@ public class BroadcastManager implements PackageMonitor {
                 List<BPackage.ActivityIntentInfo> intents = receiver.intents;
                 for (BPackage.ActivityIntentInfo intent : intents) {
                     ProxyBroadcastReceiver proxyBroadcastReceiver = new ProxyBroadcastReceiver();
-                    BlackBoxCore.getContext().registerReceiver(proxyBroadcastReceiver, intent.intentFilter);
+                    // Android 13+ requires explicit export flag for dynamic receivers.
+                    // RECEIVER_EXPORTED = 0x2 (API 33); Bcore compiles against older SDK.
+                    Context ctx = BlackBoxCore.getContext();
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        ctx.registerReceiver(proxyBroadcastReceiver, intent.intentFilter, 0x2);
+                    } else {
+                        ctx.registerReceiver(proxyBroadcastReceiver, intent.intentFilter);
+                    }
                     addReceiver(bPackage.packageName, proxyBroadcastReceiver);
                 }
             }

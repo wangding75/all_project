@@ -134,15 +134,8 @@ public class LocationSettingsActivity extends AppCompatActivity {
             mConfig.intervalMs = Long.parseLong(mEtInterval.getText().toString());
             mConfig.microDrift = mSwitchDrift.isChecked();
             mConfig.antiMockDetect = mSwitchAntiMock.isChecked();
+            // save() notifies host + virtual clients via ConfigBroadcast
             mConfig.save(this, mPkg, mUserId);
-
-            // Send package-bound broadcast (M9)
-            String hostPkg = getPackageName();
-            Intent broadcast = new Intent(hostPkg + ".action.UPDATE_CONFIG");
-            broadcast.setPackage(hostPkg);
-            broadcast.putExtra("package_name", mPkg);
-            broadcast.putExtra("user_id", mUserId);
-            sendBroadcast(broadcast);
 
             mTvCoord.setText(getString(R.string.loc_coord, lat, lng));
             if (showSavedToast) {

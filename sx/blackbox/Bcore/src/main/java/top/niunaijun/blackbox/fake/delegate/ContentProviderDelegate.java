@@ -69,21 +69,39 @@ public class ContentProviderDelegate {
     public static void init() {
         clearSettingProvider();
 
-        BlackBoxCore.getContext().getContentResolver().call(Uri.parse("content://settings"), "", null, null);
+        try {
+            // Probe settings provider so mProviderMap is populated; may throw on
+            // Android 14+ AttributionSource uid checks — ignore and continue inject.
+            BlackBoxCore.getContext().getContentResolver()
+                    .call(Uri.parse("content://settings"), "", null, null);
+        } catch (Throwable t) {
+            android.util.Log.w(TAG, "settings provider probe failed: " + t.getMessage());
+        }
         Object activityThread = BlackBoxCore.mainThread();
         ArrayMap<Object, Object> map = (ArrayMap<Object, Object>) BRActivityThread.get(activityThread).mProviderMap();
+        if (map == null) {
+            return;
+        }
 
         for (Object value : map.values()) {
-            String[] mNames = BRActivityThreadProviderClientRecordP.get(value).mNames();
-            if (mNames == null || mNames.length <= 0) {
-                continue;
-            }
-            String providerName = mNames[0];
-            if (!sInjected.contains(providerName)) {
-                sInjected.add(providerName);
-                final IInterface iInterface = BRActivityThreadProviderClientRecordP.get(value).mProvider();
-                BRActivityThreadProviderClientRecordP.get(value)._set_mProvider(new ContentProviderStub().wrapper(iInterface, BlackBoxCore.getHostPkg()));
-                BRActivityThreadProviderClientRecordP.get(value)._set_mNames(new String[]{providerName});
+            try {
+                String[] mNames = BRActivityThreadProviderClientRecordP.get(value).mNames();
+                if (mNames == null || mNames.length <= 0) {
+                    continue;
+                }
+                String providerName = mNames[0];
+                if (!sInjected.contains(providerName)) {
+                    sInjected.add(providerName);
+                    final IInterface iInterface = BRActivityThreadProviderClientRecordP.get(value).mProvider();
+                    if (iInterface == null) {
+                        continue;
+                    }
+                    BRActivityThreadProviderClientRecordP.get(value)._set_mProvider(
+                            new ContentProviderStub().wrapper(iInterface, BlackBoxCore.getHostPkg()));
+                    BRActivityThreadProviderClientRecordP.get(value)._set_mNames(new String[]{providerName});
+                }
+            } catch (Throwable t) {
+                android.util.Log.w(TAG, "inject provider failed: " + t.getMessage());
             }
         }
     }

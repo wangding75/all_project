@@ -80,7 +80,7 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
             Log.d(TAG, "BlackBoxCore doCreate completed. Engine is ready.");
         } catch (Throwable e) {
             Log.e(TAG, "Failed to call doCreate for BlackBoxCore", e);
-            mReady = true;
+            mReady = false;
         }
     }
 
@@ -206,9 +206,11 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
             try {
                 BlackBoxCore.get().doCreate();
                 mReady = true;
+                Log.d(TAG, "Fallback doCreate in launch succeeded.");
             } catch (Throwable t) {
-                Log.e(TAG, "Fallback doCreate in launch", t);
-                mReady = true;
+                Log.e(TAG, "Fallback doCreate in launch failed", t);
+                mReady = false;
+                return false;
             }
         }
         if (mApp != null && !com.sx.app.license.LicenseManager.isActivated(mApp)) {

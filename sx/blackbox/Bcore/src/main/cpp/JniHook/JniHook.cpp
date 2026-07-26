@@ -164,11 +164,22 @@ JniHook::HookJniFun(JNIEnv *env, const char *class_name, const char *method_name
     auto artMethod = reinterpret_cast<uintptr_t *>(GetArtMethod(env, clazz, method));
     if (!artMethod || !CheckFlags(artMethod)) {
         ALOGE("check flags error. class：%s, method：%s", class_name, method_name);
+        // CheckFlags / GetArtMethod may leave pending exceptions on newer ART.
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
         return;
     }
     *orig_fun = reinterpret_cast<void *>(artMethod[HookEnv.art_method_native_offset]);
     if (env->RegisterNatives(clazz, gMethods, 1) < 0) {
         ALOGE("jni hook error. class：%s, method：%s", class_name, method_name);
+        // RegisterNatives leaves NoSuchMethodError pending when method is not
+        // actually JNI-native (common on Android 14+ / 16 for UnixFileSystem).
+        // Must clear or later JNI calls abort the process.
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+        }
         return;
     }
     ALOGD("register class：%s, method：%s success!", class_name, method_name);

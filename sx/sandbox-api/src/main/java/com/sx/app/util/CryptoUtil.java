@@ -19,6 +19,7 @@ public final class CryptoUtil {
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             return bytesToHex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
+            // Fail closed: empty string must never be treated as a valid signature.
             return "";
         }
     }
@@ -30,6 +31,19 @@ public final class CryptoUtil {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    /** Constant-time hex/string compare (case-insensitive for hex). */
+    public static boolean constantTimeEquals(String a, String b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        byte[] left = a.toLowerCase(java.util.Locale.US).getBytes(StandardCharsets.UTF_8);
+        byte[] right = b.toLowerCase(java.util.Locale.US).getBytes(StandardCharsets.UTF_8);
+        if (left.length != right.length) {
+            return false;
+        }
+        return MessageDigest.isEqual(left, right);
     }
 
     public static String b64Encode(String s) {

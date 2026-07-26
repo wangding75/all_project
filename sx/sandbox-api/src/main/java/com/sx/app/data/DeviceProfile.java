@@ -41,6 +41,7 @@ public class DeviceProfile {
     public void save(Context context, String pkg, int userId) {
         String key = SxPrefs.makeKey(SxPrefs.KEY_DEVICE, pkg, userId);
         SxPrefs.putJson(context, key, toJson());
+        ConfigBroadcast.notifyChanged(context, pkg, userId);
     }
 
     public void randomize() {

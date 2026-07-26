@@ -58,6 +58,9 @@ async def activate(req: ActivateRequest, db: aiosqlite.Connection = Depends(get_
             return LicenseResponse(code=400, msg="卡密已被解绑，请联系客服重新激活")
         if activation["device_id"] != req.device_id:
             return LicenseResponse(code=400, msg="该卡密已绑定其他设备，如需换绑请联系客服")
+        exp = activation["expire_at"]
+        if exp != -1 and exp is not None and now_ms >= int(exp):
+            return LicenseResponse(code=400, msg="卡密已过期")
         # 同设备重复激活 → 返回现有 token
         token = create_token(req.card_key, req.device_id, activation["expire_at"])
         return LicenseResponse(code=200, msg="激活成功", data={
@@ -65,23 +68,42 @@ async def activate(req: ActivateRequest, db: aiosqlite.Connection = Depends(get_
             "expire_at": activation["expire_at"]
         })
 
-    # 4. 首次激活
+    # 4. 首次激活（INSERT OR IGNORE + 回读，避免并发 TOCTOU 500）
     duration_days = card["duration_days"]
     expire_at = -1 if duration_days == -1 else now_ms + duration_days * 86_400_000
 
-    await db.execute(
-        "INSERT INTO activations (card_key, device_id, activated_at, expire_at) VALUES (?,?,?,?)",
-        (req.card_key, req.device_id, now_ms, expire_at)
-    )
-    await db.execute(
-        "UPDATE cards SET status='activated' WHERE card_key=?", (req.card_key,)
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            "INSERT OR IGNORE INTO activations (card_key, device_id, activated_at, expire_at) VALUES (?,?,?,?)",
+            (req.card_key, req.device_id, now_ms, expire_at)
+        )
+        await db.execute(
+            "UPDATE cards SET status='activated' WHERE card_key=?", (req.card_key,)
+        )
+        await db.commit()
+    except Exception:
+        # 并发下可能仍有竞争；回读并按已绑定逻辑处理
+        await db.rollback()
 
-    token = create_token(req.card_key, req.device_id, expire_at)
+    async with db.execute(
+        "SELECT * FROM activations WHERE card_key=?", (req.card_key,)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return LicenseResponse(code=500, msg="激活失败，请重试")
+
+    if row["device_id"] != req.device_id:
+        return LicenseResponse(code=400, msg="该卡密已绑定其他设备，如需换绑请联系客服")
+    if not row["is_active"]:
+        return LicenseResponse(code=400, msg="卡密已被解绑，请联系客服重新激活")
+    exp = row["expire_at"]
+    if exp != -1 and exp is not None and now_ms >= int(exp):
+        return LicenseResponse(code=400, msg="卡密已过期")
+
+    token = create_token(req.card_key, req.device_id, row["expire_at"])
     return LicenseResponse(code=200, msg="激活成功", data={
         "token":     token,
-        "expire_at": expire_at
+        "expire_at": row["expire_at"]
     })
 
 

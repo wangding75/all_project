@@ -54,13 +54,24 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             if (arg instanceof String) {
                 args[0] = mAppPkg;
             } else if (arg.getClass().getName().equals(BRAttributionSource.getRealClass().getName())) {
-                ContextCompat.fixAttributionSourceState(arg, BActivityThread.getBUid());
+                // Real system ContentProviders validate AttributionSource.uid against Binder
+                // callingUid. Virtual processes run under the host UID, so spoof host UID
+                // (not BUid) to avoid: "Calling uid: host doesn't match source uid: virtual".
+                ContextCompat.fixAttributionSourceState(arg,
+                        top.niunaijun.blackbox.BlackBoxCore.getHostUid());
             }
         }
         try {
             return method.invoke(mBase, args);
         } catch (Throwable e) {
-            throw e.getCause();
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            // Soft-fail non-critical provider call failures so app can still start.
+            if (cause instanceof SecurityException) {
+                android.util.Log.w(TAG, "ContentProvider invoke SecurityException on "
+                        + method.getName() + ": " + cause.getMessage());
+                return null;
+            }
+            throw cause;
         }
     }
 

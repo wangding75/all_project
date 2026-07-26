@@ -19,13 +19,36 @@ import com.sx.app.sandbox.spoof.hook.NetworkHook;
 public class SpoofRuntime {
 
     private static final String TAG = "SX-SpoofRuntime";
+    private static volatile String sPackageName;
+    private static volatile int sUserId;
 
     public static void onVirtualClientStart(Context context, String packageName, int userId, String hostPkg) {
         try {
             Log.d(TAG, "spoof installed pkg=" + packageName + " user=" + userId);
+            sPackageName = packageName;
+            sUserId = userId;
 
             ProfileRepository repo = ProfileRepository.getInstance();
             repo.init(context, hostPkg);
+            repo.setUpdateListener((ctx, pkg, uid) -> {
+                // Apply hot refresh for hooks that hold mutable static config.
+                // Device BUILD fields may still require process restart.
+                try {
+                    String targetPkg = (pkg == null || pkg.isEmpty()) ? sPackageName : pkg;
+                    int targetUser = uid;
+                    LocationConfig loc = repo.resolveLocation(ctx, targetPkg, targetUser);
+                    CameraConfig cam = repo.resolveCamera(ctx, targetPkg, targetUser);
+                    if (loc != null) {
+                        LocationHook.updateConfig(loc);
+                    }
+                    if (cam != null) {
+                        CameraHook.updateConfig(cam);
+                    }
+                    Log.d(TAG, "Hot-refreshed location/camera config for " + targetPkg + ":" + targetUser);
+                } catch (Throwable t) {
+                    Log.w(TAG, "Hot refresh failed", t);
+                }
+            });
 
             LocationConfig locConfig = repo.resolveLocation(context, packageName, userId);
             DeviceProfile deviceProfile = repo.resolveDevice(context, packageName, userId);

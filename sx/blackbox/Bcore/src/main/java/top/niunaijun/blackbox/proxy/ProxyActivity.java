@@ -29,7 +29,6 @@ public class ProxyActivity extends Activity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d(TAG, "onCreate");
-        finish();
 
         HookManager.get().checkEnv(HCallbackProxy.class);
 //        HookManager.get().checkEnv(AppInstrumentation.class);
@@ -37,9 +36,31 @@ public class ProxyActivity extends Activity {
         ProxyActivityRecord record = ProxyActivityRecord.create(getIntent());
         if (record.mTarget != null) {
             record.mTarget.setExtrasClassLoader(BActivityThread.getAppClassLoader());
-            startActivity(record.mTarget);
+            // Fallback trampoline only: HCallback should normally replace this Proxy with the
+            // real guest Activity. If we still land here, start the guest and finish the shell
+            // without notifying BActivityManager (token was already mapped to the guest).
+            try {
+                startActivity(record.mTarget);
+            } catch (Throwable t) {
+                Slog.e(TAG, "start target failed", t);
+            }
+            finishWithoutNotifyGuest();
             return;
         }
+        finishWithoutNotifyGuest();
+    }
+
+    /**
+     * Finish the host shell without calling ActivityClient.finishActivity hooks that map this
+     * token to the guest virtual activity and tear it down.
+     */
+    private void finishWithoutNotifyGuest() {
+        try {
+            // mark finished via Activity.finish() but guest stack is protected in FinishActivity hook
+            getIntent().putExtra("_B_|_proxy_shell_finish_", true);
+        } catch (Throwable ignored) {
+        }
+        finish();
     }
 
     public static class P0 extends ProxyActivity {

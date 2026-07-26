@@ -59,6 +59,9 @@ public class AppPickerActivity extends AppCompatActivity {
             HostAppScanner scanner = new HostAppScanner();
             List<HostAppInfo> apps = scanner.loadLaunchableApps(AppPickerActivity.this);
             mMainHandler.post(() -> {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
                 mProgress.setVisibility(View.GONE);
                 mRvApps.setVisibility(View.VISIBLE);
                 mAdapter.setList(apps);
@@ -74,6 +77,9 @@ public class AppPickerActivity extends AppCompatActivity {
         mExecutor.execute(() -> {
             InstallResult result = SandboxProvider.getEngine().installFromHost(info.packageName);
             mMainHandler.post(() -> {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
                 mProgress.setVisibility(View.GONE);
                 if (result.success) {
                     Toast.makeText(AppPickerActivity.this, "导入成功", Toast.LENGTH_SHORT).show();

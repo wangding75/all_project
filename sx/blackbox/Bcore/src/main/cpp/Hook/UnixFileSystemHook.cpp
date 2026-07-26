@@ -144,30 +144,53 @@ static_assert(std::is_same<decltype(new_setReadOnly0(nullptr, nullptr, nullptr))
 static_assert(std::is_same<decltype(new_getSpace0(nullptr, nullptr, nullptr, 0)), jlong>::value,
               "getSpace0 JNI hook return type must be jlong to match (Ljava/io/File;I)J");
 
+// Try "name0" first (classic Android), then "name" (some ART / Android 14+ variants).
+// Failures must not leave pending JNI exceptions (cleared inside HookJniFun).
+static void hookUnixFs(JNIEnv *env, const char *className,
+                       const char *name0, const char *namePlain, const char *sign,
+                       void *newFun, void **origFun) {
+    JniHook::HookJniFun(env, className, name0, sign, newFun, origFun, false);
+    if (*origFun == nullptr && namePlain != nullptr) {
+        JniHook::HookJniFun(env, className, namePlain, sign, newFun, origFun, false);
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+    }
+}
+
 void UnixFileSystemHook::init(JNIEnv *env) {
     const char *className = "java/io/UnixFileSystem";
-    JniHook::HookJniFun(env, className, "canonicalize0", "(Ljava/lang/String;)Ljava/lang/String;",
-                        (void *) new_canonicalize0, (void **) (&orig_canonicalize0), false);
+    hookUnixFs(env, className, "canonicalize0", "canonicalize",
+               "(Ljava/lang/String;)Ljava/lang/String;",
+               (void *) new_canonicalize0, (void **) (&orig_canonicalize0));
 //    JniHook::HookJniFun(env, className, "getBooleanAttributes0", "(Ljava/lang/String;)I",
 //                        (void *) new_getBooleanAttributes0,
 //                        (void **) (&orig_getBooleanAttributes0), false);
-    JniHook::HookJniFun(env, className, "getLastModifiedTime0", "(Ljava/io/File;)J",
-                        (void *) new_getLastModifiedTime0, (void **) (&orig_getLastModifiedTime0),
-                        false);
-    JniHook::HookJniFun(env, className, "setPermission0", "(Ljava/io/File;IZZ)Z",
-                        (void *) new_setPermission0, (void **) (&orig_setPermission0), false);
-    JniHook::HookJniFun(env, className, "createFileExclusively0", "(Ljava/lang/String;)Z",
-                        (void *) new_createFileExclusively0,
-                        (void **) (&orig_createFileExclusively0), false);
-    JniHook::HookJniFun(env, className, "list0", "(Ljava/io/File;)[Ljava/lang/String;",
-                        (void *) new_list0, (void **) (&orig_list0), false);
-    JniHook::HookJniFun(env, className, "createDirectory0", "(Ljava/io/File;)Z",
-                        (void *) new_createDirectory0, (void **) (&orig_createDirectory0), false);
-    JniHook::HookJniFun(env, className, "setLastModifiedTime0", "(Ljava/io/File;J)Z",
-                        (void *) new_setLastModifiedTime0, (void **) (&orig_setLastModifiedTime0),
-                        false);
-    JniHook::HookJniFun(env, className, "setReadOnly0", "(Ljava/io/File;)Z",
-                        (void *) new_setReadOnly0, (void **) (&orig_setReadOnly0), false);
-    JniHook::HookJniFun(env, className, "getSpace0", "(Ljava/io/File;I)J",
-                        (void *) new_getSpace0, (void **) (&orig_getSpace0), false);
+    hookUnixFs(env, className, "getLastModifiedTime0", "getLastModifiedTime",
+               "(Ljava/io/File;)J",
+               (void *) new_getLastModifiedTime0, (void **) (&orig_getLastModifiedTime0));
+    hookUnixFs(env, className, "setPermission0", "setPermission",
+               "(Ljava/io/File;IZZ)Z",
+               (void *) new_setPermission0, (void **) (&orig_setPermission0));
+    hookUnixFs(env, className, "createFileExclusively0", "createFileExclusively",
+               "(Ljava/lang/String;)Z",
+               (void *) new_createFileExclusively0, (void **) (&orig_createFileExclusively0));
+    hookUnixFs(env, className, "list0", "list",
+               "(Ljava/io/File;)[Ljava/lang/String;",
+               (void *) new_list0, (void **) (&orig_list0));
+    hookUnixFs(env, className, "createDirectory0", "createDirectory",
+               "(Ljava/io/File;)Z",
+               (void *) new_createDirectory0, (void **) (&orig_createDirectory0));
+    hookUnixFs(env, className, "setLastModifiedTime0", "setLastModifiedTime",
+               "(Ljava/io/File;J)Z",
+               (void *) new_setLastModifiedTime0, (void **) (&orig_setLastModifiedTime0));
+    hookUnixFs(env, className, "setReadOnly0", "setReadOnly",
+               "(Ljava/io/File;)Z",
+               (void *) new_setReadOnly0, (void **) (&orig_setReadOnly0));
+    hookUnixFs(env, className, "getSpace0", "getSpace",
+               "(Ljava/io/File;I)J",
+               (void *) new_getSpace0, (void **) (&orig_getSpace0));
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+    }
 }

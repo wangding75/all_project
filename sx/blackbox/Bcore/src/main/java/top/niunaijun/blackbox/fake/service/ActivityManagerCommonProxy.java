@@ -6,6 +6,7 @@ import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.SystemClock;
 
 import java.io.File;
 import java.lang.reflect.Method;
@@ -33,6 +34,9 @@ import static android.content.pm.PackageManager.GET_META_DATA;
  */
 public class ActivityManagerCommonProxy {
     public static final String TAG = "CommonStub";
+    /** Debounce guest apps that finish()+startActivity(MAIN) in a tight loop (isTaskRoot false). */
+    private static volatile long sLastMainLaunchUptime;
+    private static volatile String sLastMainLaunchKey;
 
     @ProxyMethod("startActivity")
     public static class StartActivity extends MethodHook {
@@ -84,6 +88,18 @@ public class ActivityManagerCommonProxy {
 
             intent.setExtrasClassLoader(who.getClass().getClassLoader());
             intent.setComponent(new ComponentName(resolveInfo.activityInfo.packageName, resolveInfo.activityInfo.name));
+            // Suppress finish()+startActivity(MAIN/LAUNCHER) restart loops (e.g. DeskClock isTaskRoot).
+            if (Intent.ACTION_MAIN.equals(intent.getAction())
+                    && intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
+                String key = resolveInfo.activityInfo.packageName + "/" + resolveInfo.activityInfo.name;
+                long now = SystemClock.uptimeMillis();
+                if (key.equals(sLastMainLaunchKey) && (now - sLastMainLaunchUptime) < 1500L) {
+                    Slog.w(TAG, "suppress MAIN/LAUNCHER relaunch loop: " + key);
+                    return 0;
+                }
+                sLastMainLaunchKey = key;
+                sLastMainLaunchUptime = now;
+            }
             BlackBoxCore.getBActivityManager().startActivityAms(BActivityThread.getUserId(),
                     StartActivityCompat.getIntent(args),
                     StartActivityCompat.getResolvedType(args),
@@ -173,7 +189,48 @@ public class ActivityManagerCommonProxy {
     public static class FinishActivity extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            BlackBoxCore.getBActivityManager().onFinishActivity((IBinder) args[0]);
+            IBinder token = (IBinder) args[0];
+            if (!isProxyShellFinish(token)) {
+                BlackBoxCore.getBActivityManager().onFinishActivity(token);
+            }
+            return method.invoke(who, args);
+        }
+
+        private static boolean isProxyShellFinish(IBinder token) {
+            try {
+                android.app.Activity activity = BActivityThread.getActivityByToken(token);
+                if (activity instanceof top.niunaijun.blackbox.proxy.ProxyActivity
+                        || activity instanceof top.niunaijun.blackbox.proxy.TransparentProxyActivity) {
+                    return true;
+                }
+                if (activity != null && activity.getIntent() != null
+                        && activity.getIntent().getBooleanExtra("_B_|_proxy_shell_finish_", false)) {
+                    return true;
+                }
+            } catch (Throwable ignored) {
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Pre-Android 12 path for Activity.isTaskRoot():
+     *   AMS.getTaskForActivity(token, true) >= 0
+     * Same ProxyActivity shell issue as IActivityClientProxy.GetTaskForActivity.
+     */
+    @ProxyMethod("getTaskForActivity")
+    public static class GetTaskForActivity extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            if (args != null && args.length >= 2 && Boolean.TRUE.equals(args[1])) {
+                Object[] copy = args.clone();
+                copy[1] = false;
+                Object result = method.invoke(who, copy);
+                if (result instanceof Integer && ((Integer) result) >= 0) {
+                    return result;
+                }
+                return 1;
+            }
             return method.invoke(who, args);
         }
     }

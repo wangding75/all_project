@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 
@@ -29,6 +30,11 @@ public class ProfileRepository {
 
     private boolean mReceiverRegistered = false;
     private String mHostPkg;
+    private volatile ConfigUpdateListener mUpdateListener;
+
+    public interface ConfigUpdateListener {
+        void onConfigUpdated(Context context, String pkg, int userId);
+    }
 
     public static synchronized ProfileRepository getInstance() {
         if (sInstance == null) {
@@ -37,25 +43,44 @@ public class ProfileRepository {
         return sInstance;
     }
 
+    public void setUpdateListener(ConfigUpdateListener listener) {
+        mUpdateListener = listener;
+    }
+
     public void init(Context context, String hostPkg) {
         this.mHostPkg = hostPkg;
         registerBroadcastIfNeeded(context);
     }
 
     public synchronized void registerBroadcastIfNeeded(Context context) {
-        if (mReceiverRegistered || context == null) return;
+        if (mReceiverRegistered || context == null) {
+            return;
+        }
         String pkg = resolveHostPkg(context);
-        IntentFilter filter = new IntentFilter(pkg + ".action.UPDATE_CONFIG");
-        try {
-            context.registerReceiver(new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context ctx, Intent intent) {
-                    String updatePkg = intent.getStringExtra("package_name");
-                    int userId = intent.getIntExtra("user_id", 0);
-                    Log.d(TAG, "Config update broadcast received for pkg: " + updatePkg + ":" + userId);
-                    clearCache();
+        IntentFilter filter = new IntentFilter(ConfigBroadcast.actionName(pkg));
+        BroadcastReceiver receiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context ctx, Intent intent) {
+                String updatePkg = intent.getStringExtra(ConfigBroadcast.EXTRA_PKG);
+                int userId = intent.getIntExtra(ConfigBroadcast.EXTRA_USER_ID, 0);
+                Log.d(TAG, "Config update broadcast received for pkg: " + updatePkg + ":" + userId);
+                clearCache();
+                ConfigUpdateListener listener = mUpdateListener;
+                if (listener != null) {
+                    try {
+                        listener.onConfigUpdated(ctx.getApplicationContext(), updatePkg, userId);
+                    } catch (Throwable t) {
+                        Log.w(TAG, "ConfigUpdateListener failed", t);
+                    }
                 }
-            }, filter);
+            }
+        };
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                context.registerReceiver(receiver, filter);
+            }
             mReceiverRegistered = true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to register config update receiver", e);
@@ -73,7 +98,8 @@ public class ProfileRepository {
                 mHostPkg = (String) pkg;
                 return mHostPkg;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         return context != null ? context.getPackageName() : "com.sx.app";
     }
 
@@ -88,7 +114,9 @@ public class ProfileRepository {
     public LocationConfig resolveLocation(Context context, String pkg, int userId) {
         String cacheKey = (pkg == null ? "global" : pkg) + ":" + userId;
         LocationConfig cached = mLocationCache.get(cacheKey);
-        if (cached != null) return cached;
+        if (cached != null) {
+            return cached;
+        }
 
         LocationConfig instanceCfg = queryConfig(context, SxPrefs.KEY_LOCATION, pkg, userId, LocationConfig::fromJson);
         if (instanceCfg != null && instanceCfg.enabled) {
@@ -96,7 +124,6 @@ public class ProfileRepository {
             return instanceCfg;
         }
 
-        // Fallback to global config if instance config not enabled
         if (pkg != null && !pkg.isEmpty()) {
             LocationConfig globalCfg = queryConfig(context, SxPrefs.KEY_LOCATION, null, 0, LocationConfig::fromJson);
             if (globalCfg != null && globalCfg.enabled) {
@@ -113,7 +140,9 @@ public class ProfileRepository {
     public DeviceProfile resolveDevice(Context context, String pkg, int userId) {
         String cacheKey = (pkg == null ? "global" : pkg) + ":" + userId;
         DeviceProfile cached = mDeviceCache.get(cacheKey);
-        if (cached != null) return cached;
+        if (cached != null) {
+            return cached;
+        }
 
         DeviceProfile instanceProfile = queryConfig(context, SxPrefs.KEY_DEVICE, pkg, userId, DeviceProfile::fromJson);
         if (instanceProfile != null && instanceProfile.enabled) {
@@ -137,7 +166,9 @@ public class ProfileRepository {
     public NetworkProfile resolveNetwork(Context context, String pkg, int userId) {
         String cacheKey = (pkg == null ? "global" : pkg) + ":" + userId;
         NetworkProfile cached = mNetworkCache.get(cacheKey);
-        if (cached != null) return cached;
+        if (cached != null) {
+            return cached;
+        }
 
         NetworkProfile instanceProfile = queryConfig(context, SxPrefs.KEY_NETWORK, pkg, userId, NetworkProfile::fromJson);
         if (instanceProfile != null && instanceProfile.enabled) {
@@ -161,7 +192,9 @@ public class ProfileRepository {
     public CameraConfig resolveCamera(Context context, String pkg, int userId) {
         String cacheKey = (pkg == null ? "global" : pkg) + ":" + userId;
         CameraConfig cached = mCameraCache.get(cacheKey);
-        if (cached != null) return cached;
+        if (cached != null) {
+            return cached;
+        }
 
         CameraConfig instanceConfig = queryConfig(context, SxPrefs.KEY_CAMERA, pkg, userId, CameraConfig::fromJson);
         if (instanceConfig != null && instanceConfig.enabled) {
@@ -185,7 +218,9 @@ public class ProfileRepository {
     public BluetoothProfile resolveBluetooth(Context context, String pkg, int userId) {
         String cacheKey = (pkg == null ? "global" : pkg) + ":" + userId;
         BluetoothProfile cached = mBluetoothCache.get(cacheKey);
-        if (cached != null) return cached;
+        if (cached != null) {
+            return cached;
+        }
 
         BluetoothProfile instanceProfile = queryConfig(context, SxPrefs.KEY_BLUETOOTH, pkg, userId, BluetoothProfile::fromJson);
         if (instanceProfile != null && instanceProfile.enabled) {

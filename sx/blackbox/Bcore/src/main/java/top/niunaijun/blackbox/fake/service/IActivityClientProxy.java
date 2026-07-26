@@ -61,8 +61,30 @@ public class IActivityClientProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             IBinder token = (IBinder) args[0];
-            BActivityManager.get().onFinishActivity(token);
+            // ProxyActivity trampoline finish must not remove the guest virtual activity that
+            // was registered against the same shell token.
+            if (!isProxyShellFinish(token)) {
+                BActivityManager.get().onFinishActivity(token);
+            }
             return method.invoke(who, args);
+        }
+
+        private static boolean isProxyShellFinish(IBinder token) {
+            try {
+                android.app.Activity activity =
+                        top.niunaijun.blackbox.app.BActivityThread.getActivityByToken(token);
+                if (activity == null) {
+                    return false;
+                }
+                if (activity instanceof top.niunaijun.blackbox.proxy.ProxyActivity
+                        || activity instanceof top.niunaijun.blackbox.proxy.TransparentProxyActivity) {
+                    return true;
+                }
+                android.content.Intent intent = activity.getIntent();
+                return intent != null && intent.getBooleanExtra("_B_|_proxy_shell_finish_", false);
+            } catch (Throwable t) {
+                return false;
+            }
         }
     }
 
@@ -94,6 +116,44 @@ public class IActivityClientProxy extends ClassInvocationStub {
             ActivityManager.TaskDescription td = (ActivityManager.TaskDescription) args[1];
             args[1] = TaskDescriptionCompat.fix(td);
             return method.invoke(who, args);
+        }
+    }
+
+    /**
+     * Activity.isTaskRoot() on API 31+ is:
+     *   ActivityClient.getTaskForActivity(token, onlyRoot=true) >= 0
+     *
+     * BlackBox launches guests under a host ProxyActivity shell, so the system task root is
+     * ProxyActivity — guests (HyperOS DeskClock) see isTaskRoot=false and call finish()+MAIN.
+     * When onlyRoot=true, force onlyRoot=false and return the real task id so isTaskRoot() is true.
+     */
+    @ProxyMethod("getTaskForActivity")
+    public static class GetTaskForActivity extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            if (args != null && args.length >= 2 && Boolean.TRUE.equals(args[1])) {
+                Object[] copy = args.clone();
+                copy[1] = false;
+                Object result = method.invoke(who, copy);
+                if (result instanceof Integer && ((Integer) result) >= 0) {
+                    return result;
+                }
+                // Still claim root so guest launchers do not finish immediately.
+                return 1;
+            }
+            return method.invoke(who, args);
+        }
+    }
+
+    /**
+     * Some OEM/framework paths use isTopOfTask when deciding task ownership.
+     * Returning true is safe for single-activity guest launchers under Proxy shell.
+     */
+    @ProxyMethod("isTopOfTask")
+    public static class IsTopOfTask extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            return true;
         }
     }
 }

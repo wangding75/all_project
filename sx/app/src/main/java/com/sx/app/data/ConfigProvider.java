@@ -3,7 +3,7 @@ package com.sx.app.data;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Binder;
@@ -14,13 +14,19 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.io.File;
+
 /**
- * Host ContentProvider for configuration sharing.
- * Scoped by authority: ${applicationId}.config.provider
+ * Host ContentProvider for configuration sharing with sandbox virtual clients.
+ * Authority: ${applicationId}.config.provider
+ *
+ * Access policy: same UID (host + BlackBox virtual processes) or matching signing cert.
+ * Package-name prefix allowlist removed intentionally.
  */
 public class ConfigProvider extends ContentProvider {
 
     private static final String TAG = "SX-ConfigProvider";
+    private static final long MAX_CAMERA_BYTES = 8L * 1024 * 1024; // 8 MiB Binder-safe cap
 
     public static final String METHOD_GET_CONFIG = "get_config";
     public static final String METHOD_PUT_CONFIG = "put_config";
@@ -38,27 +44,41 @@ public class ConfigProvider extends ContentProvider {
     private boolean isCallerAllowed() {
         int callingUid = Binder.getCallingUid();
         int myUid = Process.myUid();
-        if (callingUid == myUid || callingUid == 0 || callingUid == 1000) {
+        // Same UID covers host + BlackBox virtual client processes for this app.
+        if (callingUid == myUid) {
             return true;
         }
+        // Do not allow root/system UIDs in production surface.
         Context ctx = getContext();
-        if (ctx == null) return false;
+        if (ctx == null) {
+            return false;
+        }
         String myPkg = ctx.getPackageName();
         String[] callingPackages = ctx.getPackageManager().getPackagesForUid(callingUid);
         if (callingPackages != null) {
             for (String pkg : callingPackages) {
-                if (pkg.equals(myPkg) || pkg.startsWith("com.sx.app")) {
+                if (pkg != null && pkg.equals(myPkg)) {
                     return true;
                 }
                 try {
-                    if (ctx.getPackageManager().checkSignatures(myPkg, pkg) == android.content.pm.PackageManager.SIGNATURE_MATCH) {
+                    if (ctx.getPackageManager().checkSignatures(myPkg, pkg)
+                            == PackageManager.SIGNATURE_MATCH) {
                         return true;
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
             }
         }
         Log.w(TAG, "Denied access to caller UID: " + callingUid);
         return false;
+    }
+
+    private static boolean isPathUnderRoot(String targetCanonical, String rootCanonical) {
+        if (targetCanonical == null || rootCanonical == null) {
+            return false;
+        }
+        return targetCanonical.equals(rootCanonical)
+                || targetCanonical.startsWith(rootCanonical + File.separator);
     }
 
     @Nullable
@@ -68,13 +88,17 @@ public class ConfigProvider extends ContentProvider {
             throw new SecurityException("Unauthorized caller for ConfigProvider");
         }
         Context context = getContext();
-        if (context == null) return null;
+        if (context == null) {
+            return null;
+        }
 
         Bundle result = new Bundle();
 
         if (METHOD_GET_CONFIG.equals(method)) {
             String baseKey = arg;
-            if (baseKey == null) return result;
+            if (baseKey == null) {
+                return result;
+            }
 
             String pkg = extras != null ? extras.getString(EXTRA_PKG, null) : null;
             int userId = extras != null ? extras.getInt(EXTRA_USER_ID, 0) : 0;
@@ -82,7 +106,6 @@ public class ConfigProvider extends ContentProvider {
             String fullKey = SxPrefs.makeKey(baseKey, pkg, userId);
             String jsonStr = SxPrefs.get(context).getString(fullKey, "");
 
-            // Fallback to global config if instance-specific config is empty
             if ((jsonStr == null || jsonStr.isEmpty()) && pkg != null && !pkg.isEmpty()) {
                 jsonStr = SxPrefs.get(context).getString(baseKey, "");
             }
@@ -91,7 +114,9 @@ public class ConfigProvider extends ContentProvider {
             return result;
         } else if (METHOD_PUT_CONFIG.equals(method)) {
             String baseKey = arg;
-            if (baseKey == null || extras == null) return result;
+            if (baseKey == null || extras == null) {
+                return result;
+            }
 
             String pkg = extras.getString(EXTRA_PKG, null);
             int userId = extras.getInt(EXTRA_USER_ID, 0);
@@ -101,54 +126,56 @@ public class ConfigProvider extends ContentProvider {
             SxPrefs.get(context).edit().putString(fullKey, jsonStr).apply();
             result.putBoolean("success", true);
 
-            // Send package-bound broadcast (for Host) + unbound broadcast (for virtual client processes) (S1)
-            String hostPkg = context.getPackageName();
-            Intent boundIntent = new Intent(hostPkg + ".action.UPDATE_CONFIG");
-            boundIntent.setPackage(hostPkg);
-            boundIntent.putExtra(EXTRA_PKG, pkg);
-            boundIntent.putExtra(EXTRA_USER_ID, userId);
-            context.sendBroadcast(boundIntent);
-
-            Intent unboundIntent = new Intent(hostPkg + ".action.UPDATE_CONFIG");
-            unboundIntent.putExtra(EXTRA_PKG, pkg);
-            unboundIntent.putExtra(EXTRA_USER_ID, userId);
-            context.sendBroadcast(unboundIntent);
-
+            ConfigBroadcast.notifyChanged(context, pkg, userId);
             return result;
         } else if ("get_camera_bytes".equals(method)) {
             String path = extras != null ? extras.getString("path", "") : "";
             if (path != null && !path.isEmpty()) {
                 try {
-                    java.io.File file = new java.io.File(path);
+                    File file = new File(path);
                     String targetCanonical = file.getCanonicalPath();
 
-                    java.io.File[] allowedRoots = new java.io.File[] {
-                        context.getExternalFilesDir("camera"),
-                        new java.io.File(context.getFilesDir(), "camera"),
-                        context.getExternalCacheDir(),
-                        context.getCacheDir()
+                    File[] allowedRoots = new File[]{
+                            context.getExternalFilesDir("camera"),
+                            new File(context.getFilesDir(), "camera"),
+                            // Only camera subdir under cache, not entire cache tree
+                            new File(context.getExternalCacheDir(), "camera"),
+                            new File(context.getCacheDir(), "camera")
                     };
 
                     boolean allowed = false;
-                    for (java.io.File root : allowedRoots) {
+                    for (File root : allowedRoots) {
                         if (root != null) {
+                            // Ensure camera root exists conceptually for prefix check
                             String rootCanonical = root.getCanonicalPath();
-                            if (targetCanonical.startsWith(rootCanonical)) {
+                            if (isPathUnderRoot(targetCanonical, rootCanonical)) {
                                 allowed = true;
                                 break;
                             }
                         }
                     }
 
-                    if (allowed && file.exists() && file.canRead()) {
-                        try (java.io.FileInputStream fis = new java.io.FileInputStream(file);
-                             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
-                            byte[] buf = new byte[8192];
-                            int n;
-                            while ((n = fis.read(buf)) != -1) {
-                                baos.write(buf, 0, n);
+                    if (allowed && file.exists() && file.canRead() && file.isFile()) {
+                        long len = file.length();
+                        if (len <= 0 || len > MAX_CAMERA_BYTES) {
+                            Log.w(TAG, "Rejected camera file size=" + len + " path=" + path);
+                        } else {
+                            try (java.io.FileInputStream fis = new java.io.FileInputStream(file);
+                                 java.io.ByteArrayOutputStream baos =
+                                         new java.io.ByteArrayOutputStream((int) len)) {
+                                byte[] buf = new byte[8192];
+                                int n;
+                                long total = 0;
+                                while ((n = fis.read(buf)) != -1) {
+                                    total += n;
+                                    if (total > MAX_CAMERA_BYTES) {
+                                        Log.w(TAG, "Camera read exceeded cap");
+                                        return result;
+                                    }
+                                    baos.write(buf, 0, n);
+                                }
+                                result.putByteArray("camera_bytes", baos.toByteArray());
                             }
-                            result.putByteArray("camera_bytes", baos.toByteArray());
                         }
                     } else {
                         Log.w(TAG, "Denied get_camera_bytes for path outside whitelist: " + path);
@@ -165,7 +192,8 @@ public class ConfigProvider extends ContentProvider {
 
     @Nullable
     @Override
-    public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection, @Nullable String[] selectionArgs, @Nullable String sortOrder) {
+    public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection,
+                        @Nullable String[] selectionArgs, @Nullable String sortOrder) {
         if (!isCallerAllowed()) {
             throw new SecurityException("Unauthorized caller for ConfigProvider");
         }
@@ -196,7 +224,8 @@ public class ConfigProvider extends ContentProvider {
     }
 
     @Override
-    public int update(@NonNull Uri uri, @Nullable ContentValues values, @Nullable String selection, @Nullable String[] selectionArgs) {
+    public int update(@NonNull Uri uri, @Nullable ContentValues values, @Nullable String selection,
+                      @Nullable String[] selectionArgs) {
         if (!isCallerAllowed()) {
             throw new SecurityException("Unauthorized caller for ConfigProvider");
         }

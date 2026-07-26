@@ -19,6 +19,34 @@ public class MethodParameterUtils {
         return null;
     }
 
+    /**
+     * PackageManager flags on Android 13+ may be {@link Long} (ApplicationInfoFlags /
+     * PackageInfoFlags) while BlackBox APIs still take {@code int}.
+     * Casting {@code (int) args[i]} throws ClassCastException when the boxed type is Long.
+     */
+    public static int getFlagsAsInt(Object flagsObj) {
+        if (flagsObj == null) {
+            return 0;
+        }
+        if (flagsObj instanceof Integer) {
+            return (Integer) flagsObj;
+        }
+        if (flagsObj instanceof Long) {
+            return ((Long) flagsObj).intValue();
+        }
+        if (flagsObj instanceof Number) {
+            return ((Number) flagsObj).intValue();
+        }
+        return 0;
+    }
+
+    public static int getFlagsAsInt(Object[] args, int index) {
+        if (args == null || index < 0 || index >= args.length) {
+            return 0;
+        }
+        return getFlagsAsInt(args[index]);
+    }
+
     public static String replaceFirstAppPkg(Object[] args) {
         if (args == null) {
             return null;

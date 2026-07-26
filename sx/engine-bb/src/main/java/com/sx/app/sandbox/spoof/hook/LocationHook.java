@@ -17,6 +17,13 @@ public class LocationHook {
     private static final String TAG = "SX-LocationHook";
     private static LocationConfig sConfig;
 
+    /** Hot-refresh spoof coordinates without re-hooking. */
+    public static void updateConfig(LocationConfig config) {
+        if (config != null) {
+            sConfig = config;
+        }
+    }
+
     public static void install(ClassLoader classLoader, LocationConfig config) {
         if (config == null || !config.enabled) return;
         sConfig = config;
