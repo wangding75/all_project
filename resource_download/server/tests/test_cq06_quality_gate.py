@@ -22,6 +22,8 @@ def test_quality_gate_script_exists():
 
 def test_quality_gate_execution():
     """验证运行 quality_gate.py 全部关卡均通过 (returncode == 0)。"""
+    if os.environ.get("QUALITY_GATE_ACTIVE") == "1":
+        pytest.skip("quality gate 子测试集中跳过自递归执行")
     repo_root = Path(__file__).resolve().parents[2]
     gate_script = repo_root / "scripts" / "quality_gate.py"
 

@@ -28,7 +28,7 @@ def format_platform_error(exc: Exception) -> str:
 
     # 2. Vendor / 红果配置缺失
     if "hongguovendorerror" in exc_lower or "missing vendor" in exc_lower or "hongguo_config" in exc_lower:
-        return f"红果环境未就绪: {exc_str}"
+        return f"红果 Vendor 组件未处于就绪状态: {exc_str}"
     if isinstance(exc, FileNotFoundError) and "hongguo_config" in exc_str.replace("\\", "/"):
         return (
             "缺少红果会话配置 data/config/hongguo_config.json。"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 from app.config import Settings
 from app.security_boot import assert_production_secrets, is_loopback_host, mask_secret
 
@@ -79,3 +80,8 @@ def test_dev_mode_default_key_localhost_allowed():
     )
     # 不应抛出任何异常
     assert_production_secrets(settings)
+
+
+def test_invalid_auth_mode_is_rejected_by_settings():
+    with pytest.raises(ValidationError):
+        Settings(auth_mode="duel")

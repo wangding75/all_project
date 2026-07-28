@@ -60,12 +60,19 @@ def check_dependency_layering():
     req_dev = ROOT_DIR / "requirements-dev.txt"
     assert req_prod.exists(), "缺少 requirements.txt"
     assert req_dev.exists(), "缺少 requirements-dev.txt"
+    prod_content = req_prod.read_text(encoding="utf-8").lower()
+    dev_content = req_dev.read_text(encoding="utf-8").lower()
+    for dependency in ("requests", "bcrypt"):
+        assert dependency in prod_content, f"生产依赖缺少 {dependency}"
+    assert "pywebview" in dev_content, "桌面构建依赖缺少 pywebview"
 
 
 def run_pytest_suite():
     """Phase 5: 全量 pytest 自动化测试套件回归"""
     env = dict(os.environ)
     env["PYTHONPATH"] = str(ROOT_DIR / "server")
+    # 防止 test_quality_gate_execution -> quality_gate -> pytest 无限递归。
+    env["QUALITY_GATE_ACTIVE"] = "1"
     cmd = [sys.executable, "-m", "pytest", "server/tests"]
     result = subprocess.run(cmd, cwd=str(ROOT_DIR), env=env)
     if result.returncode != 0:
@@ -84,7 +91,7 @@ def main():
     run_phase("5. pytest 全量自动化测试回归", run_pytest_suite)
 
     print("\n==================================================")
-    print(" 🎉 ALL QUALITY GATE PHASES PASSED SUCCESSFULLY! ")
+    print(" ALL QUALITY GATE PHASES PASSED SUCCESSFULLY! ")
     print("==================================================")
 
 

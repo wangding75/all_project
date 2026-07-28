@@ -6,6 +6,7 @@ import os
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -50,7 +51,7 @@ class Settings(BaseSettings):
 
     # 鉴权模式（阶段 D-0）：dev | dual | jwt_only
     # dev=仅 X-API-Key（默认，兼容 e2e）；dual=Key 或 JWT；jwt_only=仅 JWT
-    auth_mode: str = "dev"
+    auth_mode: Literal["dev", "dual", "jwt_only"] = "dev"
     # JWT（D-1 起生效；D-0 仅预留配置，Bearer 请求返回 501）
     jwt_secret: str = "change-me-jwt-secret"
     jwt_expire_minutes: int = 10080

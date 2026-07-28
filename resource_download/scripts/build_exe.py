@@ -70,13 +70,10 @@ def run_build():
         "--clean",
         f"--distpath={temp_dist}",
         f"--workpath={temp_work}",
-        f"--paths={ROOT_DIR / 'server'}",  # 让 PyInstaller 将 server 作为模块搜索路径
+        f"--specpath={temp_dir}",
         f"--add-data={ui_dir}{os.pathsep}ui",
-        "--collect-all=app",              # 递归收集 app 包下的所有子模块、二进制和数据
-        "--collect-all=platforms",        # 递归收集 platforms 包（支持动态导入）
         "--collect-all=webview",          # 收集 pywebview GUI 的完整依赖
         "--hidden-import=anyio._backends._asyncio",
-        "--hidden-import=anyio.providers.asyncio",
         "--exclude-module=tkinter",
         "--exclude-module=matplotlib",
         "--exclude-module=IPython",
@@ -85,8 +82,30 @@ def run_build():
         "--exclude-module=ruff",
     ]
 
-    # 默认不包含 vendor 源码，仅在环境变量 INCLUDE_VENDOR == "1" 时打包
-    if os.environ.get("INCLUDE_VENDOR") == "1":
+    include_embedded = os.environ.get("INCLUDE_EMBEDDED") == "1"
+    if include_embedded:
+        pyinstaller_args.extend(
+            [
+                f"--paths={ROOT_DIR / 'server'}",
+                "--collect-all=app",
+                "--collect-all=platforms",
+            ]
+        )
+        print("[BUILD] 开发演示包：包含 embedded server 与平台适配")
+    else:
+        pyinstaller_args.extend(
+            [
+                "--exclude-module=app",
+                "--exclude-module=platforms",
+                "--exclude-module=uvicorn",
+                "--exclude-module=fastapi",
+                "--exclude-module=sqlalchemy",
+            ]
+        )
+        print("[BUILD] 生产瘦客户端：已排除 server/app/platforms")
+
+    # vendor 仅允许进入显式 embedded 开发演示包
+    if include_embedded and os.environ.get("INCLUDE_VENDOR") == "1":
         if vendor_dir.exists():
             pyinstaller_args.append(f"--add-data={vendor_dir}{os.pathsep}vendor")
             print("[BUILD] 打包已内嵌 vendor 源码目录")

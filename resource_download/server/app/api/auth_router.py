@@ -145,7 +145,7 @@ def me(
     if user.vip_expires_at is not None:
         exp = user.vip_expires_at
         if exp.tzinfo is None:
-            is_vip = exp > datetime.utcnow()
+            is_vip = exp > datetime.now(timezone.utc).replace(tzinfo=None)
         else:
             is_vip = exp > datetime.now(timezone.utc)
 

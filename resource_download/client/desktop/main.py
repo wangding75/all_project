@@ -9,13 +9,17 @@
 
 from __future__ import annotations
 
+import html
+import json
 import logging
 import os
+import re
 import socket
 import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -67,10 +71,42 @@ logging.basicConfig(
 log = logging.getLogger("client.desktop")
 
 
+def is_secure_api_base(base: str) -> bool:
+    """远程服务必须使用 HTTPS；仅本机环回地址允许 HTTP。"""
+    try:
+        parsed = urllib.parse.urlparse(base)
+    except ValueError:
+        return False
+    if parsed.scheme == "https":
+        return bool(parsed.hostname)
+    return parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+
+
+def _safe_filename(name: str) -> str:
+    """生成安全的 Windows 本地文件名，阻止路径穿越和非法字符。"""
+    clean = Path(name or "download.bin").name.strip()
+    clean = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", clean)
+    clean = clean.rstrip(" .")
+    return clean or "download.bin"
+
+
 class WindowApi:
-    def __init__(self) -> None:
+    def __init__(self, api_base: str) -> None:
         self._window: webview.Window | None = None
         self.is_maximized = False
+        self.api_base = api_base.rstrip("/")
+        self._download_dir = Path.home() / "Downloads" / "ResourceDownloader"
+        self._local_files: dict[str, Path] = {}
+        local_app_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".resource-downloader"))
+        self._preferences_path = local_app_data / "ResourceDownloader" / "client.json"
+        try:
+            if self._preferences_path.is_file():
+                payload = json.loads(self._preferences_path.read_text(encoding="utf-8"))
+                saved_dir = str(payload.get("download_directory") or "").strip()
+                if saved_dir:
+                    self._download_dir = Path(saved_dir).expanduser().resolve()
+        except Exception:
+            log.warning("无法读取客户端本地偏好，将使用默认下载目录")
 
     def bind(self, window: webview.Window) -> None:
         self._window = window
@@ -93,6 +129,125 @@ class WindowApi:
             self._window.destroy()
         print("[EXIT] 通过标题栏关闭按钮触发关闭程序。")
         os._exit(0)
+
+    def get_download_directory(self) -> dict[str, object]:
+        return {"success": True, "path": str(self._download_dir)}
+
+    def get_runtime_info(self) -> dict[str, object]:
+        return {
+            "success": True,
+            "api_base": self.api_base,
+            "download_directory": str(self._download_dir),
+        }
+
+    def choose_download_directory(self) -> dict[str, object]:
+        if not self._window:
+            return {"success": False, "message": "窗口尚未就绪"}
+        try:
+            selected = self._window.create_file_dialog(
+                webview.FOLDER_DIALOG,
+                directory=str(self._download_dir.parent),
+            )
+            if not selected:
+                return {"success": False, "cancelled": True, "message": "已取消选择"}
+            chosen = Path(selected[0]).expanduser().resolve()
+            chosen.mkdir(parents=True, exist_ok=True)
+            self._download_dir = chosen
+            self._preferences_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = self._preferences_path.with_suffix(".tmp")
+            temp_path.write_text(
+                json.dumps({"download_directory": str(chosen)}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            temp_path.replace(self._preferences_path)
+            return {"success": True, "path": str(chosen)}
+        except Exception as exc:
+            log.exception("选择本地下载目录失败")
+            return {"success": False, "message": f"选择目录失败: {exc}"}
+
+    def download_file(
+        self,
+        file_id: str,
+        filename: str,
+        access_token: str = "",
+        api_key: str = "",
+    ) -> dict[str, object]:
+        """从服务端鉴权下载文件到客户机，使用 .part + replace 原子落盘。"""
+        if not file_id or file_id in {".", "/", "\\"}:
+            return {"success": False, "message": "无效的文件标识"}
+
+        encoded = "/".join(urllib.parse.quote(part, safe="") for part in file_id.replace("\\", "/").split("/"))
+        url = f"{self.api_base}/v1/files/{encoded}"
+        headers: dict[str, str] = {}
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
+        elif api_key:
+            headers["X-API-Key"] = api_key
+
+        normalized_parts = [part for part in file_id.replace("\\", "/").split("/") if part]
+        job_folder = _safe_filename(normalized_parts[0]) if len(normalized_parts) > 1 else ""
+        target_dir = self._download_dir / job_folder if job_folder else self._download_dir
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / _safe_filename(filename or Path(file_id).name)
+        partial = target.with_name(f"{target.name}.part")
+        try:
+            request = urllib.request.Request(url, headers=headers, method="GET")
+            with urllib.request.urlopen(request, timeout=300) as response, partial.open("wb") as output:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            partial.replace(target)
+            resolved = target.resolve()
+            self._local_files[file_id] = resolved
+            return {
+                "success": True,
+                "path": str(resolved),
+                "size": resolved.stat().st_size,
+                "message": f"已下载到本机: {resolved}",
+            }
+        except urllib.error.HTTPError as exc:
+            partial.unlink(missing_ok=True)
+            detail = f"HTTP {exc.code}"
+            try:
+                payload = json.loads(exc.read().decode("utf-8", errors="replace"))
+                detail = str(payload.get("detail") or detail)
+            except Exception:
+                pass
+            return {"success": False, "message": f"服务端拒绝下载: {detail}"}
+        except Exception as exc:
+            partial.unlink(missing_ok=True)
+            log.exception("客户端下载失败 file_id=%s", file_id)
+            return {"success": False, "message": f"下载到本机失败: {exc}"}
+
+    def open_local_file(self, file_id: str, action: str = "play") -> dict[str, object]:
+        path = self._local_files.get(file_id)
+        if path is None or not path.is_file():
+            return {"success": False, "message": "本机文件不存在，请先下载"}
+        try:
+            if action == "folder":
+                subprocess_args = ["explorer.exe", f'/select,"{path}"']
+                import subprocess
+
+                subprocess.Popen(subprocess_args)
+            else:
+                os.startfile(str(path))
+            return {"success": True, "path": str(path)}
+        except Exception as exc:
+            log.exception("打开本机文件失败 file_id=%s", file_id)
+            return {"success": False, "message": f"打开本机文件失败: {exc}"}
+
+    def open_download_directory(self) -> dict[str, object]:
+        try:
+            self._download_dir.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(self._download_dir))
+            return {"success": True, "path": str(self._download_dir)}
+        except Exception as exc:
+            log.exception("打开本机下载目录失败")
+            return {"success": False, "message": f"打开下载目录失败: {exc}"}
 
 
 def is_port_in_use(host: str, port: int) -> bool:
@@ -154,6 +309,22 @@ def main() -> None:
             sys.exit(1)
         print("[START] 服务端就绪。")
     else:
+        if not is_secure_api_base(api_base):
+            message = (
+                "为保护账号、卡密和下载内容，远程服务端必须使用 HTTPS。\n"
+                f"当前地址不安全: {api_base}\n\n"
+                "请联系管理员配置 HTTPS，或仅在本机使用 http://127.0.0.1。"
+            )
+            log.error(message.replace("\n", " "))
+            webview.create_window(
+                title="资源下载客户端 - 安全配置错误",
+                html=f"<main style='font-family:sans-serif;padding:32px'><h2>无法连接不安全的服务端</h2>"
+                f"<p>{html.escape(message).replace(chr(10), '<br>')}</p></main>",
+                width=720,
+                height=420,
+            )
+            webview.start()
+            return
         # 瘦客户端：只检查远程服务是否可达（失败仍打开窗口，便于改设置，但会提示）
         if not wait_for_server_healthy(api_base, timeout=5.0):
             print(
@@ -165,7 +336,7 @@ def main() -> None:
 
     ui_url = f"{api_base.rstrip('/')}/ui/"
     print(f"[WINDOW] PyWebView → {ui_url}")
-    api = WindowApi()
+    api = WindowApi(api_base)
     window = webview.create_window(
         title="资源下载客户端",
         url=ui_url,

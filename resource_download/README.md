@@ -27,6 +27,7 @@ client (瘦)  --HTTPS API-->  server (中转 + 适配 + 设备/签名)
 | [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md) | 阶段进度与剩余 backlog |
 | [`client/README.md`](./client/README.md) | 瘦客户端启动方式 |
 | [`docs/api.md`](./docs/api.md) | HTTP API 契约 |
+| [`docs/UI_FUTURE_API_CONTRACTS.md`](./docs/UI_FUTURE_API_CONTRACTS.md) | 商业发现、批量下载、追更与队列的后续 API 契约 |
 | [`docs/hongguo_setup.md`](./docs/hongguo_setup.md) / [`docs/fanqie_app_setup.md`](./docs/fanqie_app_setup.md) | 平台环境（服务端） |
 | [`docs/deployment.md`](./docs/deployment.md) | 生产部署 |
 | [`docs/release.md`](./docs/release.md) | 打包说明 |

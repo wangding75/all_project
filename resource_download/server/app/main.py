@@ -81,16 +81,17 @@ async def lifespan(_app: FastAPI):
         except Exception as exc:
             logging.warning("平台运行时探测异常（不阻断启动）: %s", exc)
 
-    # 启动完成后再汇总一次完整健康报告（含 runtime）写入日志
-    try:
-        from platforms.readiness import build_health_report, log_startup_readiness
-        from platforms.runtime import probe_all_runtimes
+    # 仅在启用运行时探测时汇总 ADB/Frida 状态；关闭开关必须保证完全离线启动。
+    if settings.platform_probe_on_startup or settings.fanqie_probe_on_startup:
+        try:
+            from platforms.readiness import build_health_report, log_startup_readiness
+            from platforms.runtime import probe_all_runtimes
 
-        rt = probe_all_runtimes(try_start_agent=False, try_start_apps=False)
-        full = build_health_report(include_runtime=True, runtime_report=rt)
-        log_startup_readiness(full)
-    except Exception as exc:
-        logging.warning("启动健康汇总失败: %s", exc)
+            rt = probe_all_runtimes(try_start_agent=False, try_start_apps=False)
+            full = build_health_report(include_runtime=True, runtime_report=rt)
+            log_startup_readiness(full)
+        except Exception as exc:
+            logging.warning("启动健康汇总失败: %s", exc)
 
     yield
     logging.info("服务端收到退出信号，开始执行优雅关机流程...")

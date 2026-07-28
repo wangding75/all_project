@@ -55,23 +55,26 @@ async def health() -> HealthResponse:
     """配置 + 设备运行时完整性检查（只探测不自启）。"""
     extra_platforms = list_platforms()
     runtime_report: dict | None = None
-    try:
-        from platforms.runtime import probe_all_runtimes
+    settings = get_settings()
+    include_runtime = settings.platform_probe_on_startup or settings.fanqie_probe_on_startup
+    if include_runtime:
+        try:
+            from platforms.runtime import probe_all_runtimes
 
-        runtime_report = probe_all_runtimes(try_start_agent=False, try_start_apps=False)
-    except Exception as exc:  # noqa: BLE001
-        runtime_report = {
-            "ok": False,
-            "degraded": True,
-            "message": str(exc),
-            "agent": {"ok": False, "adb_ok": False, "agent_running": False, "message": str(exc)},
-            "fanqie_runtime": {},
-            "hongguo_runtime": {},
-        }
+            runtime_report = probe_all_runtimes(try_start_agent=False, try_start_apps=False)
+        except Exception as exc:  # noqa: BLE001
+            runtime_report = {
+                "ok": False,
+                "degraded": True,
+                "message": str(exc),
+                "agent": {"ok": False, "adb_ok": False, "agent_running": False, "message": str(exc)},
+                "fanqie_runtime": {},
+                "hongguo_runtime": {},
+            }
 
     from platforms.readiness import build_health_report
 
-    report = build_health_report(include_runtime=True, runtime_report=runtime_report)
+    report = build_health_report(include_runtime=include_runtime, runtime_report=runtime_report)
     checks = [
         HealthDependencyItem(
             key=str(c.get("key") or ""),
@@ -381,20 +384,6 @@ async def cancel_job(
     if not cancelled:
         raise HTTPException(status_code=400, detail="Job 无法取消（可能已完成、已失败或不存在）")
     return {"message": "Job successfully cancelled", "job_id": job_id}
-
-
-@api_router.get("/v1/version", response_model=VersionResponse)
-async def get_version(
-    _: Identity = Depends(require_identity),
-) -> VersionResponse:
-    return VersionResponse(
-        latest_version="v2.1.0",
-        has_update=False,
-        download_url="",
-        release_notes="最新纯白极简桌面端版本，支持红果短剧/番茄小说双平台与卡密兑换。",
-    )
-
-
 
 
 @api_router.get("/v1/files", response_model=FileListResponse)

@@ -33,7 +33,7 @@
             <div class="vip-avatar" id="vipUserAvatar">👤</div>
             <div class="vip-details">
               <span class="vip-name" id="vipUsername">未登录</span>
-              <span class="vip-expire" id="vipExpireDate">未登录 (商业默认路径)</span>
+              <span class="vip-expire" id="vipExpireDate">登录后解锁完整功能</span>
             </div>
           </div>
           <div class="vip-card-actions">
@@ -49,13 +49,6 @@
               🚪 退出登录
             </button>
           </div>
-        </div>
-
-        <!-- 平台切换器（含聚合搜索） -->
-        <div class="platform-switcher">
-          <div class="platform-tab active" data-platform="all">✨ 全部</div>
-          <div class="platform-tab" data-platform="hongguo">🔴 红果</div>
-          <div class="platform-tab" data-platform="fanqie">🍅 番茄</div>
         </div>
 
         <!-- 核心导航菜单 -->
@@ -104,27 +97,59 @@
         <div class="home-page-container">
           <div class="home-hero">
             <div class="home-hero-text">
-              <h1 class="home-title">发现 · 下载</h1>
-              <p class="home-subtitle">热榜与上新由服务端聚合；搜索可立即使用红果 / 番茄 App 接口。</p>
+              <div class="home-eyebrow">DISCOVER</div>
+              <h1 class="home-title">发现值得下载的好内容</h1>
+              <p class="home-subtitle">浏览热门短剧与小说上新，也可以直接搜索你感兴趣的作品。</p>
             </div>
             <div class="home-quick-search">
-              <input type="text" class="input-control" id="homeSearchQuery" placeholder="快速搜索剧名 / 书名 / ID…" autocomplete="off">
-              <button class="btn-primary" id="btnHomeSearch">搜索</button>
+              <div class="home-search-field">
+                <span class="home-search-icon">⌕</span>
+                <input type="text" class="input-control" id="homeSearchQuery" placeholder="搜索剧名、书名或资源 ID" autocomplete="off">
+              </div>
+              <button class="btn-primary home-search-button" id="btnHomeSearch">搜索资源</button>
             </div>
+          </div>
+
+          <div class="home-mode-tabs" id="homeModeTabs" aria-label="发现内容分类">
+            <button class="home-mode-tab active" data-view="discover">
+              <span>◈</span> 内容发现
+            </button>
+            <button class="home-mode-tab" data-view="ranking">
+              <span>↗</span> 排行榜
+            </button>
+            <button class="home-mode-tab" data-view="calendar">
+              <span>▦</span> 上线日历
+            </button>
+            <button class="home-mode-tab" data-view="following">
+              <span>♡</span> 我的追更
+            </button>
           </div>
 
           <div class="home-toolbar">
-            <!-- 发现页按平台分 tab：红果 / 番茄，各含热榜 + 今日上新 -->
-            <div class="home-platform-tabs" id="homePlatformTabs">
-              <button class="home-platform-tab active" data-platform="hongguo">🔴 红果短剧</button>
-              <button class="home-platform-tab" data-platform="fanqie">🍅 番茄小说</button>
+            <div class="home-toolbar-main">
+              <span class="home-toolbar-label">内容平台</span>
+              <div class="home-platform-tabs" id="homePlatformTabs">
+                <button class="home-platform-tab active" data-platform="hongguo"><span class="platform-dot hongguo"></span>红果短剧</button>
+                <button class="home-platform-tab" data-platform="fanqie"><span class="platform-dot fanqie"></span>番茄小说</button>
+              </div>
             </div>
-            <button class="btn-secondary" id="btnRefreshDiscover" style="padding: 6px 12px; font-size: 12px;">刷新</button>
+            <button class="btn-secondary home-refresh-button" id="btnRefreshDiscover"><span>↻</span> 刷新内容</button>
           </div>
 
-          <div class="home-note" id="homeDiscoverNote"></div>
+          <div class="home-note" id="homeDiscoverNote" aria-live="polite"></div>
+          <div class="home-selection-bar" id="homeSelectionBar" hidden>
+            <div class="home-selection-summary">
+              <span class="home-selection-count" id="homeSelectionCount">已选 0 项</span>
+              <span class="home-selection-hint">可批量加入下载队列</span>
+            </div>
+            <div class="home-selection-actions">
+              <button class="btn-secondary" id="btnHomeSelectAll">全选当前</button>
+              <button class="btn-secondary" id="btnHomeClearSelection">清空</button>
+              <button class="btn-primary" id="btnHomeAddQueue">加入下载队列</button>
+            </div>
+          </div>
           <div class="home-sections" id="homeSections">
-            <div class="home-loading">加载发现页…</div>
+            <div class="home-loading">正在加载发现内容…</div>
           </div>
         </div>
       </section>
@@ -306,14 +331,15 @@
           <div class="settings-card">
             <h3 class="settings-card-title">📁 路径与清晰度</h3>
             <div class="form-group">
-              <label class="form-label">本机偏好保存目录（展示用）</label>
+              <label class="form-label">本机保存目录</label>
               <div class="form-row-inline">
-                <input type="text" class="input-control" id="settingOutputDir" placeholder="例如 D:\Downloads\ResourceDownloader">
+                <input type="text" class="input-control" id="settingOutputDir" placeholder="桌面客户端默认保存到 Downloads\ResourceDownloader" readonly>
+                <button type="button" class="btn-secondary" id="btnChooseOutputDir" style="white-space: nowrap;">选择目录</button>
               </div>
               <label class="form-check">
                 <input type="checkbox" id="settingRememberOutputDir"> 记住保存目录
               </label>
-              <span class="form-hint">实际产物由中转服务端写入服务器 outputs；此项用于客户端展示与「打开目录」提示。瘦客户端不在本机跑下载适配。</span>
+              <span class="form-hint">服务端完成处理后，桌面客户端会把文件安全传输到这里；浏览器模式使用浏览器默认下载目录。</span>
             </div>
             <div class="form-group">
               <label class="form-label">红果默认清晰度</label>

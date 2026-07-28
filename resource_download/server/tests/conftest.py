@@ -25,6 +25,13 @@ from platforms.base import BasePlatform
 def clean_test_environment():
     """在每个测试前后自动隔离重置环境变量与设置缓存。"""
     original_environ = dict(os.environ)
+    # 自动化测试必须完全离线、确定性运行；真实 ADB/Frida/平台联调单独执行。
+    os.environ["PLATFORM_PROBE_ON_STARTUP"] = "false"
+    os.environ["FANQIE_PROBE_ON_STARTUP"] = "false"
+    os.environ["FANQIE_TRY_START_AGENT"] = "false"
+    os.environ["TRY_START_PLATFORM_APPS"] = "false"
+    os.environ["REQUIRE_PLATFORM_APPS"] = "false"
+    os.environ["FANQIE_REQUIRE_RUNTIME"] = "false"
     get_settings.cache_clear()
     with _rate_limit_lock:
         _rate_limit_cache.clear()

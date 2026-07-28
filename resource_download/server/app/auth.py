@@ -101,7 +101,11 @@ async def require_identity(
     settings = get_settings()
     mode = (settings.auth_mode or "dev").strip().lower()
     if mode not in {"dev", "dual", "jwt_only"}:
-        mode = "dev"
+        logger.error("非法 AUTH_MODE=%r，拒绝降级到开发模式", mode)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="服务端鉴权模式配置错误",
+        )
 
     if mode == "dev":
         # dev 模式：仅校验 X-API-Key，忽略 Bearer

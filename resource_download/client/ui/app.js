@@ -34,6 +34,28 @@
     }
   }
 
+  function isLoopbackApi(base) {
+    try {
+      const url = new URL(base);
+      return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isSecureApiBase(base) {
+    try {
+      const url = new URL(base);
+      return url.protocol === "https:" || (url.protocol === "http:" && isLoopbackApi(base));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function defaultApiKeyFor(base) {
+    return isLoopbackApi(base) ? "dev-key-change-me" : "";
+  }
+
   // 全局应用状态 State
   const state = {
     theme: localStorage.getItem("theme") || "light",
@@ -55,8 +77,11 @@
       } catch (_) {}
       return "http://127.0.0.1:8000";
     })(),
-    apiKey: localStorage.getItem("apiKey") || "dev-key-change-me",
+    apiKey: localStorage.getItem("apiKey") || defaultApiKeyFor(
+      localStorage.getItem("apiBase") || (typeof location !== "undefined" ? location.origin : "")
+    ),
     accessToken: localStorage.getItem("accessToken") || "",
+    nativeApiBase: "",
     user: null,
     authMode: "login",
     currentDetail: null,
@@ -72,7 +97,9 @@
     lastHealth: null,
     depsPanelOpen: false,
     discoverPlatform: "hongguo",
+    discoverView: "discover",
     discoverData: null,
+    homeSelectedItems: new Map(),
     // 下载偏好（本地持久化）
     prefs: {
       outputDir: localStorage.getItem("pref_outputDir") || "",
@@ -116,6 +143,12 @@
     homeSections: document.getElementById("homeSections"),
     homeDiscoverNote: document.getElementById("homeDiscoverNote"),
     homePlatformTabs: document.querySelectorAll(".home-platform-tab"),
+    homeModeTabs: document.querySelectorAll(".home-mode-tab"),
+    homeSelectionBar: document.getElementById("homeSelectionBar"),
+    homeSelectionCount: document.getElementById("homeSelectionCount"),
+    btnHomeSelectAll: document.getElementById("btnHomeSelectAll"),
+    btnHomeClearSelection: document.getElementById("btnHomeClearSelection"),
+    btnHomeAddQueue: document.getElementById("btnHomeAddQueue"),
 
     // 搜索页面
     inputSearchQuery: document.getElementById("inputSearchQuery"),
@@ -170,6 +203,7 @@
     settingApiBase: document.getElementById("settingApiBase"),
     settingApiKey: document.getElementById("settingApiKey"),
     settingOutputDir: document.getElementById("settingOutputDir"),
+    btnChooseOutputDir: document.getElementById("btnChooseOutputDir"),
     settingRememberOutputDir: document.getElementById("settingRememberOutputDir"),
     settingRememberQuality: document.getElementById("settingRememberQuality"),
     settingOpenFolderOnComplete: document.getElementById("settingOpenFolderOnComplete"),
@@ -237,6 +271,17 @@
     if (p.includes("fanqie") || p.includes("番茄")) return "fanqie";
     if (p.includes("hongguo") || p.includes("红果")) return "hongguo";
     return state.selectedPlatform || "hongguo";
+  }
+
+  function jobStatusLabel(job) {
+    const status = String(job.status || "");
+    if (status === "pending") return "等待服务端处理";
+    if (status === "running") return `服务端处理中 · ${Math.round(job.progress || 0)}%`;
+    if (status === "cancelling") return "正在安全取消";
+    if (status === "cancelled") return "任务已取消";
+    if (status === "success") return `服务端处理完成 · ${job.files ? job.files.length : 0} 个文件可下载`;
+    if (status === "failed") return `处理失败 · ${job.error || job.message || "请重试"}`;
+    return job.message || status || "状态未知";
   }
 
   function sourceLabelOf(item) {
@@ -361,6 +406,82 @@
     return response.json();
   }
 
+  function authHeaders(includeJson = false) {
+    const headers = {};
+    if (includeJson) headers["Content-Type"] = "application/json";
+    if (state.accessToken) headers["Authorization"] = `Bearer ${state.accessToken}`;
+    else if (state.apiKey) headers["X-API-Key"] = state.apiKey;
+    return headers;
+  }
+
+  async function downloadFileInBrowser(file) {
+    const fileId = file.file_id;
+    const baseUrl = state.apiBase.replace(/\/+$/, "");
+    const response = await fetch(`${baseUrl}/v1/files/${encodeFilePath(fileId)}`, {
+      headers: authHeaders(false),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || `HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name || file.title || fileId.split("/").pop() || "download.bin";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    }
+    return { success: true, browser: true };
+  }
+
+  async function deliverFileLocal(file, action = "download") {
+    if (!file || !file.file_id) {
+      toast("文件信息不完整，无法下载", "error");
+      return;
+    }
+    const filename = file.name || file.title || file.file_id.split("/").pop() || "download.bin";
+    try {
+      toast(`正在传输到本机：${filename}`, "info", 2500);
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.download_file) {
+        const result = await window.pywebview.api.download_file(
+          file.file_id,
+          filename,
+          state.accessToken || "",
+          state.apiKey || ""
+        );
+        if (!result || !result.success) {
+          throw new Error((result && result.message) || "客户端下载失败");
+        }
+        toast(`已保存到本机：${result.path}`, "success", 4500);
+        if (action === "play" || action === "folder") {
+          const opened = await window.pywebview.api.open_local_file(file.file_id, action);
+          if (!opened || !opened.success) {
+            throw new Error((opened && opened.message) || "无法打开本机文件");
+          }
+        }
+        return result;
+      }
+
+      const result = await downloadFileInBrowser(file);
+      toast(
+        action === "download"
+          ? "文件已交给浏览器下载"
+          : "文件已下载，请从浏览器下载列表打开",
+        "success",
+        4000
+      );
+      return result;
+    } catch (e) {
+      toast(`文件交付失败：${e.message}`, "error", 5000);
+      throw e;
+    }
+  }
+
   // 获取 /v1/auth/me 并更新状态
   async function fetchMe() {
     if (!state.accessToken) {
@@ -425,7 +546,7 @@
       // 未登录状态
       if (elements.vipUsername) elements.vipUsername.textContent = "未登录";
       if (elements.vipUserAvatar) elements.vipUserAvatar.textContent = "👤";
-      if (elements.vipExpireDate) elements.vipExpireDate.textContent = "未登录 (商业默认路径)";
+      if (elements.vipExpireDate) elements.vipExpireDate.textContent = "登录后解锁完整功能";
 
       if (elements.btnOpenAuthModal) elements.btnOpenAuthModal.style.display = "flex";
       if (elements.btnRedeemKey) elements.btnRedeemKey.style.display = "none";
@@ -990,19 +1111,133 @@
   function setDiscoverPlatform(plat) {
     const p = plat === "fanqie" ? "fanqie" : "hongguo";
     state.discoverPlatform = p;
+    state.homeSelectedItems.clear();
+    updateHomeSelectionBar();
     if (elements.homePlatformTabs) {
       elements.homePlatformTabs.forEach((tab) => {
         tab.classList.toggle("active", tab.getAttribute("data-platform") === p);
       });
     }
-    loadDiscover();
+    if (state.discoverView === "discover") {
+      loadDiscover();
+    } else {
+      renderHomeFeatureView(state.discoverView);
+    }
+  }
+
+  function setDiscoverView(view) {
+    const supported = ["discover", "ranking", "calendar", "following"];
+    const nextView = supported.includes(view) ? view : "discover";
+    state.discoverView = nextView;
+    state.homeSelectedItems.clear();
+    updateHomeSelectionBar();
+    elements.homeModeTabs.forEach((tab) => {
+      tab.classList.toggle("active", tab.getAttribute("data-view") === nextView);
+    });
+    if (nextView === "discover") {
+      loadDiscover();
+    } else {
+      renderHomeFeatureView(nextView);
+    }
+  }
+
+  function updateHomeSelectionBar() {
+    if (!elements.homeSelectionBar || !elements.homeSelectionCount) return;
+    const count = state.homeSelectedItems.size;
+    elements.homeSelectionBar.hidden = count === 0;
+    elements.homeSelectionCount.textContent = `已选 ${count} 项`;
+  }
+
+  function syncHomeCardSelections() {
+    document.querySelectorAll(".home-card").forEach((card) => {
+      const key = `${card.getAttribute("data-platform")}:${card.getAttribute("data-id")}`;
+      const selected = state.homeSelectedItems.has(key);
+      card.classList.toggle("selected", selected);
+      const checkbox = card.querySelector(".home-card-checkbox");
+      if (checkbox) checkbox.checked = selected;
+    });
+  }
+
+  function renderHomeFeatureView(view) {
+    if (!elements.homeSections) return;
+    const plat = state.discoverPlatform || "hongguo";
+    const meta = PLATFORM_META[plat] || PLATFORM_META.hongguo;
+    const configs = {
+      ranking: {
+        eyebrow: "RANKING",
+        icon: "↗",
+        title: `${meta.short}排行榜`,
+        copy: "按热度、涨幅和口碑发现近期值得关注的作品。",
+        chips: ["热度榜", "飙升榜", "新作榜"],
+        action: "先去搜索热门作品",
+      },
+      calendar: {
+        eyebrow: "CALENDAR",
+        icon: "▦",
+        title: `${meta.short}上线日历`,
+        copy: "按日期查看待上线与近期更新内容，减少错过新作和新集。",
+        chips: ["今天", "明天", "本周", "下周"],
+        action: "搜索近期作品",
+      },
+      following: {
+        eyebrow: "FOLLOWING",
+        icon: "♡",
+        title: "我的追更",
+        copy: "收藏作品并订阅更新，后续可在发现新集时提醒或自动加入队列。",
+        chips: ["全部订阅", "今日更新", "等待更新"],
+        action: "查找想追更的作品",
+      },
+    };
+    const config = configs[view] || configs.ranking;
+    if (elements.homeDiscoverNote) {
+      elements.homeDiscoverNote.innerHTML =
+        `<span class="home-note-dot"></span>${escapeHtml(config.title)}界面已就绪，内容服务后续接入`;
+    }
+    elements.homeSections.innerHTML = `
+      <section class="home-feature-shell" data-view="${escapeHtml(view)}">
+        <div class="home-feature-head">
+          <div>
+            <div class="home-feature-eyebrow">${escapeHtml(config.eyebrow)}</div>
+            <h2>${escapeHtml(config.title)}</h2>
+            <p>${escapeHtml(config.copy)}</p>
+          </div>
+          <div class="home-feature-icon">${escapeHtml(config.icon)}</div>
+        </div>
+        <div class="home-feature-filters">
+          ${config.chips
+            .map((chip, index) => `<button class="home-feature-chip${index === 0 ? " active" : ""}" disabled>${escapeHtml(chip)}</button>`)
+            .join("")}
+        </div>
+        <div class="home-feature-empty">
+          <div class="home-feature-empty-visual">
+            <span>${escapeHtml(config.icon)}</span>
+          </div>
+          <div class="home-empty-title">${escapeHtml(config.title)}即将可用</div>
+          <div class="home-empty-copy">页面结构已经完成；接入对应接口后即可显示真实内容和操作状态。</div>
+          <button class="btn-primary" id="btnHomeFeatureSearch">${escapeHtml(config.action)}</button>
+        </div>
+      </section>`;
+    const searchBtn = document.getElementById("btnHomeFeatureSearch");
+    if (searchBtn) {
+      searchBtn.addEventListener("click", () => {
+        if (typeof setPlatform === "function") setPlatform(plat);
+        switchPage("page-search");
+      });
+    }
   }
 
   async function loadDiscover() {
     if (!elements.homeSections) return;
     const plat = state.discoverPlatform || "hongguo";
     const meta = PLATFORM_META[plat] || PLATFORM_META.hongguo;
-    elements.homeSections.innerHTML = `<div class="home-loading">加载 ${escapeHtml(meta.label)} 热榜 / 上新…</div>`;
+    if (elements.homeDiscoverNote) {
+      elements.homeDiscoverNote.innerHTML = `<span class="home-note-dot"></span>正在更新 ${escapeHtml(meta.short)} 内容`;
+    }
+    elements.homeSections.innerHTML = `
+      <div class="home-loading" aria-label="正在加载 ${escapeHtml(meta.label)} 内容">
+        <div class="home-loading-card"></div>
+        <div class="home-loading-card"></div>
+      </div>`;
     try {
       const data = await apiFetch(
         `/v1/discover?platform=${encodeURIComponent(plat)}&kinds=hot,new`,
@@ -1012,10 +1247,20 @@
       renderDiscover(data);
     } catch (e) {
       elements.homeSections.innerHTML = `
-        <div class="home-empty">
-          发现页加载失败：${escapeHtml(e.message)}
-          <div><button class="btn-primary" id="btnHomeGotoSearch">去资源搜索</button></div>
+        <div class="home-error">
+          <div class="home-empty-icon">↻</div>
+          <div class="home-error-title">内容暂时加载失败</div>
+          <div class="home-error-copy">${escapeHtml(e.message)}</div>
+          <div class="home-error-actions">
+            <button class="btn-primary" id="btnHomeRetry">重新加载</button>
+            <button class="btn-secondary" id="btnHomeGotoSearch">去资源搜索</button>
+          </div>
         </div>`;
+      if (elements.homeDiscoverNote) {
+        elements.homeDiscoverNote.innerHTML = `<span class="home-note-dot"></span>服务连接异常，请稍后重试`;
+      }
+      const retryBtn = document.getElementById("btnHomeRetry");
+      if (retryBtn) retryBtn.addEventListener("click", loadDiscover);
       const btn = document.getElementById("btnHomeGotoSearch");
       if (btn) btn.addEventListener("click", () => switchPage("page-search"));
     }
@@ -1026,15 +1271,6 @@
     const plat = state.discoverPlatform || "hongguo";
     const meta = PLATFORM_META[plat] || PLATFORM_META.hongguo;
 
-    if (elements.homeDiscoverNote) {
-      const base =
-        data.note ||
-        (data.data_mode === "stub"
-          ? "热榜/上新接口契约已就绪，真实 App 榜单数据待服务端接入。"
-          : "");
-      elements.homeDiscoverNote.textContent = `当前：${meta.label} · ${base}`;
-    }
-
     // 服务端已按 platform 过滤；客户端再滤一次 items 的 platform 字段
     let sections = (data.sections || []).map((sec) => {
       const items = (sec.items || []).filter((it) => {
@@ -1044,11 +1280,22 @@
       return { ...sec, items };
     });
 
+    const totalItems = sections.reduce((total, sec) => total + (sec.items || []).length, 0);
+    if (elements.homeDiscoverNote) {
+      elements.homeDiscoverNote.innerHTML = totalItems
+        ? `<span class="home-note-dot"></span>已更新 ${escapeHtml(meta.short)} · 共 ${totalItems} 条内容`
+        : `<span class="home-note-dot"></span>${escapeHtml(meta.short)}榜单正在准备中，资源搜索已可使用`;
+    }
+
     if (!sections.length) {
       elements.homeSections.innerHTML = `
-        <div class="home-empty">
-          暂无 ${escapeHtml(meta.label)} 发现内容。
-          <div><button class="btn-primary" id="btnHomeGotoSearch2">去资源搜索</button></div>
+        <div class="home-error">
+          <div class="home-empty-icon">${escapeHtml(meta.emoji)}</div>
+          <div class="home-error-title">暂时没有发现内容</div>
+          <div class="home-error-copy">可以先搜索感兴趣的作品，稍后再回来看看。</div>
+          <div class="home-error-actions">
+            <button class="btn-primary" id="btnHomeGotoSearch2">去资源搜索</button>
+          </div>
         </div>`;
       const btn = document.getElementById("btnHomeGotoSearch2");
       if (btn) btn.addEventListener("click", () => switchPage("page-search"));
@@ -1060,12 +1307,11 @@
       const box = document.createElement("div");
       box.className = "home-section";
       box.setAttribute("data-platform", plat);
+      box.setAttribute("data-kind", sec.kind || "");
       const status = sec.available
-        ? `已加载 ${(sec.items || []).length} 条 · ${meta.short}`
-        : `待接入 · ${meta.short}`;
-      const sectionTitle =
-        (sec.title || sec.kind) +
-        (sec.kind === "hot" ? ` · ${meta.short}` : sec.kind === "new" ? ` · ${meta.short}` : "");
+        ? `${(sec.items || []).length} 条内容`
+        : "即将上线";
+      const sectionTitle = sec.title || (sec.kind === "hot" ? "🔥 热门榜单" : "✨ 今日上新");
 
       let body = "";
       if (sec.items && sec.items.length) {
@@ -1083,19 +1329,33 @@
                 : "";
             return `
               <div class="home-card" data-id="${escapeHtml(it.id)}" data-platform="${escapeHtml(p)}">
-                <div class="home-card-cover">${rank}${cover}</div>
+                <div class="home-card-cover">
+                  ${rank}${cover}
+                  <label class="home-card-select" title="选择 ${escapeHtml(title)}">
+                    <input class="home-card-checkbox" type="checkbox" aria-label="选择 ${escapeHtml(title)}">
+                    <span>✓</span>
+                  </label>
+                </div>
                 <div class="home-card-body">
                   <div class="home-card-title">${escapeHtml(title)}</div>
-                  <span class="source-badge ${escapeHtml(p)}">${escapeHtml(m.emoji)} ${escapeHtml(it.source_label || m.label)}</span>
+                  <div class="home-card-footer">
+                    <span class="source-badge ${escapeHtml(p)}">${escapeHtml(m.emoji)} ${escapeHtml(it.source_label || m.label)}</span>
+                    <span class="home-card-open">查看 ›</span>
+                  </div>
                 </div>
               </div>`;
           })
           .join("")}</div>`;
       } else {
+        const emptyTitle =
+          sec.kind === "hot" ? `${meta.short}热榜正在准备中` : `${meta.short}上新内容正在准备中`;
+        const emptyIcon = sec.kind === "hot" ? "🔥" : "✨";
         body = `
           <div class="home-empty">
-            ${escapeHtml(sec.message || `${meta.label}暂无数据`)}
-            <div><button class="btn-primary btn-home-search-cta">去搜索${escapeHtml(meta.short)}</button></div>
+            <div class="home-empty-icon">${emptyIcon}</div>
+            <div class="home-empty-title">${escapeHtml(emptyTitle)}</div>
+            <div class="home-empty-copy">发现内容更新前，可以通过资源搜索直接查找并下载作品。</div>
+            <div><button class="btn-secondary btn-home-search-cta">搜索${escapeHtml(meta.short)}作品</button></div>
           </div>`;
       }
       box.innerHTML = `
@@ -1105,6 +1365,23 @@
         </div>
         ${body}`;
       box.querySelectorAll(".home-card").forEach((card) => {
+        const checkbox = card.querySelector(".home-card-checkbox");
+        if (checkbox) {
+          checkbox.addEventListener("click", (event) => event.stopPropagation());
+          checkbox.addEventListener("change", () => {
+            const id = card.getAttribute("data-id");
+            const p = card.getAttribute("data-platform") || plat;
+            const key = `${p}:${id}`;
+            const item = (sec.items || []).find((candidate) => String(candidate.id) === String(id));
+            if (checkbox.checked && item) {
+              state.homeSelectedItems.set(key, { ...item, platform: p });
+            } else {
+              state.homeSelectedItems.delete(key);
+            }
+            card.classList.toggle("selected", checkbox.checked);
+            updateHomeSelectionBar();
+          });
+        }
         card.addEventListener("click", () => {
           const id = card.getAttribute("data-id");
           const p = card.getAttribute("data-platform") || plat;
@@ -1205,9 +1482,8 @@
         jobs.forEach((job) => {
           if (job.status === "success" && state.watchedJobSuccess[job.job_id] === false) {
             state.watchedJobSuccess[job.job_id] = true;
-            const fileId =
-              job.files && job.files.length > 0 ? job.files[0].file_id : job.job_id;
-            openFileRemote(fileId, "folder").catch(() => {});
+            const file = job.files && job.files.length > 0 ? job.files[0] : null;
+            if (file) deliverFileLocal(file, "folder").catch(() => {});
           }
         });
       }
@@ -1238,10 +1514,10 @@
       const isCancelled = job.status === "cancelled";
       const isRunning = job.status === "running" || job.status === "pending";
 
-      let statusBadge = `状态: ${escapeHtml(job.message || job.status)}`;
-      if (isSuccess) statusBadge = `✅ 已完成 (${job.files.length} 个文件)`;
-      else if (isFailed) statusBadge = `❌ 失败: ${escapeHtml(job.error || job.message)}`;
-      else if (isCancelled) statusBadge = `⏹️ 已取消`;
+      let statusBadge = escapeHtml(jobStatusLabel(job));
+      if (isSuccess) statusBadge = `✅ ${statusBadge}`;
+      else if (isFailed) statusBadge = `❌ ${statusBadge}`;
+      else if (isCancelled) statusBadge = `⏹️ ${statusBadge}`;
 
       const progressPct = Math.min(100, Math.max(0, job.progress || 0));
 
@@ -1258,8 +1534,9 @@
             <span>${statusBadge}</span>
             <div class="job-controls">
               ${isRunning ? `<button class="btn-secondary btn-cancel-job" data-id="${job.job_id}">✕ 取消</button>` : ''}
-              ${isSuccess && job.files.length > 0 ? `<button class="btn-primary btn-open-media" data-id="${escapeHtml(job.files[0].file_id)}" data-action="play">▶️ 打开/播放</button>` : ''}
-              <button class="btn-secondary btn-open-job-folder" data-id="${job.job_id}">📂 目录</button>
+              ${isSuccess && job.files.length > 0 ? `<button class="btn-primary btn-download-local">⬇️ 下载到本机</button>` : ''}
+              ${isSuccess && job.files.length > 0 ? `<button class="btn-secondary btn-open-media">▶️ 下载并打开</button>` : ''}
+              ${isSuccess && job.files.length > 0 ? `<button class="btn-secondary btn-open-job-folder">📂 本机目录</button>` : ''}
             </div>
           </div>
         </div>
@@ -1277,21 +1554,24 @@
         });
       }
 
+      const btnDownloadLocal = card.querySelector(".btn-download-local");
+      if (btnDownloadLocal) {
+        btnDownloadLocal.addEventListener("click", () => {
+          deliverFileLocal(job.files[0], "download").catch(() => {});
+        });
+      }
+
       const btnOpenMedia = card.querySelector(".btn-open-media");
       if (btnOpenMedia) {
         btnOpenMedia.addEventListener("click", () => {
-          openFileRemote(btnOpenMedia.getAttribute("data-id"), "play");
+          deliverFileLocal(job.files[0], "play").catch(() => {});
         });
       }
 
       const btnOpenFolder = card.querySelector(".btn-open-job-folder");
       if (btnOpenFolder) {
         btnOpenFolder.addEventListener("click", () => {
-          if (job.files && job.files.length > 0) {
-            openFileRemote(job.files[0].file_id, "folder");
-          } else {
-            openFileRemote(job.job_id, "folder");
-          }
+          deliverFileLocal(job.files[0], "folder").catch(() => {});
         });
       }
 
@@ -1344,7 +1624,7 @@
     if (files.length === 0) {
       elements.libraryGrid.innerHTML = `
         <div style="grid-column: 1 / -1; text-align: center; padding: 60px; color: var(--text-muted);">
-          本地数据为空或未匹配到检索文件。
+          暂无可下载的已完成文件，或没有匹配当前筛选条件。
         </div>
       `;
       return;
@@ -1357,7 +1637,7 @@
       card.innerHTML = `
         <div class="media-thumb-wrapper">
           <span class="media-type-tag" style="${isVideo ? '' : 'background: var(--color-fanqie);'}">${isVideo ? '🔴 MP4' : '🍅 TXT'}</span>
-          <img src="${isVideo ? 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=300' : 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=300'}" alt="封面">
+          <div class="media-placeholder" aria-hidden="true">${isVideo ? '🎬' : '📖'}</div>
         </div>
         <div class="media-body">
           <div>
@@ -1365,15 +1645,16 @@
             <div class="media-meta">大小: ${escapeHtml(file.size_human)}</div>
           </div>
           <div class="media-actions">
-            <button class="btn-primary btn-open-media" data-id="${escapeHtml(file.file_id)}" data-action="play">${isVideo ? '▶️ 播放视频' : '📖 阅读小说'}</button>
-            <button class="btn-secondary btn-open-media" data-id="${escapeHtml(file.file_id)}" data-action="folder">📂 目录</button>
+            <button class="btn-primary btn-deliver-media" data-action="download">⬇️ 下载到本机</button>
+            <button class="btn-secondary btn-deliver-media" data-action="play">${isVideo ? '▶️ 下载并播放' : '📖 下载并阅读'}</button>
+            <button class="btn-secondary btn-deliver-media" data-action="folder">📂 本机目录</button>
           </div>
         </div>
       `;
 
-      card.querySelectorAll(".btn-open-media").forEach((btn) => {
+      card.querySelectorAll(".btn-deliver-media").forEach((btn) => {
         btn.addEventListener("click", () => {
-          openFileRemote(btn.getAttribute("data-id"), btn.getAttribute("data-action"));
+          deliverFileLocal(file, btn.getAttribute("data-action")).catch(() => {});
         });
       });
 
@@ -1381,16 +1662,39 @@
     });
   }
 
-  async function openFileRemote(fileId, action) {
-    try {
-      const pathEncoded = encodeFilePath(fileId);
-      const res = await apiFetch(`/v1/files/${pathEncoded}/open`, {
-        method: "POST",
-        body: JSON.stringify({ action }),
-      });
-      console.log(res.message);
-    } catch (e) {
-      toast(`无法打开文件或目录: ${e.message}`, "error");
+  async function openLocalDownloadDirectory() {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.open_download_directory) {
+      const result = await window.pywebview.api.open_download_directory();
+      if (!result || !result.success) {
+        toast((result && result.message) || "无法打开本机下载目录", "error");
+      }
+      return;
+    }
+    toast("浏览器模式的文件位于浏览器默认下载目录", "info", 4000);
+  }
+
+  async function syncNativeDownloadDirectory() {
+    if (!(window.pywebview && window.pywebview.api && window.pywebview.api.get_download_directory)) {
+      if (elements.btnChooseOutputDir) elements.btnChooseOutputDir.disabled = true;
+      if (elements.settingOutputDir) elements.settingOutputDir.value = "由浏览器管理下载目录";
+      return;
+    }
+    if (window.pywebview.api.get_runtime_info) {
+      const runtime = await window.pywebview.api.get_runtime_info();
+      if (runtime && runtime.success && runtime.api_base) {
+        state.nativeApiBase = runtime.api_base;
+        state.apiBase = runtime.api_base;
+        localStorage.removeItem("apiBase");
+        if (elements.settingApiBase) {
+          elements.settingApiBase.value = runtime.api_base;
+          elements.settingApiBase.readOnly = true;
+        }
+      }
+    }
+    const result = await window.pywebview.api.get_download_directory();
+    if (result && result.success && result.path) {
+      state.prefs.outputDir = result.path;
+      if (elements.settingOutputDir) elements.settingOutputDir.value = result.path;
     }
   }
 
@@ -1603,8 +1907,14 @@
       });
     }
     if (elements.btnRefreshDiscover) {
-      elements.btnRefreshDiscover.addEventListener("click", () => loadDiscover());
+      elements.btnRefreshDiscover.addEventListener("click", () => {
+        if (state.discoverView === "discover") loadDiscover();
+        else renderHomeFeatureView(state.discoverView);
+      });
     }
+    elements.homeModeTabs.forEach((tab) => {
+      tab.addEventListener("click", () => setDiscoverView(tab.getAttribute("data-view") || "discover"));
+    });
     if (elements.homePlatformTabs) {
       elements.homePlatformTabs.forEach((tab) => {
         tab.addEventListener("click", () => {
@@ -1617,6 +1927,33 @@
           "active",
           tab.getAttribute("data-platform") === (state.discoverPlatform || "hongguo")
         );
+      });
+    }
+    if (elements.btnHomeClearSelection) {
+      elements.btnHomeClearSelection.addEventListener("click", () => {
+        state.homeSelectedItems.clear();
+        syncHomeCardSelections();
+        updateHomeSelectionBar();
+      });
+    }
+    if (elements.btnHomeSelectAll) {
+      elements.btnHomeSelectAll.addEventListener("click", () => {
+        document.querySelectorAll(".home-card").forEach((card) => {
+          const id = card.getAttribute("data-id");
+          const p = card.getAttribute("data-platform") || state.discoverPlatform;
+          const key = `${p}:${id}`;
+          const item = (state.discoverData?.sections || [])
+            .flatMap((section) => section.items || [])
+            .find((candidate) => String(candidate.id) === String(id));
+          if (item) state.homeSelectedItems.set(key, { ...item, platform: p });
+        });
+        syncHomeCardSelections();
+        updateHomeSelectionBar();
+      });
+    }
+    if (elements.btnHomeAddQueue) {
+      elements.btnHomeAddQueue.addEventListener("click", () => {
+        toast(`已选择 ${state.homeSelectedItems.size} 项；批量队列接口接入后即可提交`, "info", 4500);
       });
     }
 
@@ -1735,16 +2072,26 @@
     // 设置页面保存与重置绑定
     if (elements.btnSaveSettings) {
       elements.btnSaveSettings.addEventListener("click", () => {
+        const candidateBase = elements.settingApiBase && elements.settingApiBase.value.trim();
+        if (state.nativeApiBase && candidateBase && candidateBase !== state.nativeApiBase) {
+          toast("桌面客户端的服务端地址由安装配置固定，不能在页面内切换", "error", 4500);
+          return;
+        }
+        if (candidateBase && !isSecureApiBase(candidateBase)) {
+          toast("远程服务端必须使用 HTTPS；HTTP 仅允许 127.0.0.1/localhost", "error", 5000);
+          return;
+        }
         readPrefsFromForm();
         persistPrefs();
         // 开发者选项：仅在表单有值时覆盖
-        if (elements.settingApiBase && elements.settingApiBase.value.trim()) {
-          state.apiBase = elements.settingApiBase.value.trim();
+        if (candidateBase) {
+          state.apiBase = candidateBase;
           localStorage.setItem("apiBase", state.apiBase);
         }
         if (elements.settingApiKey) {
-          state.apiKey = elements.settingApiKey.value.trim() || "dev-key-change-me";
-          localStorage.setItem("apiKey", state.apiKey);
+          state.apiKey = elements.settingApiKey.value.trim() || defaultApiKeyFor(state.apiBase);
+          if (state.apiKey) localStorage.setItem("apiKey", state.apiKey);
+          else localStorage.removeItem("apiKey");
         }
         if (elements.selectQuality && state.prefs.quality) {
           elements.selectQuality.value = state.prefs.quality;
@@ -1756,10 +2103,10 @@
 
     if (elements.btnResetApiKey) {
       elements.btnResetApiKey.addEventListener("click", () => {
-        state.apiKey = "dev-key-change-me";
+        state.apiKey = defaultApiKeyFor(state.apiBase);
         localStorage.removeItem("apiKey");
-        if (elements.settingApiKey) elements.settingApiKey.value = "dev-key-change-me";
-        toast("API Key 已重置为开发默认值", "info");
+        if (elements.settingApiKey) elements.settingApiKey.value = state.apiKey;
+        toast(state.apiKey ? "已恢复本机开发 Key" : "已清除运维 API Key", "info");
       });
     }
 
@@ -1775,7 +2122,7 @@
         } catch (_) {
           state.apiBase = "http://127.0.0.1:8000";
         }
-        state.apiKey = "dev-key-change-me";
+        state.apiKey = defaultApiKeyFor(state.apiBase);
         localStorage.removeItem("apiBase");
         localStorage.removeItem("apiKey");
         state.prefs = {
@@ -1816,13 +2163,31 @@
 
     if (elements.btnOpenOutputDir) {
       elements.btnOpenOutputDir.addEventListener("click", () => {
-        openFileRemote(".", "folder");
+        openLocalDownloadDirectory();
       });
     }
 
     if (elements.btnLibraryOpenDir) {
       elements.btnLibraryOpenDir.addEventListener("click", () => {
-        openFileRemote(".", "folder");
+        openLocalDownloadDirectory();
+      });
+    }
+
+    if (elements.btnChooseOutputDir) {
+      elements.btnChooseOutputDir.addEventListener("click", async () => {
+        if (!(window.pywebview && window.pywebview.api && window.pywebview.api.choose_download_directory)) {
+          toast("浏览器模式下请在浏览器设置中修改下载目录", "info", 4000);
+          return;
+        }
+        const result = await window.pywebview.api.choose_download_directory();
+        if (result && result.success) {
+          state.prefs.outputDir = result.path;
+          if (elements.settingOutputDir) elements.settingOutputDir.value = result.path;
+          persistPrefs();
+          toast(`本机保存目录已更新：${result.path}`, "success", 4000);
+        } else if (!(result && result.cancelled)) {
+          toast((result && result.message) || "选择目录失败", "error");
+        }
       });
     }
 
@@ -1906,5 +2271,10 @@
 
     checkServerHealth();
     setInterval(checkServerHealth, 10000);
+    syncNativeDownloadDirectory().catch(() => {});
+  });
+
+  window.addEventListener("pywebviewready", () => {
+    syncNativeDownloadDirectory().catch(() => {});
   });
 })();
