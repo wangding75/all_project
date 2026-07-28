@@ -61,11 +61,19 @@ class Settings(BaseSettings):
     free_jobs_per_day: int = 0
     vip_jobs_per_day: int = 50
 
-    # ADB 与 Frida 配置（番茄 App 会话）
+    # ADB 与 Frida 配置（番茄 App 会话 / 书名搜索 / App 下载）
     adb_path: str = "adb"
-    adb_device: str = "127.0.0.1:16384"
+    adb_device: str = "127.0.0.1:16384"  # 模拟器 adb 地址，务必与 adb devices 一致
     frida_host: str = "127.0.0.1:27042"
     fanqie_pkg: str = "com.dragon.read"
+    hongguo_pkg: str = "com.phoenix.read"
+    # 启动时探测设备运行时（agent + 各平台 App）
+    fanqie_probe_on_startup: bool = True  # 兼容旧名：总开关，探测全部平台
+    platform_probe_on_startup: bool = True
+    fanqie_require_runtime: bool = False  # agent 缺失时拒绝启动
+    require_platform_apps: bool = False  # 任一 App 未起时拒绝启动
+    fanqie_try_start_agent: bool = True  # 尝试启动 sys_hlpd
+    try_start_platform_apps: bool = True  # 尝试启动番茄/红果 App
 
     # 签名池配置（阶段 D-3）
     sign_pool_enabled: bool = False

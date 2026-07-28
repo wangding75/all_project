@@ -1,11 +1,11 @@
 # 资源下载项目交接文档
 
-> 更新日期：2026-07-20  
+> 更新日期：2026-07-27  
 > 仓库：`resource_download`  
 > 范围：番茄小说 + 红果短剧 多端下载 / 托管服务方向  
 >
 > **本文职责**：逆向结论、双 App 运行模型、设备坑、探针数据位置。  
-> **不写任务排期**；当前迭代见 [`POST_MVP_PLAN.md`](../POST_MVP_PLAN.md)，架构决策见 [`DEVELOPMENT_PLAN.md`](../DEVELOPMENT_PLAN.md)。
+> **不写工程排期**；阶段进度见 [`POST_MVP_PLAN.md`](../POST_MVP_PLAN.md)，架构决策见 [`DEVELOPMENT_PLAN.md`](../DEVELOPMENT_PLAN.md)。
 
 ---
 
@@ -26,8 +26,9 @@
 |------|--------|------|
 | **红果短剧** | App API + 签名 + 媒体解密 | 复用 `vendor/hongguo`（zhangbaio/hongguo 思路），已 E2E 验证 |
 | **番茄小说** | **App API**（非 Web 主路径） | Web 仅作对照/部分免费章；正文走 `reader/full` 密文 + App 内解密 |
-| 签名 | 红果 `com.phoenix.read` + 设备侧签名代理 | 与小说 bookapi 同源能力（aid 等见 config） |
-| 正文解密 | 番茄 `com.dragon.read` 进程内调用 native | 当前无法纯 Python 离线解 |
+| 签名（红果） | `com.phoenix.read` + Frida / 签名后端 | 仅红果下载链路 |
+| 签名（番茄 App） | **`com.dragon.read` 本进程** `NetworkParams.tryAddSecurityFactor` | **不依赖红果包** |
+| 正文解密 | 番茄 `com.dragon.read` 进程内 native | 当前无法纯 Python 离线解 |
 
 **明确不做/弱化：**
 
@@ -44,18 +45,21 @@
 
 ## 2. 现在进度
 
+> **工程侧**（鉴权/卡密/VIP/隔离/签名池/桌面商业闭环/质量门禁）已达 **`1.0.0`**，详见 `POST_MVP_PLAN.md`。  
+> **本节只描述平台能力与设备运维现实**，不代表「产品功能未写完」。
+
 ### 2.1 总览
 
 | 模块 | 进度 | 说明 |
 |------|------|------|
-| 工程脚手架 | 已有 | FastAPI jobs、`platforms/fanqie|hongguo`、venv |
-| 红果下载 | **基本完成** | 适配器 + E2E 主路径；产物下载 HTTP 路由缺口见 POST_MVP S-P0-0 |
+| 工程脚手架 / 商业 V1.0 | ✅ 完成 | FastAPI、Job、鉴权、配额、签名池、桌面 UI、pytest/CQ |
+| 红果下载 | **主路径可用** | 适配器 + E2E；实跑依赖 `vendor` 配置与签名环境 |
 | 番茄 Web | 可用；产品上不作会员主路径 | `web_ssr.py` FONT_MAP；历史 5×10 章采样 |
 | 番茄 App 拉密文 | **可用** | App API + 签名；见 `platforms/fanqie/client.py` |
 | 番茄 App 解密 | **原理与链路已验证** | 进程内 `CryptManager.decrypt` → gzip → HTML |
-| 番茄整书产品流水线 | **代码已接入** `FanqiePlatform.download(mode=app)` | 依赖模拟器双进程、会话 key、Frida 稳定；运维仍脆弱 |
-| Web vs App 50 章对齐对比 | **未完成** | Web 50 章齐；App 侧未按同集合自动采齐 |
-| 薄客户端 UI | **实验性** | `ui/` 有页面与部分 API；未达「复现脚本全部能力」 |
+| 番茄整书产品流水线 | **代码已接入** `FanqiePlatform.download(mode=app)` | 仅需番茄进程 + Frida；可与红果同机并行，会话 key 仍脆弱 |
+| Web vs App 50 章对齐对比 | **研究项未收口** | Web 50 章齐；App 侧未按同集合自动采齐 |
+| 薄客户端 UI | **商业闭环已接** | 登录/兑卡/VIP/Jobs；验收仍以脚本 E2E 为准 |
 
 ### 2.2 红果（短剧）
 
@@ -90,20 +94,21 @@ GET /reading/reader/full/v
 - 每次完整：拉密文 + 进程内 decrypt（key 可从当次 hook 参数获得）；
 - 人工点章仅用于 **验证**，批量应用 **API 自动拉章 + 进程内 decrypt**，不必每章手点。
 
-### 2.4 双 App 运行模型
+### 2.4 设备运行模型（同机可双开）
 
-| 角色 | 包名 | 职责 |
-|------|------|------|
-| 签名 / 拉章 | `com.phoenix.read`（红果） | 签名代理 attach 此进程；请求 bookapi / reader |
-| 解密 | `com.dragon.read`（番茄） | 解密代理 attach 此进程；调 `CryptManager.decrypt` |
+| 业务 | 包名 | 签名 | 解密 / 媒体 |
+|------|------|------|-------------|
+| **红果短剧** | `com.phoenix.read` | attach 红果进程（或 SIGN_SERVER） | vendor 媒体解密 |
+| **番茄 App** | `com.dragon.read` | attach **番茄**进程 `NetworkParams` | attach **番茄** `CryptManager.decrypt` |
 
-设备侧：
+原则：
 
-- 签名代理：历史上用 `frida-server` 进程名（hongguo 默认 attach 逻辑依赖红果 pid）；
-- 解密侧可用伪装名 agent（如 `/data/local/tmp/sys_hlpd`，由 `frida-server` 二进制复制而来）；
-- 通信：`FRIDA_HOST=127.0.0.1:27042`，`ADB_DEVICE` 默认 MuMu `127.0.0.1:16384`。
+- 番茄 App **不**再依赖红果签名 / `com.phoenix.read`。
+- 同一模拟器可同时开两个 App；共用 **一个** Frida agent 端口，**按不同 pid attach**。
+- 番茄代码路径 **禁止 pkill** 共用 agent，以免打断红果会话。
+- agent 可用 `frida-server` 或伪装名 `sys_hlpd`；通信：`FRIDA_HOST=127.0.0.1:27042`，`ADB_DEVICE` 默认 MuMu `127.0.0.1:16384`。
 
-正常批量下小说时：**两 App 进程均需存活**（可后台）。
+批量下番茄小说时：**只需番茄进程存活**（可后台）。下红果时只需红果侧环境就绪。
 
 ### 2.5 采样与验证数据
 
@@ -144,7 +149,7 @@ GET /reading/reader/full/v
 - OS：Windows；模拟器：MuMu（`adb` 常见路径 `D:\install\Netease\MuMu\nx_main\adb.exe`）；
 - Python：`server/.venv`（3.14 系），agent 版本需与设备侧二进制一致（曾用 16.7.19）；
 - 模拟器性能差时：白屏、进程 D 状态、attach/create_script **超时** 均出现过；
-- 签名与解密 **可共用** 设备上同一 agent 监听端口，但 **attach 不同 pid**；避免用会杀光 agent 的脚本打乱红果签名。
+- 签名与解密 **可共用** 设备上同一 agent 监听端口，但 **attach 不同 pid**（番茄签+解都在 dragon；红果在 phoenix）。产品路径已避免 pkill 共用 agent。
 
 ---
 
@@ -158,7 +163,7 @@ GET /reading/reader/full/v
 | P0 | **密钥生成/派生规则未知** | 无法离线稳定产 key；只能会话内现取 | 中长期 |
 | P0 | **番茄 App 依赖设备侧稳定** | 会话 key 过期、attach 超时、双进程冲突仍会导致整书失败 | 短期运维 + POST_MVP 阶段 A |
 | P1 | **Web×App 50 章自动对比未完成** | 缺「与 Web 同文」的量化报告 | 短期 |
-| P1 | **双进程保活与稳定性** | 模拟器卡顿、attach 超时、代理冲突 | 短期 |
+| P1 | **Frida attach 与会话稳定性** | 模拟器卡顿、attach 超时；同机双 App 争用 CPU | 短期 |
 | P1 | **拉章依赖签名会话** | config/设备过期则整链失败 | 持续 |
 | P2 | 密钥是否按书/账号变化 | 仅验证「会话内固定、重启变」 | 可测 |
 | P2 | 红果内是否可直接 decrypt | 未单独证明，当前以番茄为准 | 可选 |
@@ -191,25 +196,24 @@ GET /reading/reader/full/v
 
 ## 4. 后期规划
 
-### 4.1 短期
+### 4.1 短期（设备 / 逆向侧）
 
-> 工程侧排期以 **POST_MVP_PLAN 阶段 0 → A** 为准（先恢复文件下载 API 与 E2E，再 Job 稳定）。  
-> 以下仍为**设备/逆向侧**建议：
+> 工程主线已完成；以下为**设备侧与研究**建议：
 
 1. **稳定自动批采（推荐）**  
-   - 红果存活 + 签名代理；  
+   - 番茄存活 + 本进程签名/解密（无需红果）；  
    - 用已有 Web 的 50 个 `item_id` 自动 `reader/full` 拉密文；  
-   - 番茄存活 + 解密代理：对密文调用 `decrypt`（会话 key 现取或 hook 一次）；  
+   - 对密文调用 `decrypt`（会话 key 现取或 hook 一次）；  
    - 与 Web 50 章算 `text_sim`，产出 `report.json`。  
 
 2. **脚本硬化**  
-   - 签名/解密分阶段，禁止误杀对方 agent；  
+   - 禁止 pkill 共用 agent；  
    - 单实例跑批；  
-   - attach 失败自动重启 agent 并重试。  
+   - attach 失败可重启 agent 并重试（谨慎，勿影响同机红果）。  
 
-3. **接入平台层**  
-   - `FanqiePlatform.download(mode="app")`：目录 → 密文 → decrypt → 导出 txt/epub；  
-   - 健康检查：红果/番茄 pid、代理端口、探测 decrypt。  
+3. **平台层运维**  
+   - 已接入 `FanqiePlatform.download(mode="app")`；  
+   - 持续关注：番茄 pid、代理端口、decrypt 探活、签名池节点健康。  
 
 ### 4.2 中期
 
@@ -258,7 +262,7 @@ GET /reading/reader/full/v
 
 ## 7. 一句话状态
 
-> **红果下载已通；番茄「密文从哪来 + 进程内怎么解」已打通并验证；离线算法与密钥生成未解；Web 50 章采样齐但与 App 的自动对齐对比和产品化下载流水线未完成。**
+> **工程 V1.0 已就绪。红果/番茄主链路代码已通；番茄 App 签名与解密均在 `com.dragon.read` 内完成，不依赖红果签名；离线算法与密钥派生未解；设备侧稳定性与 Web×App 50 章自动对齐仍是运维/研究债。**
 
 ---
 

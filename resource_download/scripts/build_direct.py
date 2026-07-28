@@ -20,7 +20,7 @@ cmd = [
     "--noupx",
     f"--distpath={dist_dir}",
     f"--workpath={build_dir}",
-    f"--add-data={ROOT / 'ui'};ui",
+    f"--add-data={ROOT / 'client' / 'ui'};ui",
     f"--add-data={ROOT / 'server' / 'app'};server/app",
     f"--add-data={ROOT / 'vendor'};vendor",
     "--exclude-module=tkinter",

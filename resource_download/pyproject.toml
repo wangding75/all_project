@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "resource-downloader"
+version = "1.0.0"
+description = "ResourceDownloader 纯白极简音视频/小说媒体资源下载器"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "ResourceDownloader Team" }
+]
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "sqlalchemy>=2.0.0",
+    "httpx>=0.27.0",
+    "pyjwt>=2.8.0",
+    "fonttools>=4.49.0",
+    "brotli>=1.1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.2.0",
+    "pyinstaller>=6.0.0",
+    "pywebview>=4.0.0"
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["server/tests"]
+pythonpath = ["server"]

@@ -52,6 +52,11 @@ class JobRecord:
             extra_dict["owner_user_id"] = self.owner_user_id
         if self.owner_kind is not None:
             extra_dict["owner_kind"] = self.owner_kind
+        # 客户端建任务时传入的书名/剧名
+        if isinstance(self.options, dict):
+            title = self.options.get("title")
+            if title:
+                extra_dict["title"] = str(title)
 
         return JobResponse(
             job_id=self.job_id,

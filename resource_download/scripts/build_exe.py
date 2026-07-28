@@ -32,10 +32,15 @@ def run_build():
 
     print("==================================================")
     print(f"BUILD: Starting packaging for ResourceDownloader v{VERSION}...")
+    print("  入口: client/desktop  UI: client/ui")
+    print("  架构: 方案2 瘦客户端壳（生产请 CLIENT_MODE=thin + 独立 server）")
     print("==================================================")
 
-    entry_script = ROOT_DIR / "desktop" / "main.py"
-    ui_dir = ROOT_DIR / "ui"
+    # 桌面入口在 client/desktop；UI 在 client/ui（方案 2 目录）
+    entry_script = ROOT_DIR / "client" / "desktop" / "main.py"
+    ui_dir = ROOT_DIR / "client" / "ui"
+    if not ui_dir.is_dir():
+        ui_dir = ROOT_DIR / "ui"  # 兼容旧路径
     vendor_dir = ROOT_DIR / "vendor"
 
     # 目标 dist 目录

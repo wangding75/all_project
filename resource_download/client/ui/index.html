@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>全能短剧/小说资源下载器 Desktop</title>
-  <link rel="stylesheet" href="styles.css">
+  <!-- 绝对路径：从 / 打开时相对 styles.css 会 404；/ui/ 与桌面壳均可用 -->
+  <link rel="stylesheet" href="/ui/styles.css">
 </head>
 <body>
   <!-- 1. 顶部无边框 Windows 标题栏 -->
@@ -12,7 +13,7 @@
     <div class="titlebar-brand">
       <span class="icon-logo">🚀</span>
       <span>全能短剧/小说资源下载器</span>
-      <span class="titlebar-version" id="titlebarVersionTag">v0.2.0</span>
+      <span class="titlebar-version" id="titlebarVersionTag">v1.0.0</span>
     </div>
     <div class="titlebar-controls">
       <button class="win-btn btn-min" title="最小化" onclick="if(window.pywebview) pywebview.api.minimize()">—</button>
@@ -50,15 +51,19 @@
           </div>
         </div>
 
-        <!-- 平台切换器 -->
+        <!-- 平台切换器（含聚合搜索） -->
         <div class="platform-switcher">
-          <div class="platform-tab active" data-platform="hongguo">🔴 红果短剧</div>
-          <div class="platform-tab" data-platform="fanqie">🍅 番茄小说</div>
+          <div class="platform-tab active" data-platform="all">✨ 全部</div>
+          <div class="platform-tab" data-platform="hongguo">🔴 红果</div>
+          <div class="platform-tab" data-platform="fanqie">🍅 番茄</div>
         </div>
 
         <!-- 核心导航菜单 -->
         <nav class="sidebar-nav">
-          <div class="nav-item active" data-page="page-search">
+          <div class="nav-item active" data-page="page-home">
+            <span>🏠 首页</span>
+          </div>
+          <div class="nav-item" data-page="page-search">
             <span>🔍 资源搜索</span>
           </div>
           <div class="nav-item" data-page="page-jobs">
@@ -76,9 +81,15 @@
 
       <!-- 侧边栏底部面板 -->
       <div class="sidebar-footer">
-        <div class="server-status">
+        <div class="server-status" id="serverStatusBlock" title="点击查看依赖详情">
           <span class="status-dot" id="serverStatusDot"></span>
           <span id="serverStatusText">检测服务中...</span>
+        </div>
+        <!-- 依赖完整性简报（由 /health.checks 渲染） -->
+        <div class="deps-panel" id="depsPanel" style="display: none;">
+          <div class="deps-panel-title">依赖检查</div>
+          <ul class="deps-list" id="depsList"></ul>
+          <div class="deps-summary" id="depsSummary"></div>
         </div>
         <button class="theme-toggle-btn" id="themeToggleBtn">
           ☀️ 切换浅色主题
@@ -88,22 +99,59 @@
 
     <!-- 右侧主页面容器 -->
     <main class="app-main">
+      <!-- 子页面 0: 🏠 首页（热榜 / 今日上新） -->
+      <section class="subpage active" id="page-home">
+        <div class="home-page-container">
+          <div class="home-hero">
+            <div class="home-hero-text">
+              <h1 class="home-title">发现 · 下载</h1>
+              <p class="home-subtitle">热榜与上新由服务端聚合；搜索可立即使用红果 / 番茄 App 接口。</p>
+            </div>
+            <div class="home-quick-search">
+              <input type="text" class="input-control" id="homeSearchQuery" placeholder="快速搜索剧名 / 书名 / ID…" autocomplete="off">
+              <button class="btn-primary" id="btnHomeSearch">搜索</button>
+            </div>
+          </div>
+
+          <div class="home-toolbar">
+            <!-- 发现页按平台分 tab：红果 / 番茄，各含热榜 + 今日上新 -->
+            <div class="home-platform-tabs" id="homePlatformTabs">
+              <button class="home-platform-tab active" data-platform="hongguo">🔴 红果短剧</button>
+              <button class="home-platform-tab" data-platform="fanqie">🍅 番茄小说</button>
+            </div>
+            <button class="btn-secondary" id="btnRefreshDiscover" style="padding: 6px 12px; font-size: 12px;">刷新</button>
+          </div>
+
+          <div class="home-note" id="homeDiscoverNote"></div>
+          <div class="home-sections" id="homeSections">
+            <div class="home-loading">加载发现页…</div>
+          </div>
+        </div>
+      </section>
+
       <!-- 子页面 1: 🔍 资源搜索 (图一图二双栏布局) -->
-      <section class="subpage active" id="page-search">
+      <section class="subpage" id="page-search">
         <div class="search-page-container">
           <!-- 左栏：搜索列表区 (对照图一) -->
           <div class="search-left-panel">
             <div class="search-input-group">
-              <input type="text" class="input-control" id="inputSearchQuery" placeholder="输入关键词、短剧/小说链接或ID..." autocomplete="off">
+              <input type="text" class="input-control" id="inputSearchQuery" placeholder="关键词搜索；「载入」用于 ID / 链接" autocomplete="off">
               <button class="btn-primary" id="btnSearch">搜索</button>
-              <button class="btn-secondary" id="btnLoad">载入</button>
+              <button class="btn-secondary" id="btnLoad" title="按 ID 或链接直接打开详情">载入 ID</button>
+            </div>
+            <div class="search-banner" id="searchBanner" style="display: none;"></div>
+            <div class="search-filter-row" id="searchFilterRow" style="display: none;">
+              <button class="filter-chip active" data-filter="all">全部</button>
+              <button class="filter-chip" data-filter="hongguo">🔴 红果</button>
+              <button class="filter-chip" data-filter="fanqie">🍅 番茄</button>
+              <span class="search-result-meta" id="searchResultMeta"></span>
             </div>
             
             <div class="search-results-list" id="searchResultsList">
               <div class="search-empty-state" id="searchEmptyState" style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
                 <div style="font-size: 48px; margin-bottom: 12px;">🔍</div>
                 <div style="font-size: 14px; font-weight: 600; margin-bottom: 6px;">请输入关键词开始搜索</div>
-                <div style="font-size: 12px; opacity: 0.7;">支持输入短剧名称、小说标题、红果/番茄链接或资源 ID</div>
+                <div style="font-size: 12px; opacity: 0.7;">支持剧名、书名、链接或资源 ID · 聚合时自动标来源</div>
               </div>
             </div>
 
@@ -230,9 +278,9 @@
       <!-- 子页面 4: ⚙️ 系统设置 -->
       <section class="subpage" id="page-settings">
         <div class="settings-page-container">
-          <!-- 卡片 0: 用户账号与 VIP 认证状态 -->
+          <!-- 0. 账号与 VIP -->
           <div class="settings-card">
-            <h3 class="settings-card-title">🔐 账号与 VIP 状态</h3>
+            <h3 class="settings-card-title">🔐 账号与 VIP</h3>
             <div class="form-group">
               <label class="form-label">当前登录用户</label>
               <div class="form-row-inline" style="align-items: center; justify-content: space-between;">
@@ -244,85 +292,152 @@
               </div>
             </div>
             <div class="form-group">
-              <label class="form-label">VIP 会员到期时间</label>
+              <label class="form-label">VIP 到期</label>
               <span style="font-size: 13px; color: var(--color-fanqie); font-weight: 600;" id="settingVipExpireVal">未开通 VIP</span>
-              <span class="form-hint">商业多租户模式 (AUTH_MODE=dual/jwt_only) 下需登录并兑换 VIP 卡密后方可创建下载任务。</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">今日下载额度</label>
+              <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);" id="settingQuotaVal">—</span>
+              <span class="form-hint">额度由服务端按 VIP 策略计算；登录后可见今日已用 / 上限。</span>
             </div>
           </div>
 
-          <!-- 卡片 1: 基础服务配置 -->
+          <!-- 1. 路径与清晰度 -->
           <div class="settings-card">
-            <h3 class="settings-card-title">🖥️ 基础服务与运维配置</h3>
-            
+            <h3 class="settings-card-title">📁 路径与清晰度</h3>
             <div class="form-group">
-              <label class="form-label">API 服务端地址</label>
-              <input type="text" class="input-control" id="settingApiBase" value="http://127.0.0.1:8000">
-              <span class="form-hint">桌面端所连接的本地/远端 FastAPI 后端服务基础 URL。</span>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">API Key (高级/运维模式)</label>
+              <label class="form-label">本机偏好保存目录（展示用）</label>
               <div class="form-row-inline">
-                <input type="password" class="input-control" id="settingApiKey" value="dev-key-change-me">
-                <button class="btn-secondary" id="btnResetApiKey" style="white-space: nowrap;">重置为默认</button>
+                <input type="text" class="input-control" id="settingOutputDir" placeholder="例如 D:\Downloads\ResourceDownloader">
               </div>
-              <span class="form-hint">仅在未登录 User Token 时作为 Dev / E2E / Ops 旁路备用。商业默认路径使用 Bearer Token。</span>
+              <label class="form-check">
+                <input type="checkbox" id="settingRememberOutputDir"> 记住保存目录
+              </label>
+              <span class="form-hint">实际产物由中转服务端写入服务器 outputs；此项用于客户端展示与「打开目录」提示。瘦客户端不在本机跑下载适配。</span>
             </div>
-
             <div class="form-group">
-              <label class="form-label">默认下载保存目录</label>
-              <div class="form-row-inline">
-                <input type="text" class="input-control" id="settingOutputDir" value="D:\github\all_project\resource_download\data\outputs">
+              <label class="form-label">红果默认清晰度</label>
+              <div class="quality-pill-row" id="settingQualityPills">
+                <button type="button" class="quality-pill active" data-quality="1080p">1080p</button>
+                <button type="button" class="quality-pill" data-quality="720p">720p</button>
+                <button type="button" class="quality-pill" data-quality="480p">480p</button>
               </div>
-              <span class="form-hint">所有下载完成的短剧 MP4 视频与小说 TXT 文本存放路径。</span>
+              <label class="form-check">
+                <input type="checkbox" id="settingRememberQuality" checked> 记住清晰度选择
+              </label>
+              <span class="form-hint">新建红果任务时作为默认画质；详情页仍可临时改。</span>
             </div>
           </div>
 
-          <!-- 卡片 2: 下载偏好配置 (保留) -->
+          <!-- 2. 下载偏好 -->
           <div class="settings-card">
-            <h3 class="settings-card-title">⚙️ 下载偏好配置</h3>
-
+            <h3 class="settings-card-title">⬇️ 下载偏好</h3>
             <div class="form-group">
-              <label class="form-label">默认下载范围</label>
+              <label class="form-label">默认范围</label>
               <div>
-                <span style="display: inline-block; padding: 4px 10px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); font-size: 12px; font-weight: 600; color: var(--color-hongguo);">全集下载 (默认下载全部)</span>
+                <span class="settings-tag">全集 / 全本</span>
               </div>
-              <span class="form-hint">新建下载任务时免填范围，自动默认抓取该资源的全集/全本。</span>
+              <span class="form-hint">点「下载全部」时使用；勾选分集后可下指定范围。</span>
             </div>
-
+            <div class="form-group settings-checks">
+              <label class="form-check"><input type="checkbox" id="settingOpenFolderOnComplete"> 任务成功后打开所在目录</label>
+              <label class="form-check"><input type="checkbox" id="settingDownloadCover"> 同时下载封面</label>
+              <label class="form-check"><input type="checkbox" id="settingDownloadDesc"> 同时下载简介</label>
+            </div>
             <div class="form-group">
-              <label class="form-label">红果短剧默认视频画质</label>
-              <select class="input-control" style="max-width: 280px;">
-                <option value="1080p" selected>1080p 超清 (推荐)</option>
-                <option value="720p">720p 标清</option>
-              </select>
-              <span class="form-hint">解析红果短剧时优先使用的全局分辨率。</span>
+              <label class="form-label">默认并发数（红果）</label>
+              <input type="number" class="input-control" id="settingConcurrency" min="1" max="12" value="2" style="max-width: 120px;">
+              <span class="form-hint">建议 2–4；过高可能拖慢服务端或设备签名。</span>
             </div>
           </div>
 
-          <!-- 卡片 3: 客户端升级与版本 -->
+          <!-- 3. 分集/章节命名 -->
           <div class="settings-card">
-            <h3 class="settings-card-title">🚀 客户端升级与版本</h3>
-
+            <h3 class="settings-card-title">🏷️ 分集 / 章节命名模板</h3>
+            <div class="form-group settings-checks">
+              <label class="form-check"><input type="checkbox" id="settingNameUsePrefix" checked> 使用序号前缀（如 01. / 第1章）</label>
+              <label class="form-check"><input type="checkbox" id="settingNameIncludeTitle" checked> 包含分集/章节标题</label>
+              <label class="form-check"><input type="checkbox" id="settingNameUseSuffix"> 使用后缀（.txt / 序号后）</label>
+            </div>
             <div class="form-group">
-              <label class="form-label">当前客户端版本</label>
+              <label class="form-label">编号样式</label>
+              <div class="quality-pill-row" id="settingNumberStylePills">
+                <button type="button" class="quality-pill active" data-style="01">01</button>
+                <button type="button" class="quality-pill" data-style="001">001</button>
+                <button type="button" class="quality-pill" data-style="1">1</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">分隔符</label>
+              <input type="text" class="input-control" id="settingNameSeparator" value="." style="max-width: 80px;" maxlength="4">
+              <span class="form-hint">预览：<code id="settingNamePreview">01.标题.txt</code></span>
+            </div>
+          </div>
+
+          <!-- 4. 依赖健康 -->
+          <div class="settings-card">
+            <h3 class="settings-card-title">🩺 服务端依赖完整性</h3>
+            <div class="form-group">
+              <label class="form-label">当前状态</label>
+              <div class="form-row-inline" style="align-items: center; gap: 10px;">
+                <span id="settingHealthStatus" style="font-size: 13px; font-weight: 700;">检测中...</span>
+                <button class="btn-secondary" id="btnRefreshHealth" style="padding: 6px 14px; font-size: 12px;">刷新检查</button>
+              </div>
+              <span class="form-hint" id="settingHealthSummary">配置文件、ADB、Frida agent 与各平台 App。</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">检查项</label>
+              <ul class="deps-list deps-list-settings" id="settingDepsList">
+                <li style="color: var(--text-muted);">等待 /health 响应…</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- 5. 版本 -->
+          <div class="settings-card">
+            <h3 class="settings-card-title">🚀 客户端版本</h3>
+            <div class="form-group">
+              <label class="form-label">当前版本</label>
               <div class="form-row-inline" style="align-items: center;">
-                <span style="font-size: 14px; font-weight: 700; color: var(--text-primary);" id="settingAppVersionVal">v0.2.0-desktop</span>
+                <span style="font-size: 14px; font-weight: 700; color: var(--text-primary);" id="settingAppVersionVal">v1.0.0-desktop</span>
                 <button class="btn-primary" id="btnCheckUpdate" style="padding: 6px 14px; font-size: 12px;">🔍 检查更新</button>
               </div>
             </div>
           </div>
 
-          <!-- 底部动作按纽 -->
-          <div class="settings-footer-actions">
-            <button class="btn-primary" id="btnSaveSettings">保存系统配置</button>
-            <button class="btn-secondary" id="btnResetSettings">恢复默认配置</button>
+          <!-- 6. 开发者选项（折叠，默认隐藏） -->
+          <div class="settings-card settings-dev-card">
+            <h3 class="settings-card-title settings-dev-toggle" id="btnToggleDevSettings" style="cursor: pointer; user-select: none;">
+              🛠️ 开发者选项 <span style="font-size: 11px; font-weight: 500; color: var(--text-muted);">（点击展开 · 普通用户无需修改）</span>
+            </h3>
+            <div id="devSettingsBody" style="display: none;">
+              <div class="form-group">
+                <label class="form-label">API 服务端地址</label>
+                <input type="text" class="input-control" id="settingApiBase" value="">
+                <span class="form-hint">正式版由客户端写死 / 同源；仅开发或私有部署时修改。默认取当前页面 origin。</span>
+              </div>
+              <div class="form-group">
+                <label class="form-label">API Key（运维旁路）</label>
+                <div class="form-row-inline">
+                  <input type="password" class="input-control" id="settingApiKey" value="">
+                  <button class="btn-secondary" id="btnResetApiKey" style="white-space: nowrap;">重置</button>
+                </div>
+                <span class="form-hint">商业用户请登录账号，勿依赖 API Key。</span>
+              </div>
+            </div>
           </div>
 
+          <div class="settings-footer-actions">
+            <button class="btn-primary" id="btnSaveSettings">保存设置</button>
+            <button class="btn-secondary" id="btnResetSettings">恢复默认</button>
+          </div>
         </div>
       </section>
     </main>
   </div>
+
+  <!-- Toast 容器 -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
   <!-- 3. 用户登录 / 注册全局 Modal 弹窗 -->
   <div class="modal-overlay" id="modalAuth">
@@ -370,7 +485,7 @@
     </div>
   </div>
 
-  <!-- 引入全局 JS 逻辑 -->
-  <script src="app.js"></script>
+  <!-- 绝对路径，避免从 / 打开时脚本 404 -->
+  <script src="/ui/app.js"></script>
 </body>
 </html>

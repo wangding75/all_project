@@ -1,6 +1,12 @@
 # 客户端打包与发布说明 (Release Manual)
 
-本指南针对中转服务端与前端 UI 合并后的桌面应用程序发行版本进行编写。
+本指南针对桌面壳打包。架构为 **方案 2：瘦客户端 + 中转服务端**（见 [`DEVELOPMENT_PLAN.md`](../DEVELOPMENT_PLAN.md) §0.1）。
+
+- **生产推荐**：服务端独立部署 `server/run.py`；客户端 `CLIENT_MODE=thin` + `API_BASE`。  
+- **本脚本产物**：桌面 EXE（可 embedded 嵌服务作演示，非唯一形态）。
+
+**当前版本**：`1.0.0`（与 `pyproject.toml` / `server/app/version.py` 一致）  
+**关联**：生产部署见 [`deployment.md`](./deployment.md)；门禁 DoD 见 [`release_gate.md`](./release_gate.md)；运维见 [`ops_runbook.md`](./ops_runbook.md)。
 
 ---
 
@@ -125,7 +131,7 @@ python scripts/build_exe.py --noconsole
 
 - [ ] **1. 打包无异常**: 运行 `python scripts/build_exe.py` 成功输出 EXE，体积约为 60~70MB 左右（因为打包了 webview 及 pythonnet 依赖）。
 - [ ] **2. 静默初始化**: 首次双击 `ResourceDownloader.exe`，正确在同级生成 `.env` 与 `data/` 目录，没有提示文件缺失。
-- [ ] **3. 独立窗体正常拉起**: 桌面窗体成功弹出且没有报错提示，左下角显示 `服务正常 (0.2.0)`，连通灯呈**绿色**。
+- [ ] **3. 独立窗体正常拉起**: 桌面窗体成功弹出且没有报错提示，左下角显示 `服务正常 (1.0.0)`（或当前 `__version__`），连通灯呈**绿色**。
 - [ ] **4. 窗口拖动与控制按钮功能**:
   - 拖拽顶部标题栏空白区域，确认窗体可以正常在桌面上移动。
   - 点击右上角的 `—` 确认窗口可以最小化。

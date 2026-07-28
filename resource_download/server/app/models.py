@@ -28,7 +28,53 @@ class SearchItem(BaseModel):
     cover: str | None = None
     author: str | None = None
     desc: str | None = None
+    # 来源平台（聚合搜索时必填；单平台搜索也会回填）
+    platform: PlatformName | None = None
+    # 人类可读来源标记，如「番茄小说」「红果短剧」
+    source_label: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class SearchResponse(BaseModel):
+    """聚合/单平台搜索统一响应。"""
+
+    items: list[SearchItem] = Field(default_factory=list)
+    platforms_queried: list[str] = Field(default_factory=list)
+    # 某平台失败时仍返回其它平台结果，错误写在此
+    platform_errors: dict[str, str] = Field(default_factory=dict)
+    total: int = 0
+
+
+class DiscoverItem(BaseModel):
+    """首页热榜 / 上新条目（数据来自服务端聚合，客户端只展示）。"""
+
+    rank: int | None = None
+    id: str
+    title: str
+    cover: str | None = None
+    author: str | None = None
+    desc: str | None = None
+    platform: PlatformName
+    source_label: str | None = None
+    badge: str | None = None  # 热 / 新 / 飙升 等
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class DiscoverSection(BaseModel):
+    kind: str  # hot | new
+    title: str
+    items: list[DiscoverItem] = Field(default_factory=list)
+    available: bool = False
+    message: str = ""
+    platform_errors: dict[str, str] = Field(default_factory=dict)
+
+
+class DiscoverResponse(BaseModel):
+    sections: list[DiscoverSection] = Field(default_factory=list)
+    platforms_queried: list[str] = Field(default_factory=list)
+    # stub | live
+    data_mode: str = "stub"
+    note: str = ""
 
 
 class SegmentInfo(BaseModel):
@@ -77,10 +123,28 @@ class JobResponse(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+class HealthDependencyItem(BaseModel):
+    """单项依赖检查结果，供 UI 列表展示。"""
+
+    key: str
+    label: str
+    ok: bool = False
+    required: bool = True
+    message: str = ""
+    hints: list[str] = Field(default_factory=list)
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
 class HealthResponse(BaseModel):
-    status: str = "ok"
+    status: str = "ok"  # ok | degraded | error
     version: str
     platforms: list[str]
+    # 运行时依赖（番茄签名/书名搜索等）；缺失时 status 可为 degraded
+    dependencies: dict[str, Any] = Field(default_factory=dict)
+    # 扁平列表，方便 UI 直接渲染
+    checks: list[HealthDependencyItem] = Field(default_factory=list)
+    # 人类可读摘要
+    summary: str = ""
 
 
 class VersionResponse(BaseModel):

@@ -29,7 +29,7 @@ cmd = [
     "--clean",
     f"--distpath={temp_out}",
     f"--workpath={temp_out / 'build'}",
-    f"--add-data={ROOT / 'ui'};ui",
+    f"--add-data={ROOT / 'client' / 'ui'};ui",
     f"--add-data={ROOT / 'server' / 'app'};server/app",
     f"--add-data={ROOT / 'vendor'};vendor",
     "--exclude-module=tkinter",

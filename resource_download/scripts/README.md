@@ -115,7 +115,7 @@ python scripts/build_exe.py
 # 产物: dist/ResourceDownloader.exe
 ```
 
-桌面入口源码：`desktop/main.py`（启动服务并打开浏览器）。
+桌面入口源码：`client/desktop/main.py`（默认瘦客户端连 `API_BASE`；`CLIENT_MODE=embedded` 仅开发本机嵌服务）。
 
 ---
 

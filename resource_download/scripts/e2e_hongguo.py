@@ -53,11 +53,13 @@ def main() -> None:
             r = c.get("/v1/search", params={"platform": "hongguo", "q": args.search})
             if r.status_code != 200:
                 die(f"search failed: {r.status_code} {r.text}")
-            items = r.json()
+            payload = r.json()
+            # 兼容 SearchResponse {items:[...]} 与旧 list
+            items = payload if isinstance(payload, list) else (payload.get("items") or [])
             if not items:
                 die("search empty")
             series_id = str(items[0]["id"])
-            print(f"pick id={series_id} title={items[0].get('title')}")
+            print(f"pick id={series_id} title={items[0].get('title')} platform={items[0].get('platform')}")
 
         print("== detail ==")
         r = c.get("/v1/detail", params={"platform": "hongguo", "id": series_id})

@@ -1,12 +1,14 @@
 # DEV_ROADMAP — MVP 历史执行记录
 
-> **文档状态：归档。** 当前迭代任务与问题清单以 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md) 为准。  
-> 架构决策以 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md) 为准。
+> **文档状态：归档。** 阶段进度与剩余 backlog 以 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md) 为准。  
+> 架构决策以 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md) 为准。  
+> 商业 V1.0 完成态见 [`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) / [`docs/release_gate.md`](./docs/release_gate.md)。
 >
-> - 商业化蓝图（规划中）：[business_landing_architecture.md](./business_landing_architecture.md)
+> - 商业化蓝图：[business_landing_architecture.md](./business_landing_architecture.md)
 > - 历史设计存档：[design_plan.md](./design_plan.md)
 >
-> 最后更新：2026-07-19（正文为 MVP-H/F 完成时快照；后续勿在此追加新任务）
+> 正文为 **MVP-H/F 完成时快照（约 2026-07-19）**；后续勿在此追加新任务。  
+> 商业化 / 阶段 D～E / CQ **不要**以本文「规划中」表述为准——已过时。
 
 ---
 
@@ -50,7 +52,7 @@
 | **MVP-H** | 红果主链路打通 | `e2e_hongguo.py` 出可播 MP4 | ✅ 已完成 |
 | **MVP-F** | 番茄 App 会话打通 | `e2e_fanqie.py` App 模式出书 | ✅ 已完成 |
 | **Client** | 薄客户端 UI | UI 复现脚本所有功能 | ⚠️ 有 `ui/` 原型，未达标 → 见 POST_MVP_PLAN |
-| **商业化** | VIP + 卡密 + Redroid | 参见 business_landing_architecture.md | ⏳ 规划中 |
+| **商业化** | VIP + 卡密 + 签名池 + V1.0 | 见 COMMERCIAL_V1_PLAN / release_gate | ✅ 工程完成（本文档归档后实现） |
 
 ---
 
@@ -245,17 +247,21 @@ python scripts/e2e_fanqie.py --id "<BOOK_ID>" --range 1-3 --options "{\"mode\":\
 
 ---
 
-## 八、商业化（阶段 6，规划中）
+## 八、商业化（阶段 6 — 历史规划摘录）
+
+> **实现状态**：用户/JWT/卡密/VIP/限流配额/签名池/商业 V1.0 已在后续阶段完成。  
+> 以 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)、[`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) 为准。  
+> 下文保留为 MVP 时期蓝图摘录，部分条目（如立刻上 PostgreSQL）**并非 V1.0 实际路径**。
 
 详见 [business_landing_architecture.md](./business_landing_architecture.md)。
 
-主要工作：
+历史设想（摘录）：
 
-1. SQLite → PostgreSQL 数据库
-2. 用户注册 / 登录 / JWT 鉴权（替换 API Key）
-3. 卡密体系（预生成 + 核销 + VIP 有效期）
-4. Redroid 容器池（Linux 云端多节点签名）
-5. `slowapi` 限流 + 配额管理
+1. SQLite → PostgreSQL 数据库（V1.0 仍用 SQLite）
+2. 用户注册 / 登录 / JWT 鉴权（✅ 已做；dev 仍可 API Key）
+3. 卡密体系（✅）
+4. 签名/设备池（✅ 抽象已做；实机节点运维持续）
+5. 限流 + 配额管理（✅）
 
 ---
 

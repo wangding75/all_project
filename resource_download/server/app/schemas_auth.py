@@ -66,5 +66,9 @@ class UserMeResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     vip_expires_at: datetime | None
+    # 额度展示（设置页）
+    is_vip: bool = False
+    jobs_today: int = 0
+    jobs_limit: int = 0
 
     model_config = ConfigDict(from_attributes=True)

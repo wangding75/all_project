@@ -1,11 +1,13 @@
 # 阶段 D — 商业化基础实施方案
 
-> **状态**: D-0、D-1、D-2、D-4、D-3 ✅ （全阶段 D 技术底座已完成，达阶段 D 技术出口出口线）；准备开 E0 商业产品阶段  
+> **状态**: D-0、D-1、D-2、D-4、D-3 ✅（阶段 D 技术底座全部完成）  
+> **后续**: 商业 V1.0（E0～E6）与 CQ-01～06 亦已完成；见 [`COMMERCIAL_V1_PLAN.md`](./COMMERCIAL_V1_PLAN.md)、[`POST_MVP_PLAN.md`](../POST_MVP_PLAN.md)  
 > **关联**:  
 > - [`POST_MVP_PLAN.md`](../POST_MVP_PLAN.md)  
-> - [`COMMERCIAL_V1_PLAN.md`](./COMMERCIAL_V1_PLAN.md) ← **D 出口后的商业 V1.0（E0～E6）**  
+> - [`COMMERCIAL_V1_PLAN.md`](./COMMERCIAL_V1_PLAN.md)  
+> - [`sign_pool.md`](./sign_pool.md) ← D-3 运维说明  
 > - [`business_landing_architecture.md`](../business_landing_architecture.md)  
-> - 当前代码 `0.2.0`  
+> - 当前代码 **`1.0.0`**  
 > **原则**: 先「用户 + VIP + 限流 + 签名池」技术底座，再全面商业产品化；**不 silent 破坏** dev e2e。
 
 ---
@@ -250,9 +252,10 @@ VIP_JOBS_PER_DAY=50          # VIP 日上限；0=不限制（仍受并发 5 约�
 
 ---
 
-## 6. D-3 — Redroid / 签名池（后置里程碑）
+## 6. D-3 — 签名池 ✅
 
-> 仅边界设计，不纳入 D-1/D-2 首 PR。
+> **已落地**：`server/app/sign_pool/` + 配置开关 + mock/集成测 + [`sign_pool.md`](./sign_pool.md)。  
+> 默认 `SIGN_POOL_ENABLED=false`，关闭时回落本机 Frida，保证 dev e2e。
 
 ### 6.1 问题
 
@@ -261,22 +264,21 @@ VIP_JOBS_PER_DAY=50          # VIP 日上限；0=不限制（仍受并发 5 约�
 ### 6.2 目标架构（摘要）
 
 ```text
-JobManager → SignPoolClient → [节点健康检查] → Redroid/模拟器 worker
-                              → 队列 + 超时 + 失败重试
+JobManager → SignPoolClient → [节点健康检查] → HTTP 签名节点 / Redroid worker
+                              → 租约 + 容量 + 失败摘除 + 全挂 503
 ```
 
-### 6.3 交付物（未来）
+### 6.3 已交付
 
-- 节点注册：base_url、容量、标签（fanqie_sign / hongguo_sign）  
-- 租约：任务占用节点 N 分钟  
-- 健康：周期性 `/health` 或 frida ping  
-- 与 VIP 无关：任何付费用户共享池；可对 VIP 提高优先级（更后）
+- 节点注册：base_url、容量、标签（配置 JSON 或 URL 列表）  
+- 租约与轮询调度、健康检查、连续失败摘除  
+- Admin API 与 `test_sign_pool_d3.py`  
+- 运维文档：`docs/sign_pool.md`、示例 `data/sign_pool.example.json`
 
-### 6.4 依赖
+### 6.4 运维依赖（持续）
 
-- Docker / 云主机预算  
-- 镜像与 frida-server 版本钉扎（见 HANDOFF）  
-- 单独 `docs/STAGE_D3_POOL.md` 再开
+- 真实节点（模拟器 / Redroid）与 frida-server 版本钉扎（见 HANDOFF）  
+- 实机压测与容量规划（非代码缺口）
 
 ---
 
@@ -368,3 +370,4 @@ JobManager → SignPoolClient → [节点健康检查] → Redroid/模拟器 wor
 | 2026-07-20 | 初稿：D-0 并存、D-1/D-2/D-4 优先、D-3 后置；对齐现网 API Key + JobManager |
 | 2026-07-20 | D-0 编码落地：config / auth / router / api.md / .env.example |
 | 2026-07-20 | 衔接 COMMERCIAL_V1_PLAN：D-4→D-3 出口后进入 E0～E6 商业产品开发 |
+| 2026-07-27 | 同步完成态：D-3 已落地；代码版本 `1.0.0`；E/CQ 见 POST_MVP_PLAN |

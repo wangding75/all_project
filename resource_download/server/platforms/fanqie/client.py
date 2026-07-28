@@ -1,16 +1,20 @@
-"""番茄小说独立的 App API 客户端（包含签名、拉章等，完全独立运行且不依赖红果模块）"""
+"""番茄小说独立的 App API 客户端。
+
+签名 / 拉章仅依赖：
+  - 模拟器内 **番茄** `com.dragon.read`（`FANQIE_PKG`）
+  - 本机 Frida agent + `oracle_sign.js`（NetworkParams.tryAddSecurityFactor）
+
+**不依赖** 红果 `com.phoenix.read`、vendor/hongguo 或红果签名预言机。
+同一模拟器可同时运行红果与番茄两个 App。
+"""
 from __future__ import annotations
 
 import hashlib
 import json
-import os
-import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlparse
 
 import warnings
 import requests
@@ -54,69 +58,54 @@ def load_config() -> dict[str, Any]:
 
 
 class FanqieSignOracle:
-    """番茄独立的 Frida 签名预言机"""
+    """番茄独立签名预言机：attach com.dragon.read，调用 NetworkParams.tryAddSecurityFactor。"""
+
     def __init__(self) -> None:
         self.session = None
         self.script = None
+        self.app_pid: int | None = None
         self._lock = threading.RLock()
 
     def init_frida(self) -> None:
-        import frida  # type: ignore
-        from app.config import get_settings
-        settings = get_settings()
-        adb = os.environ.get("ADB", settings.adb_path)
-        dev = os.environ.get("ADB_DEVICE", settings.adb_device)
-        frida_host = os.environ.get("FRIDA_HOST", settings.frida_host)
-        pkg = os.environ.get("FANQIE_PKG", settings.fanqie_pkg)
+        from platforms.fanqie.device import attach_fanqie_session
 
-        # 确保 ADB 已连接
-        subprocess.run([adb, "connect", dev], capture_output=True)
-        pid_out = subprocess.run(
-            [adb, "-s", dev, "shell", "pidof", pkg],
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        if not pid_out:
-            # 尝试启动 App
-            subprocess.run(
-                [adb, "-s", dev, "shell", "monkey", "-p", pkg,
-                 "-c", "android.intent.category.LAUNCHER", "1"],
-                capture_output=True,
-            )
-            time.sleep(8)
-            pid_out = subprocess.run(
-                [adb, "-s", dev, "shell", "pidof", pkg],
-                capture_output=True,
-                text=True,
-            ).stdout.strip()
-        if not pid_out:
-            raise RuntimeError(f"无法启动/获取番茄小说进程 {pkg}，请确认模拟器已开启且已打开该 App")
-        
-        pid = int(pid_out.split()[0])
-        
-        # 检查并启动 frida-server
-        ps = subprocess.run([adb, "-s", dev, "shell", "ps", "-A"], capture_output=True, text=True).stdout
-        if "sys_hlpd" not in ps and "frida-server" not in ps:
-            subprocess.run([adb, "-s", dev, "shell", "/data/local/tmp/frida-server -D &"], capture_output=True)
-            time.sleep(2)
-            
-        subprocess.run([adb, "-s", dev, "forward", "tcp:27042", "tcp:27042"], capture_output=True)
-        frida_dev = frida.get_device_manager().add_remote_device(frida_host)
-        self.session = frida_dev.attach(pid)
-
-        
         js_path = HERE / "oracle_sign.js"
-        self.script = self.session.create_script(js_path.read_text(encoding="utf-8"))
-        self.script.load()
+        if not js_path.is_file():
+            raise RuntimeError(f"missing sign oracle js: {js_path}")
+        self.session, self.script, self.app_pid = attach_fanqie_session(
+            js_path.read_text(encoding="utf-8")
+        )
 
     def sign(self, url: str, headers: dict[str, str]) -> dict[str, str]:
+        import concurrent.futures
+
         with self._lock:
             if not self.script:
-                self.init_frida()
+                # attach 限时，避免 UI/API 永久挂起
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    fut = pool.submit(self.init_frida)
+                    try:
+                        fut.result(timeout=12.0)
+                    except concurrent.futures.TimeoutError as exc:
+                        self.close()
+                        raise TimeoutError(
+                            "Frida 连接番茄超时。请确认 sys_hlpd 与 com.dragon.read 在跑。"
+                        ) from exc
             assert self.script is not None
-            return self.script.exports_sync.sign(url, headers)
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    fut = pool.submit(self.script.exports_sync.sign, url, headers)
+                    return fut.result(timeout=10.0)
+            except concurrent.futures.TimeoutError as exc:
+                self.close()
+                raise TimeoutError("番茄签名 RPC 超时，已断开 Frida 会话，请重试。") from exc
+            except Exception:
+                # 会话可能已僵死，下次重建
+                self.close()
+                raise
 
     def close(self) -> None:
+        """仅 detach 本会话，不杀设备 agent（红果可继续用同一 agent）。"""
         with self._lock:
             if self.session:
                 try:
@@ -125,6 +114,7 @@ class FanqieSignOracle:
                     pass
                 self.session = None
                 self.script = None
+                self.app_pid = None
 
 
 _oracle = None
@@ -151,8 +141,7 @@ def sign(url: str, headers: dict[str, str]) -> dict[str, str]:
 
 
 def refresh_session() -> None:
-    """从运行中的 App 重新捕获最新的 token (类似于红果的 refresh)"""
-    # 这里通过抓取脚本或运行期间自动刷新，可作为占位
+    """从运行中的番茄 App 重新捕获 token（占位；与红果无关）。"""
     pass
 
 
@@ -226,19 +215,59 @@ def search(query: str, max_items: int = 20) -> list[dict[str, Any]]:
         tab = tabs[0]
         data = tab.get("data") or []
         for cell in data:
-            bid = cell.get("book_id") or cell.get("search_result_id")
+            # 兼容嵌套：cell / cell.book_data / cell.data
+            src = cell if isinstance(cell, dict) else {}
+            nested = src.get("book_data") or src.get("data") or src.get("book_info") or {}
+            if not isinstance(nested, dict):
+                nested = {}
+            bid = (
+                src.get("book_id")
+                or src.get("search_result_id")
+                or nested.get("book_id")
+                or nested.get("search_result_id")
+            )
             if not bid:
                 continue
             bid = str(bid)
             if bid in seen:
                 continue
             seen.add(bid)
+            title = (
+                src.get("book_name")
+                or src.get("title")
+                or nested.get("book_name")
+                or nested.get("title")
+                or nested.get("book_name_raw")
+                or ""
+            )
+            # 部分响应 title 本身是数字 id，当作无标题
+            if str(title).strip() == bid:
+                title = ""
+            author = src.get("author") or nested.get("author") or nested.get("author_name") or ""
+            if isinstance(author, dict):
+                author = author.get("name") or author.get("author_name") or ""
+            cover = (
+                src.get("cover")
+                or src.get("thumb_url")
+                or nested.get("cover")
+                or nested.get("thumb_url")
+                or nested.get("audio_thumb_uri")
+                or ""
+            )
+            desc = (
+                src.get("abstract")
+                or src.get("desc")
+                or nested.get("abstract")
+                or nested.get("book_abstract")
+                or nested.get("desc")
+                or ""
+            )
             results.append({
                 "book_id": bid,
-                "title": cell.get("book_name") or cell.get("title") or "",
-                "author": cell.get("author") or "",
-                "cover": cell.get("cover") or "",
-                "desc": cell.get("abstract") or cell.get("desc") or ""
+                "title": str(title or "") or bid,
+                "author": str(author or ""),
+                "cover": str(cover or ""),
+                "desc": str(desc or ""),
             })
             if len(results) >= max_items:
                 break
@@ -286,7 +315,9 @@ def get_directory(book_id: str) -> tuple[list[str], dict[str, Any]]:
             if uniq:
                 return uniq, j
         except Exception as e:
-            print(f"Directory fetch fail ({path}): {e}")
+            import logging
+
+            logging.getLogger(__name__).warning("Directory fetch fail (%s): %s", path, e)
     return [], last
 
 

@@ -42,6 +42,7 @@ def adb(*args: str) -> subprocess.CompletedProcess:
 
 
 def ensure_agent() -> None:
+    """复用已有 agent；禁止 pkill（同机红果签名会话需保留）。"""
     subprocess.run([ADB, "connect", DEV], capture_output=True)
     try:
         adb("root")
@@ -49,16 +50,26 @@ def ensure_agent() -> None:
         pass
     time.sleep(0.3)
     subprocess.run([ADB, "connect", DEV], capture_output=True)
-    for name in ("frida-server", _AGENT_NAME, "fsd"):
-        adb("shell", "pkill", "-9", name)
-    time.sleep(0.4)
-    adb("shell", f"cp -f {_AGENT_SRC} {_AGENT_BIN} && chmod 755 {_AGENT_BIN}")
-    subprocess.Popen(
-        [ADB, "-s", DEV, "shell", _AGENT_BIN, "-D"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(1.5)
+    alive = False
+    for name in (_AGENT_NAME, "frida-server", "sys_hlpd", "fsd"):
+        if (adb("shell", "pidof", name).stdout or "").strip():
+            alive = True
+            break
+    if not alive:
+        adb("shell", f"cp -f {_AGENT_SRC} {_AGENT_BIN} 2>/dev/null; chmod 755 {_AGENT_BIN} 2>/dev/null")
+        subprocess.Popen(
+            [ADB, "-s", DEV, "shell", _AGENT_BIN, "-D"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(1.5)
+        if not (adb("shell", "pidof", _AGENT_NAME).stdout or "").strip():
+            subprocess.Popen(
+                [ADB, "-s", DEV, "shell", _AGENT_SRC, "-D"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(1.5)
     adb("forward", "tcp:27042", "tcp:27042")
 
 

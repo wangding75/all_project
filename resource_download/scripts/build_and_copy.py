@@ -7,7 +7,9 @@ from pathlib import Path
 ROOT_DIR = Path(r"D:\github\all_project\resource_download")
 dist_dir = ROOT_DIR / "dist"
 build_dir = ROOT_DIR / "build"
-ui_dir = ROOT_DIR / "ui"
+ui_dir = ROOT_DIR / "client" / "ui"
+if not ui_dir.is_dir():
+    ui_dir = ROOT_DIR / "ui"
 server_app_dir = ROOT_DIR / "server" / "app"
 vendor_dir = ROOT_DIR / "vendor"
 main_py = ROOT_DIR / "desktop" / "main.py"

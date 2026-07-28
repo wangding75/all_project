@@ -67,7 +67,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 无需鉴权。
 
-返回：`status`、`version`、`platforms`（如 `hongguo`、`fanqie`）。
+返回：`status`（`ok` / `degraded`）、`version`、`platforms`、`summary`、`checks[]`（配置与设备依赖列表）、`dependencies`（兼容旧结构）。
 
 ---
 
@@ -75,9 +75,66 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 | 参数 | 说明 |
 |------|------|
-| platform | `hongguo` \| `fanqie` |
-| q | 关键词。红果：剧名搜索。番茄：MVP 仅当 URL 或纯数字 book_id 时可解析 |
+| platform | `hongguo` \| `fanqie` \| `all`（可选，默认 `all` 聚合双平台） |
+| q | 关键词。红果：剧名搜索。番茄：书名关键词 / URL / book_id |
 | page | 页码，默认 1（红果上游暂可能忽略分页） |
+
+返回 `SearchResponse`：
+
+```json
+{
+  "items": [
+    {
+      "id": "...",
+      "title": "...",
+      "platform": "fanqie",
+      "source_label": "番茄小说",
+      "cover": null,
+      "author": null,
+      "desc": null,
+      "extra": {}
+    }
+  ],
+  "platforms_queried": ["fanqie", "hongguo"],
+  "platform_errors": {},
+  "total": 1
+}
+```
+
+聚合时某平台失败仍返回其它平台结果，错误写入 `platform_errors`。
+
+---
+
+## GET /v1/discover
+
+首页发现：热榜 / 今日上新（**契约已就绪**）。
+
+| 参数 | 说明 |
+|------|------|
+| platform | `hongguo` \| `fanqie` \| `all`（默认 all） |
+| kinds | 逗号分隔：`hot,new`（默认） |
+
+返回：
+
+```json
+{
+  "sections": [
+    {
+      "kind": "hot",
+      "title": "🔥 热榜",
+      "items": [],
+      "available": false,
+      "message": "…",
+      "platform_errors": {}
+    }
+  ],
+  "platforms_queried": ["fanqie", "hongguo"],
+  "data_mode": "stub",
+  "note": "真实 App 榜单待 platforms 适配层接入"
+}
+```
+
+`data_mode=stub` 时 `items` 为空属预期；接入后改为 `live` 并填充 `DiscoverItem`。
 
 ---
 

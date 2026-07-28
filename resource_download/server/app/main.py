@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
@@ -29,6 +29,18 @@ async def lifespan(_app: FastAPI):
         raise RuntimeError(
             f"本服务端仅支持单进程/单 Worker 模式运行 (WORKERS=1)，当前配置 WORKERS={settings.workers}"
         )
+
+    # 同步到环境变量，供 vendor/hongguo 等上游模块读取（它们读 ADB / ADB_DEVICE，不是 ADB_PATH）
+    import os
+
+    if settings.adb_path:
+        os.environ.setdefault("ADB", settings.adb_path)
+        os.environ["ADB"] = settings.adb_path
+    if settings.adb_device:
+        os.environ["ADB_DEVICE"] = settings.adb_device
+    if settings.frida_host:
+        os.environ["FRIDA_HOST"] = settings.frida_host
+
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.jobs_dir.mkdir(parents=True, exist_ok=True)
     settings.outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -49,6 +61,37 @@ async def lifespan(_app: FastAPI):
 
         get_sign_pool()
         logging.info("签名节点池已启用 (SIGN_POOL_ENABLED=True)")
+
+    # 配置/依赖完整性（文件级：fanqie_config、hongguo_config、vendor 等）
+    try:
+        from platforms.readiness import bootstrap_config_on_startup
+
+        bootstrap_config_on_startup()
+    except Exception as exc:
+        logging.warning("配置完整性检查异常（不阻断启动）: %s", exc)
+
+    # 多平台设备运行时：共享 Frida agent + 番茄/红果 App（可自启）
+    if settings.platform_probe_on_startup or settings.fanqie_probe_on_startup:
+        try:
+            from platforms.runtime import bootstrap_on_startup
+
+            bootstrap_on_startup()
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            logging.warning("平台运行时探测异常（不阻断启动）: %s", exc)
+
+    # 启动完成后再汇总一次完整健康报告（含 runtime）写入日志
+    try:
+        from platforms.readiness import build_health_report, log_startup_readiness
+        from platforms.runtime import probe_all_runtimes
+
+        rt = probe_all_runtimes(try_start_agent=False, try_start_apps=False)
+        full = build_health_report(include_runtime=True, runtime_report=rt)
+        log_startup_readiness(full)
+    except Exception as exc:
+        logging.warning("启动健康汇总失败: %s", exc)
+
     yield
     logging.info("服务端收到退出信号，开始执行优雅关机流程...")
     await manager.shutdown()
@@ -75,9 +118,13 @@ app.include_router(api_router)
 
 # 智能定位 UI 静态资源路径
 if getattr(sys, "frozen", False):
+    # PyInstaller 仍将 UI 打包为 bundle 内 ui/（见 scripts/build_exe.py）
     UI_DIR = Path(sys._MEIPASS) / "ui"
 else:
-    UI_DIR = Path(__file__).resolve().parent.parent.parent / "ui"
+    # 源码：方案 2 客户端在 client/ui；兼容旧路径 ui/
+    _repo = Path(__file__).resolve().parent.parent.parent
+    _candidates = (_repo / "client" / "ui", _repo / "ui")
+    UI_DIR = next((p for p in _candidates if p.is_dir()), _candidates[0])
 
 if UI_DIR.exists():
     app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
@@ -85,13 +132,35 @@ if UI_DIR.exists():
 
 @app.get("/")
 async def root():
-    index_file = UI_DIR / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
+    """首页跳到 /ui/，保证 styles.css / app.js 相对路径可解析。
+
+    直接 FileResponse(index.html) 时，浏览器会向 /styles.css 请求，
+    而静态资源只挂在 /ui/ 下，导致「CSS 样式丢失」。
+    """
+    if UI_DIR.exists() and (UI_DIR / "index.html").is_file():
+        return RedirectResponse(url="/ui/", status_code=307)
     return {
         "service": "resource-download-relay",
         "version": __version__,
         "docs": "/docs",
         "health": "/health",
+        "ui": "/ui/",
     }
+
+
+# 兼容旧书签：/styles.css、/app.js → /ui/...
+@app.get("/styles.css")
+async def legacy_styles():
+    path = UI_DIR / "styles.css"
+    if path.is_file():
+        return FileResponse(path, media_type="text/css")
+    return JSONResponse({"detail": "styles.css not found"}, status_code=404)
+
+
+@app.get("/app.js")
+async def legacy_app_js():
+    path = UI_DIR / "app.js"
+    if path.is_file():
+        return FileResponse(path, media_type="application/javascript")
+    return JSONResponse({"detail": "app.js not found"}, status_code=404)
 

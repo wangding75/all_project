@@ -325,7 +325,7 @@ def compare_book(web: dict, app: dict) -> dict:
 
 
 def ensure_dragon_for_oracle() -> FanqieCryptOracle | None:
-    """解密挂番茄；不杀红果、不杀签名 agent（共用 27042，分 pid attach）。"""
+    """解密挂番茄本进程；不杀 agent（同机可并行红果；番茄签/解均不依赖 phoenix）。"""
     adb = os.environ["ADB"]
     dev = os.environ["ADB_DEVICE"]
     subprocess.run([adb, "connect", dev], capture_output=True)

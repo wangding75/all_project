@@ -1,16 +1,19 @@
 """App 路径：reader/full 密文 + CryptManager 预言机 → HTML/纯文本。
 
 密钥来源（按优先级）:
-  1. 显式传入 key_b64
-  2. 环境变量 FANQIE_CONTENT_KEY
-  3. 默认会话密钥（可能过期，仅开发用）
+  1. 显式传入 key_b64 / key_version
+  2. 环境变量 FANQIE_CONTENT_KEY / FANQIE_CONTENT_KEY_VERSION
+  3. data/config/fanqie_content_key.json（会话密钥，可从设备 mmkv 导出）
+  4. 默认会话密钥（极易过期，仅兜底）
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
 
 from platforms.fanqie.crypt_oracle import (
@@ -19,6 +22,18 @@ from platforms.fanqie.crypt_oracle import (
     FanqieCryptOracle,
     FanqieCryptError,
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_CONTENT_KEY_FILE = _REPO_ROOT / "data" / "config" / "fanqie_content_key.json"
+
+
+def _load_content_key_file() -> dict[str, Any]:
+    try:
+        if _CONTENT_KEY_FILE.is_file():
+            return json.loads(_CONTENT_KEY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
 
 
 class _TextExtractor(HTMLParser):
@@ -59,11 +74,15 @@ def html_to_text(html: str) -> str:
 
 
 def resolve_key(key_b64: str | None = None) -> str:
-    return (
-        key_b64
-        or os.environ.get("FANQIE_CONTENT_KEY")
-        or DEFAULT_SESSION_KEY
-    )
+    if key_b64:
+        return key_b64
+    env = os.environ.get("FANQIE_CONTENT_KEY")
+    if env:
+        return env
+    file_key = _load_content_key_file().get("key_b64")
+    if file_key:
+        return str(file_key)
+    return DEFAULT_SESSION_KEY
 
 
 def resolve_version(version: int | None = None) -> int:
@@ -72,6 +91,12 @@ def resolve_version(version: int | None = None) -> int:
     env = os.environ.get("FANQIE_CONTENT_KEY_VERSION")
     if env:
         return int(env)
+    file_ver = _load_content_key_file().get("key_version")
+    if file_ver is not None:
+        try:
+            return int(file_ver)
+        except Exception:
+            pass
     return DEFAULT_KEY_VERSION
 
 

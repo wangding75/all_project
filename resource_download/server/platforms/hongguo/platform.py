@@ -21,6 +21,9 @@ class HongguoPlatform(BasePlatform):
 
     async def search(self, query: str, page: int = 1, **kwargs: Any) -> list[SearchItem]:
         def _run() -> list[SearchItem]:
+            from platforms.hongguo.bridge import ensure_config
+
+            ensure_config()  # 缺配置时抛清晰中文错误，避免 FileNotFound 难懂
             H = load_hongguo_api()
             # 上游 search(query, max_items=None) — page 暂不映射
             raw = H.search(query) or []
@@ -47,6 +50,8 @@ class HongguoPlatform(BasePlatform):
                         title=title,
                         cover=str(cover) if cover else None,
                         desc=str(desc) if desc else None,
+                        platform=PlatformName.hongguo,
+                        source_label="红果短剧",
                         extra=extra,
                     )
                 )
@@ -115,6 +120,8 @@ class HongguoPlatform(BasePlatform):
         options = options or {}
         quality = str(options.get("quality") or "best")
         concurrency = int(options.get("concurrency") or options.get("c") or 2)
+        download_cover = bool(options.get("download_cover"))
+        download_desc = bool(options.get("download_desc"))
 
         def _run() -> list[Path]:
             H = load_hongguo_api()
@@ -127,6 +134,31 @@ class HongguoPlatform(BasePlatform):
 
             if progress:
                 progress(1.0, "prepare series")
+
+            # 可选：简介元数据
+            if download_desc or download_cover:
+                try:
+                    meta, _eps = H.get_episodes(str(item_id))
+                    meta = meta or {}
+                    if download_desc:
+                        (output_dir / "简介.txt").write_text(
+                            f"标题：{meta.get('title') or item_id}\n"
+                            f"状态：{meta.get('status') or meta.get('desc') or ''}\n"
+                            f"集数：{meta.get('episode_cnt') or ''}\n",
+                            encoding="utf-8",
+                        )
+                    if download_cover and meta.get("cover"):
+                        try:
+                            import urllib.request
+
+                            cover_url = str(meta["cover"])
+                            urllib.request.urlretrieve(cover_url, str(output_dir / "封面.jpg"))
+                        except Exception:
+                            (output_dir / "封面.url.txt").write_text(
+                                str(meta.get("cover") or ""), encoding="utf-8"
+                            )
+                except Exception:
+                    pass
 
             # 复用上游整剧逻辑（内部签名+下载+解密）
             ODL.dl_series(

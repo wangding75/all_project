@@ -29,6 +29,8 @@ data/config/
 
 # 调试与注入二进制文件（大文件，勿提交）
 tools/setup/frida-server*
+tools/setup/sys_hlpd
+tools/setup/*.xz
 
 # 进程与脚本宿主临时目录
 System.Management.Automation.Internal.Host.InternalHost/
@@ -39,7 +41,7 @@ System.Management.Automation.Internal.Host.InternalHost/
 /*
 !/data/
 !/docs/
-!/desktop/
+!/client/
 !/scripts/
 !/server/
 !/tools/
@@ -52,6 +54,11 @@ System.Management.Automation.Internal.Host.InternalHost/
 !/design_plan.md
 !/business_landing_architecture.md
 !/requirements.txt
+!/requirements-dev.txt
 !/download.py
 !/.env.example
+!/pyproject.toml
+!/ResourceDownloader.spec
+# 旧路径 ui/ desktop/ 已迁入 client/；删除变更仍需可提交
 !/ui
+!/desktop

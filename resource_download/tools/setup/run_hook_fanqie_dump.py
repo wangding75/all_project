@@ -54,21 +54,31 @@ def ensure_device() -> None:
 
 
 def ensure_agent() -> None:
+    """复用已有 agent；默认不 pkill（避免同机红果会话被杀）。设 FORCE_RESTART_AGENT=1 才强杀重建。"""
     ensure_device()
-    for name in ("frida-server", "frida", _AGENT_NAME, "fsd"):
-        adb("shell", "pkill", "-9", name)
-    time.sleep(0.4)
-    adb("shell", f"cp -f {_AGENT_SRC} {_AGENT_BIN} && chmod 755 {_AGENT_BIN}")
-    subprocess.Popen(
-        [ADB, "-s", DEV, "shell", _AGENT_BIN, "-D"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(1.5)
-    adb("forward", "tcp:27042", "tcp:27042")
-    pid = (adb("shell", "pidof", _AGENT_NAME).stdout or "").strip()
-    print(f"[*] agent {_AGENT_NAME} pid={pid}", flush=True)
+    force = os.environ.get("FORCE_RESTART_AGENT", "").strip() in {"1", "true", "yes"}
+    if force:
+        for name in ("frida-server", "frida", _AGENT_NAME, "fsd"):
+            adb("shell", "pkill", "-9", name)
+        time.sleep(0.4)
+    pid = ""
+    for name in (_AGENT_NAME, "frida-server", "sys_hlpd", "fsd"):
+        pid = (adb("shell", "pidof", name).stdout or "").strip()
+        if pid:
+            print(f"[*] reuse agent {name} pid={pid}", flush=True)
+            break
     if not pid:
+        adb("shell", f"cp -f {_AGENT_SRC} {_AGENT_BIN} 2>/dev/null; chmod 755 {_AGENT_BIN} 2>/dev/null")
+        subprocess.Popen(
+            [ADB, "-s", DEV, "shell", _AGENT_BIN, "-D"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(1.5)
+        pid = (adb("shell", "pidof", _AGENT_NAME).stdout or "").strip()
+        print(f"[*] agent {_AGENT_NAME} pid={pid}", flush=True)
+    adb("forward", "tcp:27042", "tcp:27042")
+    if not pid and not (adb("shell", "pidof", "frida-server").stdout or "").strip():
         raise SystemExit("agent not running")
     frida.get_device_manager().add_remote_device(FRIDA_HOST).enumerate_processes()
 

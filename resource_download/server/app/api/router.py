@@ -20,6 +20,7 @@ from app.models import (
     FileListResponse,
     FileOpenRequest,
     FileOpenResponse,
+    HealthDependencyItem,
     HealthResponse,
     JobCreateRequest,
     JobListResponse,
@@ -29,7 +30,10 @@ from app.models import (
     PlatformName,
     RedeemRequest,
     RedeemResponse,
+    DiscoverResponse,
+    DiscoverSection,
     SearchItem,
+    SearchResponse,
     VersionResponse,
 )
 from platforms.registry import get_platform, list_platforms
@@ -48,18 +52,46 @@ api_router.include_router(admin_router)
 
 @api_router.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
+    """配置 + 设备运行时完整性检查（只探测不自启）。"""
     extra_platforms = list_platforms()
-    # 附带红果 vendor 探测（不进 schema 强制字段，放 OpenAPI 仍兼容）
+    runtime_report: dict | None = None
     try:
-        from platforms.hongguo.bridge import vendor_ready
+        from platforms.runtime import probe_all_runtimes
 
-        _ = vendor_ready()
-    except Exception:  # noqa: BLE001
-        pass
+        runtime_report = probe_all_runtimes(try_start_agent=False, try_start_apps=False)
+    except Exception as exc:  # noqa: BLE001
+        runtime_report = {
+            "ok": False,
+            "degraded": True,
+            "message": str(exc),
+            "agent": {"ok": False, "adb_ok": False, "agent_running": False, "message": str(exc)},
+            "fanqie_runtime": {},
+            "hongguo_runtime": {},
+        }
+
+    from platforms.readiness import build_health_report
+
+    report = build_health_report(include_runtime=True, runtime_report=runtime_report)
+    checks = [
+        HealthDependencyItem(
+            key=str(c.get("key") or ""),
+            label=str(c.get("label") or c.get("key") or ""),
+            ok=bool(c.get("ok")),
+            required=bool(c.get("required", True)),
+            message=str(c.get("message") or ""),
+            hints=list(c.get("hints") or []),
+            detail=dict(c.get("detail") or {}),
+        )
+        for c in (report.get("checks") or [])
+    ]
+
     return HealthResponse(
-        status="ok",
+        status=str(report.get("status") or "ok"),
         version=__version__,
         platforms=extra_platforms,
+        dependencies=report.get("dependencies") or {},
+        checks=checks,
+        summary=str(report.get("summary") or ""),
     )
 
 
@@ -76,23 +108,154 @@ async def get_version() -> VersionResponse:
     )
 
 
-@api_router.get("/v1/search", response_model=list[SearchItem])
-async def search(
-    platform: PlatformName = Query(...),
-    q: str = Query(..., min_length=1),
-    page: int = Query(1, ge=1),
-    _: Identity = Depends(require_identity),
-) -> list[SearchItem]:
+_SOURCE_LABELS = {
+    PlatformName.fanqie: "番茄小说",
+    PlatformName.hongguo: "红果短剧",
+}
+
+
+def _tag_items(items: list[SearchItem], platform: PlatformName) -> list[SearchItem]:
+    """确保每条结果带有 platform / source_label。"""
+    label = _SOURCE_LABELS.get(platform, platform.value)
+    out: list[SearchItem] = []
+    for it in items:
+        data = it.model_dump() if hasattr(it, "model_dump") else dict(it)
+        if not data.get("platform"):
+            data["platform"] = platform
+        if not data.get("source_label"):
+            data["source_label"] = label
+        out.append(SearchItem(**data))
+    return out
+
+
+async def _search_one(platform: PlatformName, q: str, page: int) -> tuple[list[SearchItem], str | None]:
+    """单平台搜索；失败返回 ([], error_message) 不抛。"""
     try:
         impl = get_platform(platform)
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (NotImplementedError, KeyError) as exc:
+        return [], str(exc)
     try:
-        return await impl.search(q, page=page)
+        items = await impl.search(q, page=page)
+        return _tag_items(list(items or []), platform), None
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"search failed: {exc}") from exc
+        return [], f"{platform.value}: {exc}"
+
+
+@api_router.get("/v1/search", response_model=SearchResponse)
+async def search(
+    q: str = Query(..., min_length=1),
+    platform: str | None = Query(
+        None,
+        description="fanqie | hongguo | all；省略或 all 时聚合双平台搜索",
+    ),
+    page: int = Query(1, ge=1),
+    _: Identity = Depends(require_identity),
+) -> SearchResponse:
+    """单平台或聚合搜索。聚合时某平台失败仍返回另一平台结果，错误写在 platform_errors。"""
+    import asyncio
+
+    raw = (platform or "all").strip().lower()
+    if raw in {"", "all", "*"}:
+        targets = [PlatformName.fanqie, PlatformName.hongguo]
+    elif raw in {PlatformName.fanqie.value, PlatformName.hongguo.value}:
+        targets = [PlatformName(raw)]
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown platform: {platform!r}，可选 fanqie / hongguo / all",
+        )
+
+    results = await asyncio.gather(*[_search_one(p, q, page) for p in targets])
+    items: list[SearchItem] = []
+    errors: dict[str, str] = {}
+    for p, (plist, err) in zip(targets, results):
+        if err:
+            errors[p.value] = err
+        items.extend(plist)
+
+    # 单平台且完全失败 → 502，与旧行为一致
+    if len(targets) == 1 and not items and errors:
+        raise HTTPException(status_code=502, detail=f"search failed: {next(iter(errors.values()))}")
+
+    return SearchResponse(
+        items=items,
+        platforms_queried=[p.value for p in targets],
+        platform_errors=errors,
+        total=len(items),
+    )
+
+
+@api_router.get("/v1/discover", response_model=DiscoverResponse)
+async def discover(
+    platform: str | None = Query(
+        None,
+        description="fanqie | hongguo | all；默认 all",
+    ),
+    kinds: str = Query(
+        "hot,new",
+        description="逗号分隔：hot=热榜, new=今日/近期上新",
+    ),
+    _: Identity = Depends(require_identity),
+) -> DiscoverResponse:
+    """首页发现页：热榜 / 今日上新。
+
+    当前为 **契约就绪 + stub**：App 内榜单/上新协议尚未接入平台适配层。
+    客户端可先渲染空态与 UI；接入后仅改服务端，响应形状保持不变。
+    """
+    raw = (platform or "all").strip().lower()
+    if raw in {"", "all", "*"}:
+        targets = [PlatformName.fanqie, PlatformName.hongguo]
+    elif raw in {PlatformName.fanqie.value, PlatformName.hongguo.value}:
+        targets = [PlatformName(raw)]
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown platform: {platform!r}，可选 fanqie / hongguo / all",
+        )
+
+    kind_list = [k.strip().lower() for k in (kinds or "hot,new").split(",") if k.strip()]
+    if not kind_list:
+        kind_list = ["hot", "new"]
+
+    title_map = {
+        "hot": "🔥 热榜",
+        "new": "✨ 今日上新",
+    }
+    plat_labels = {
+        PlatformName.fanqie: "番茄小说",
+        PlatformName.hongguo: "红果短剧",
+    }
+    plat_hint = (
+        "、".join(plat_labels.get(p, p.value) for p in targets)
+        if len(targets) > 1
+        else plat_labels.get(targets[0], targets[0].value)
+    )
+
+    sections: list[DiscoverSection] = []
+    for kind in kind_list:
+        if kind not in title_map:
+            continue
+        # 预留：未来在 platforms.*.discover_hot / discover_new 拉取后填充 items
+        sections.append(
+            DiscoverSection(
+                kind=kind,
+                title=title_map[kind],
+                items=[],  # type: ignore[arg-type]
+                available=False,
+                message=(
+                    f"{plat_hint} · {title_map[kind]} 数据待接入服务端平台协议"
+                    "（Frida/App 榜单接口）。可先用「资源搜索」按关键词查找。"
+                ),
+                platform_errors={},
+            )
+        )
+
+    return DiscoverResponse(
+        sections=sections,
+        platforms_queried=[p.value for p in targets],
+        data_mode="stub",
+        note=f"当前平台：{plat_hint}。榜单/上新 API 契约已就绪；真实数据待 platforms 适配层接入。",
+    )
 
 
 @api_router.get("/v1/detail", response_model=DetailResponse)

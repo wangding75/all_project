@@ -26,9 +26,14 @@ def format_platform_error(exc: Exception) -> str:
     if "签名节点" in exc_str or "signpool" in exc_lower:
         return "签名节点繁忙或不可用，请稍后重试"
 
-    # 2. Vendor 缺失
-    if "hongguovendorerror" in exc_lower or "missing vendor" in exc_lower:
-        return f"红果 Vendor 组件未处于就绪状态: {exc_str}"
+    # 2. Vendor / 红果配置缺失
+    if "hongguovendorerror" in exc_lower or "missing vendor" in exc_lower or "hongguo_config" in exc_lower:
+        return f"红果环境未就绪: {exc_str}"
+    if isinstance(exc, FileNotFoundError) and "hongguo_config" in exc_str.replace("\\", "/"):
+        return (
+            "缺少红果会话配置 data/config/hongguo_config.json。"
+            "请运行: python tools/setup/grab_hongguo_config.py"
+        )
 
     # 3. 会话 / 鉴权 / Cookie 失效
     if any(k in exc_lower for k in ("cookie", "session", "unauthorized", "401", "403", "token")):
@@ -42,5 +47,13 @@ def format_platform_error(exc: Exception) -> str:
     if any(exc_str.startswith(prefix) for prefix in ("签名节点", "平台", "红果", "番茄")):
         return exc_str
 
-    # 6. 通用回退
+    # 6. Frida 签名 RPC 失败（常为 agent/App 未就绪或会话僵死）
+    if "rpcexception" in type(exc).__name__.lower() or exc_str in ("", "None", "none"):
+        return (
+            "平台签名失败（Frida RPC）。请确认：模拟器已连接、sys_hlpd 在跑、"
+            "对应 App（番茄/红果）在前台；可重启 App 与 agent 后重试。"
+            "红果还需 data/config/hongguo_config.json；番茄还需 fanqie_config.json。"
+        )
+
+    # 7. 通用回退
     return f"平台 API 访问失败: {exc_str}"

@@ -1,11 +1,13 @@
 # 多平台内容下载器 — 架构与计划定稿
 
 > **本文职责：锁定架构决策、非目标、API 原则。**  
-> **当前迭代 backlog / 已知 Bug / 阶段顺序 → [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。**  
+> **阶段进度 / 剩余 backlog → [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。**  
 > 旧版 `design_plan.md` 中与本文冲突的部分（本机一体化、全离线无签名等）以本文覆盖。
 
 **定稿日期**：2026-07-18（客户端后置修订同日）  
-**文档修订**：2026-07-20 — 标明与 POST_MVP_PLAN 的分工；进度以 POST_MVP_PLAN 为准
+**文档修订**：  
+- 2026-07-27 — 进度以 POST_MVP_PLAN 为准（V1.0 主线已完成）  
+- 2026-07-27 — **冻结 client/server 边界与目录组织（§0.1）**
 
 ---
 
@@ -18,21 +20,98 @@
 | 红果 | **当前主路径**：复用 **`vendor/hongguo`**（不重写解密/取链） |
 | 番茄 | **App 会话为主目标**；Web SSR 可作对照/免费章兜底，不作长期会员主路径 |
 | 会话 | **服务端自养**；用户不贴 Cookie |
-| 客户端 | **脚本验收优先**；`ui/` 为实验壳，达标前不以 UI 为完成标准 |
-| 验收方式 | **`scripts/e2e_hongguo.py` / `e2e_fanqie.py` 等** 打 API |
-| 产品优先级 | **红果复用 → 运维/签名稳 → 番茄 App → 服务端稳定 → 客户端诚实闭环** |
+| 客户端 | **无平台适配**；激活/连中转下载；以后可有排行榜/热榜/上新等纯产品功能 |
+| 验收方式 | **`scripts/e2e_hongguo.py` / `e2e_fanqie.py` 等** 打服务端 API |
+| 产品优先级 | **服务端适配与履约优先 → 瘦客户端产品功能** |
+
+### 0.1 客户端 / 服务端边界（冻结约定）
+
+> **不可违反。** 新增功能与代码评审以此为准；违反即架构回退。
+
+#### 目录组织（冻结）
+
+```text
+resource_download/
+├── server/                 # 中转服务端（主战场）
+│   ├── app/                # API / 鉴权 / VIP / 任务 / 配额
+│   ├── platforms/          # 番茄、红果等平台适配（Frida/签名仅此处）
+│   └── run.py
+├── client/                 # 瘦客户端（产品壳）
+│   ├── ui/                 # Web UI：登录/兑卡/任务/设置；以后榜单/上新
+│   ├── desktop/            # 可选桌面壳：默认只连 API_BASE，不嵌适配逻辑
+│   └── README.md
+├── vendor/                 # 仅服务端依赖（如 hongguo），禁止打进瘦客户端包
+├── scripts/                # e2e / 运维 / 质量门禁（主要打服务端）
+└── docs/
+```
+
+#### 服务端（server/）— 允许
+
+| 允许 | 说明 |
+|------|------|
+| 平台协议适配与热修 | App 更新后只改服务端 |
+| 签名 / 解密 / Frida / 设备或签名池 | 履约能力 |
+| 任务队列、产物存储、文件下载 API | |
+| 注册登录、卡密 VIP、限流配额、运营 API | |
+| 榜单/热榜/上新等**数据聚合 API** | 客户端只消费接口 |
+| 挂载 `client/ui` 为静态 `/ui` | 便于同源部署 |
+
+#### 服务端 — 禁止（边界）
+
+| 禁止 | 说明 |
+|------|------|
+| 把适配逻辑泄漏到 client 目录 | 不得在 client 下出现 platforms / frida 业务 |
+
+#### 客户端（client/）— 允许
+
+| 允许 | 说明 |
+|------|------|
+| 登录 / 注册 / 兑卡 / VIP 展示 | 激活校验 |
+| 配置 `API_BASE`，调用服务端 HTTP API | 下载中转 |
+| 搜索/详情/建任务/进度/取文件（经 API） | |
+| **排行榜 / 热榜 / 上新** 等纯产品 UI | 数据必须来自服务端 API |
+| 本地偏好、缓存列表展示、通知 | 无平台协议 |
+
+#### 客户端 — 禁止（硬边界）
+
+| 禁止 | 说明 |
+|------|------|
+| `platforms/*` 适配代码 | 不得出现在 client |
+| Frida / 签名 / 解密 / 本机模拟器业务 | 履约仅服务端 |
+| 依赖 `vendor/hongguo` 或设备侧 agent | |
+| 以「用户本机 Frida」为生产主路径 | 开发机调试除外且不得进产品包 |
+
+#### 数据流（含榜单类功能）
+
+```text
+用户点「热榜 / 上新 / 下载」
+    → 客户端只请求服务端 REST
+    → 服务端用当前适配拉/缓存/整理后返回
+    → 客户端渲染；下载再走 POST /v1/jobs
+```
+
+平台改签改协议 → **只发服务端热修**；客户端可不发版（除非产品 UI 变更）。
+
+#### 启动约定
+
+| 模式 | 命令 / 环境 | 用途 |
+|------|-------------|------|
+| 服务端 | `cd server ; python run.py` | 生产 / 开发中转 |
+| 瘦客户端 | `API_BASE=http://host:8000` + `python client/desktop/main.py`（默认 `CLIENT_MODE=thin`） | 用户侧 |
+| 浏览器客户端 | 打开 `http://host:8000/ui/` | 同瘦客户端 |
+| 本机一体演示 | `CLIENT_MODE=embedded` | **仅开发**，非生产分发形态 |
 
 ### 架构示意
 
 ```text
-┌──────────────────┐                      ┌────────────────────────────┐
-│  验收客户端       │  curl / Python 脚本   │  中转服务端                  │
-│  scripts/*.py    │ ───────────────────► │  统一 API · 任务队列 · 鉴权   │
-│  （后期：桌面 UI） │                      │  fanqie | hongguo adapters  │
-└──────────────────┘                      └────────────────────────────┘
+┌──────────────────────────┐         HTTPS API          ┌────────────────────────────┐
+│  client/（瘦客户端）       │  登录/兑卡/任务/榜单 UI     │  server/（中转服务端）         │
+│  ui + desktop 壳          │ ────────────────────────► │  API · 鉴权 · 任务 · 适配    │
+│  无 Frida / 无 platforms  │ ◄──────────────────────── │  platforms/* · 签名池 · vendor│
+└──────────────────────────┘      状态 / 文件 / 列表      └────────────────────────────┘
 ```
 
-主路径在 **服务端 + 脚本**；桌面 UI 仅为外壳，可整段后置。
+主路径在 **服务端**；客户端仅为产品壳与展示。
 
 ---
 
@@ -67,33 +146,25 @@
 
 ---
 
-## 2. 仓库与模块结构（目标态）
+## 2. 仓库与模块结构（目标态 = 现行）
 
 ```text
 resource_download/
-├── DEVELOPMENT_PLAN.md
-├── design_plan.md
+├── DEVELOPMENT_PLAN.md          # 架构冻结（含 §0.1 client/server 边界）
 ├── server/                      # 中转服务端（主战场）
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── api/
-│   │   ├── auth.py
-│   │   ├── jobs/
-│   │   └── models.py
-│   ├── platforms/
-│   │   ├── base.py
-│   │   ├── fanqie/
-│   │   └── hongguo/
-│   ├── storage/
-│   └── requirements.txt
-├── scripts/                     # 链路验收（替代早期客户端）
-│   ├── e2e_fanqie.py            # 番茄：detail → job → poll → download
-│   ├── e2e_hongguo.py           # 红果：同上
-│   ├── smoke_health.py
-│   └── README.md                # 环境变量、示例命令
-├── client/                      # 最后再做；此前可空或不建
-├── download.py                  # 迁入 fanqie 前保留
-└── README.md
+│   ├── app/                     # API / 鉴权 / 任务
+│   ├── platforms/               # fanqie | hongguo 适配（仅服务端）
+│   ├── requirements.txt
+│   └── run.py
+├── client/                      # 瘦客户端（产品壳）
+│   ├── ui/                      # Web UI：登录/任务；以后榜单/上新
+│   ├── desktop/                 # 桌面壳（默认 CLIENT_MODE=thin）
+│   └── README.md
+├── scripts/                     # e2e / build / 运维 / quality_gate
+├── docs/
+├── vendor/
+│   └── hongguo/                 # 仅服务端；勿进瘦客户端包
+└── data/                        # 运行时（gitignore）
 ```
 
 ---
@@ -131,7 +202,7 @@ health → detail → create job → poll until success|failed → GET file → 
 | 1～2 | 番茄 Web + E2E 脚本 | 已接入；App 模式另需设备 |
 | 3 | 红果 vendor 适配 + E2E | 主路径；注意文件下载契约缺口 |
 | 4 | 双平台脚本回归 | 文档与 API 对齐仍在 POST_MVP 阶段 0 |
-| 5 | 瘦客户端 | `ui/` 已有实验实现，**未达标** |
+| 5 | 瘦客户端 | `client/ui` + `client/desktop`；默认 thin 连 API；榜单类功能后续 |
 | 6 | 硬化 / 商业化 | 见 POST_MVP 阶段 C/D 与 business 蓝图 |
 
 **当前执行顺序**（摘要，细节只维护在 POST_MVP_PLAN）：
@@ -187,4 +258,5 @@ health → detail → create job → poll until success|failed → GET file → 
 | 2026-07-18 | **客户端后置**；主验收改为 scripts E2E；阶段重排 |
 | 2026-07-18 | 标明 **MVP-1 / MVP-2**；落地 `server/` + `scripts/` 脚手架 |
 | 2026-07-18 | **主路径改为红果**；`vendor/hongguo` 复用 + `platforms/hongguo` 适配 |
+| 2026-07-27 | **冻结 §0.1**：client/server 目录与职责边界；`ui`/`desktop` → `client/` |
 | 2026-07-20 | 与 POST_MVP_PLAN 分工；阶段详情归档；补质量门槛第 6 条 |

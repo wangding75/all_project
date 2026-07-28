@@ -114,8 +114,10 @@ def login(
 def me(
     identity: Identity = Depends(require_identity),
     db: Session = Depends(get_db),
-) -> User:
-    """获取当前登录用户信息。"""
+) -> UserMeResponse:
+    """获取当前登录用户信息（含今日额度）。"""
+    from app.models_orm import UsageDaily
+
     # 仅 Key 时返回 400，明确非用户身份
     if identity.kind == "api_key" or identity.is_ops:
         raise HTTPException(
@@ -123,7 +125,6 @@ def me(
             detail="非用户身份",
         )
 
-    # 查询用户信息
     user = db.query(User).filter(User.id == identity.user_id).first()
     if not user:
         raise HTTPException(
@@ -131,7 +132,34 @@ def me(
             detail="用户不存在",
         )
 
-    return user
+    settings = get_settings()
+    day_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    usage = (
+        db.query(UsageDaily)
+        .filter(UsageDaily.user_id == user.id, UsageDaily.day == day_str)
+        .first()
+    )
+    jobs_today = usage.job_count if usage else 0
+    jobs_limit = settings.vip_jobs_per_day
+    is_vip = False
+    if user.vip_expires_at is not None:
+        exp = user.vip_expires_at
+        if exp.tzinfo is None:
+            is_vip = exp > datetime.utcnow()
+        else:
+            is_vip = exp > datetime.now(timezone.utc)
+
+    return UserMeResponse(
+        id=user.id,
+        username=user.username,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+        vip_expires_at=user.vip_expires_at,
+        is_vip=is_vip,
+        jobs_today=jobs_today,
+        jobs_limit=jobs_limit,
+    )
 
 
 @auth_router.post(
