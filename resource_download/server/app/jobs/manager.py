@@ -79,6 +79,7 @@ class JobManager:
         self._jobs: dict[str, JobRecord] = {}
         self._running_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
+        self._run_slots = asyncio.Semaphore(max(1, self.settings.max_concurrent_jobs))
 
     def can_access_job(self, record: JobRecord, identity: Identity) -> bool:
         if identity.is_ops or identity.kind == "api_key":
@@ -172,7 +173,7 @@ class JobManager:
         item_id: str,
         range_spec: str = "all",
         options: dict[str, Any] | None = None,
-        max_active: int = 5,
+        max_active: int | None = None,
         owner_user_id: int | None = None,
         owner_kind: str | None = None,
     ) -> JobRecord:
@@ -180,8 +181,9 @@ class JobManager:
             active_count = sum(
                 1 for j in self._jobs.values() if j.status in (JobStatus.pending, JobStatus.running)
             )
-            if active_count >= max_active:
-                raise RuntimeError("active job count limit reached")
+            queue_limit = max_active or self.settings.max_queued_jobs
+            if active_count >= queue_limit:
+                raise RuntimeError("job queue capacity reached")
 
             job_id = uuid.uuid4().hex[:12]
             record = JobRecord(
@@ -375,22 +377,37 @@ class JobManager:
                 record.updated_at = _utc_now()
 
     async def _run_job(self, job_id: str) -> None:
-        async with self._lock:
-            record = self._jobs.get(job_id)
-            if record is None:
-                return
-            record.status = JobStatus.running
-            record.message = "running"
-            record.updated_at = _utc_now()
-        await self._persist_async(record)
+        slot_acquired = False
+        try:
+            await self._run_slots.acquire()
+            slot_acquired = True
+        except asyncio.CancelledError:
+            self._running_tasks.pop(job_id, None)
+            raise
 
-        out_dir = self.settings.outputs_dir / job_id
-        out_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            async with self._lock:
+                record = self._jobs.get(job_id)
+                if record is None:
+                    self._run_slots.release()
+                    return
+                record.status = JobStatus.running
+                record.message = "running"
+                record.updated_at = _utc_now()
+            await self._persist_async(record)
 
-        loop = asyncio.get_running_loop()
+            out_dir = self.settings.outputs_dir / job_id
+            out_dir.mkdir(parents=True, exist_ok=True)
 
-        def on_progress(pct: float, msg: str) -> None:
-            asyncio.run_coroutine_threadsafe(self._update_progress_safe(job_id, pct, msg), loop)
+            loop = asyncio.get_running_loop()
+
+            def on_progress(pct: float, msg: str) -> None:
+                asyncio.run_coroutine_threadsafe(self._update_progress_safe(job_id, pct, msg), loop)
+        except BaseException:
+            if slot_acquired:
+                self._run_slots.release()
+            self._running_tasks.pop(job_id, None)
+            raise
 
         try:
             platform = get_platform(record.platform)
@@ -457,6 +474,8 @@ class JobManager:
                     record.updated_at = _utc_now()
                     await self._persist_async(record)
         finally:
+            if slot_acquired:
+                self._run_slots.release()
             self._running_tasks.pop(job_id, None)
 
     async def _persist_async(self, record: JobRecord) -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -75,6 +75,69 @@ class DiscoverResponse(BaseModel):
     # stub | live
     data_mode: str = "stub"
     note: str = ""
+
+
+class BatchJobItem(BaseModel):
+    platform: PlatformName
+    id: str = Field(min_length=1)
+    range: str = "all"
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class BatchJobCreateRequest(BaseModel):
+    items: list[BatchJobItem] = Field(min_length=1, max_length=100)
+    queue_mode: Literal["enqueue", "start_immediately"] = "enqueue"
+    duplicate_policy: Literal["skip_completed", "retry_failed", "create_anyway"] = (
+        "skip_completed"
+    )
+
+
+class BatchJobCreatedItem(BaseModel):
+    item_id: str
+    platform: PlatformName
+    job_id: str
+
+
+class BatchJobSkippedItem(BaseModel):
+    item_id: str
+    platform: PlatformName
+    reason: str
+    existing_job_id: str | None = None
+
+
+class BatchJobErrorItem(BaseModel):
+    item_id: str
+    platform: PlatformName
+    message: str
+
+
+class BatchJobCreateResponse(BaseModel):
+    batch_id: str
+    created: list[BatchJobCreatedItem] = Field(default_factory=list)
+    skipped: list[BatchJobSkippedItem] = Field(default_factory=list)
+    errors: list[BatchJobErrorItem] = Field(default_factory=list)
+
+
+class BatchResolveRequest(BaseModel):
+    inputs: list[str] = Field(min_length=1, max_length=100)
+    platform_hint: Literal["all", "hongguo", "fanqie"] = "all"
+
+
+class BatchResolvedItem(BaseModel):
+    input: str
+    resolved: bool = True
+    content: SearchItem
+
+
+class BatchResolveErrorItem(BaseModel):
+    input: str
+    code: str
+    message: str
+
+
+class BatchResolveResponse(BaseModel):
+    items: list[BatchResolvedItem] = Field(default_factory=list)
+    errors: list[BatchResolveErrorItem] = Field(default_factory=list)
 
 
 class SegmentInfo(BaseModel):

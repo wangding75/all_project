@@ -1,6 +1,6 @@
 # 商业发现与批量下载 UI：后续 API 契约
 
-> 状态：规划稿（客户端 UI 已预留，服务端尚未实现）  
+> 状态：持续实施（P0 已于 2026-07-28 接入，P1 尚未实现）
 > 更新日期：2026-07-28  
 > 原则：不阻塞当前 `GET /v1/discover`、搜索、详情和单任务下载接口；新增能力按优先级逐步交付。
 
@@ -8,9 +8,9 @@
 
 | UI 功能 | 所需接口 | 优先级 |
 |---|---|---|
-| 发现页分页、分类和真实热榜/上新 | 扩展 `GET /v1/discover` | P0 |
-| 内容卡片批量加入队列 | `POST /v1/jobs/batch` | P0 |
-| 批量链接/ID识别 | `POST /v1/batch/resolve` | P0 |
+| 发现页真实热榜/上新 | 扩展 `GET /v1/discover` | P0 ✅ |
+| 内容卡片批量加入队列 | `POST /v1/jobs/batch` | P0 ✅ |
+| 批量链接/ID识别 | `POST /v1/batch/resolve` | P0 ✅ |
 | 热度榜、飙升榜、新作榜 | `GET /v1/rankings` | P1 |
 | 上线日历 | `GET /v1/calendar` | P1 |
 | 收藏与追更订阅 | `/v1/subscriptions` CRUD | P1 |

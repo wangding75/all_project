@@ -1952,8 +1952,46 @@
       });
     }
     if (elements.btnHomeAddQueue) {
-      elements.btnHomeAddQueue.addEventListener("click", () => {
-        toast(`已选择 ${state.homeSelectedItems.size} 项；批量队列接口接入后即可提交`, "info", 4500);
+      elements.btnHomeAddQueue.addEventListener("click", async () => {
+        const selected = Array.from(state.homeSelectedItems.values());
+        if (!selected.length) return;
+        elements.btnHomeAddQueue.disabled = true;
+        elements.btnHomeAddQueue.textContent = "正在加入…";
+        try {
+          const result = await apiFetch("/v1/jobs/batch", {
+            method: "POST",
+            body: JSON.stringify({
+              items: selected.map((item) => ({
+                platform: platformOf(item),
+                id: String(item.id),
+                range: "all",
+                options: { title: displayTitle(item) },
+              })),
+              queue_mode: "enqueue",
+              duplicate_policy: "skip_completed",
+            }),
+          });
+          const created = (result.created || []).length;
+          const skipped = (result.skipped || []).length;
+          const failed = (result.errors || []).length;
+          toast(
+            `批量任务已处理：创建 ${created}，跳过 ${skipped}，失败 ${failed}`,
+            failed ? "warning" : "success",
+            4500
+          );
+          state.homeSelectedItems.clear();
+          syncHomeCardSelections();
+          updateHomeSelectionBar();
+          if (created) {
+            switchPage("page-jobs");
+            await loadJobs();
+          }
+        } catch (error) {
+          toast(`加入下载队列失败：${error.message}`, "error", 5000);
+        } finally {
+          elements.btnHomeAddQueue.disabled = false;
+          elements.btnHomeAddQueue.textContent = "加入下载队列";
+        }
       });
     }
 

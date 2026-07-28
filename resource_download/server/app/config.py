@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     rate_limit_auth_per_minute: int = 10
     free_jobs_per_day: int = 0
     vip_jobs_per_day: int = 50
+    max_concurrent_jobs: int = 5
+    max_queued_jobs: int = 100
 
     # ADB 与 Frida 配置（番茄 App 会话 / 书名搜索 / App 下载）
     adb_path: str = "adb"

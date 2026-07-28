@@ -15,6 +15,15 @@ from app.auth import Identity, require_identity, require_vip
 from app.config import get_settings
 from app.jobs import get_job_manager
 from app.models import (
+    BatchJobCreateRequest,
+    BatchJobCreateResponse,
+    BatchJobCreatedItem,
+    BatchJobErrorItem,
+    BatchJobSkippedItem,
+    BatchResolveErrorItem,
+    BatchResolveRequest,
+    BatchResolveResponse,
+    BatchResolvedItem,
     DetailResponse,
     FileItemResponse,
     FileListResponse,
@@ -46,6 +55,26 @@ from sqlalchemy.orm import Session
 api_router = APIRouter(dependencies=[Depends(ip_rate_limiter("global"))])
 api_router.include_router(auth_router)
 api_router.include_router(admin_router)
+
+
+@api_router.get("/v1/covers/{cover_id}.jpg", include_in_schema=False)
+async def get_cached_cover(cover_id: str):
+    """只允许读取发现接口预先登记的可信封面，不接受任意远程 URL。"""
+    import asyncio
+
+    from app.media_cache import materialize_cover
+
+    try:
+        path = await asyncio.to_thread(materialize_cover, cover_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"cover unavailable: {exc}") from exc
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="cover not found")
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 
@@ -188,6 +217,57 @@ async def search(
     )
 
 
+@api_router.post("/v1/batch/resolve", response_model=BatchResolveResponse)
+async def resolve_batch(
+    body: BatchResolveRequest,
+    _: Identity = Depends(require_identity),
+) -> BatchResolveResponse:
+    """批量识别链接或资源 ID；单条失败不会中断整批。"""
+    import asyncio
+
+    semaphore = asyncio.Semaphore(5)
+
+    def _targets(raw_input: str) -> list[PlatformName]:
+        if body.platform_hint != "all":
+            return [PlatformName(body.platform_hint)]
+        lowered = raw_input.lower()
+        if "fanqienovel.com" in lowered or "com.dragon.read" in lowered:
+            return [PlatformName.fanqie]
+        if "hongguo" in lowered or "com.phoenix.read" in lowered:
+            return [PlatformName.hongguo]
+        return [PlatformName.hongguo, PlatformName.fanqie]
+
+    async def _resolve(raw_input: str):
+        value = raw_input.strip()
+        if not value:
+            return None, BatchResolveErrorItem(
+                input=raw_input,
+                code="INVALID_INPUT",
+                message="输入不能为空",
+            )
+        async with semaphore:
+            candidates = _targets(value)
+            results = await asyncio.gather(
+                *[_search_one(platform_name, value, 1) for platform_name in candidates]
+            )
+        errors = []
+        for platform_name, (items, error) in zip(candidates, results):
+            if items:
+                return BatchResolvedItem(input=raw_input, content=items[0]), None
+            if error:
+                errors.append(f"{platform_name.value}: {error}")
+        return None, BatchResolveErrorItem(
+            input=raw_input,
+            code="NOT_FOUND",
+            message="；".join(errors) or "未找到对应资源",
+        )
+
+    results = await asyncio.gather(*[_resolve(value) for value in body.inputs])
+    items = [item for item, _error in results if item is not None]
+    errors = [error for _item, error in results if error is not None]
+    return BatchResolveResponse(items=items, errors=errors)
+
+
 @api_router.get("/v1/discover", response_model=DiscoverResponse)
 async def discover(
     platform: str | None = Query(
@@ -198,13 +278,10 @@ async def discover(
         "hot,new",
         description="逗号分隔：hot=热榜, new=今日/近期上新",
     ),
+    limit: int = Query(24, ge=1, le=50),
     _: Identity = Depends(require_identity),
 ) -> DiscoverResponse:
-    """首页发现页：热榜 / 今日上新。
-
-    当前为 **契约就绪 + stub**：App 内榜单/上新协议尚未接入平台适配层。
-    客户端可先渲染空态与 UI；接入后仅改服务端，响应形状保持不变。
-    """
+    """首页发现页：聚合平台真实热榜 / 今日上新，单平台失败时降级返回。"""
     raw = (platform or "all").strip().lower()
     if raw in {"", "all", "*"}:
         targets = [PlatformName.fanqie, PlatformName.hongguo]
@@ -219,6 +296,9 @@ async def discover(
     kind_list = [k.strip().lower() for k in (kinds or "hot,new").split(",") if k.strip()]
     if not kind_list:
         kind_list = ["hot", "new"]
+    invalid_kinds = [kind for kind in kind_list if kind not in {"hot", "new"}]
+    if invalid_kinds:
+        raise HTTPException(status_code=400, detail=f"unsupported discover kinds: {invalid_kinds}")
 
     title_map = {
         "hot": "🔥 热榜",
@@ -234,30 +314,61 @@ async def discover(
         else plat_labels.get(targets[0], targets[0].value)
     )
 
+    import asyncio
+
+    async def _load(platform_name: PlatformName, kind: str):
+        try:
+            impl = get_platform(platform_name)
+            items = await impl.discover(kind, limit=limit)
+            from app.media_cache import register_cover_url
+
+            for item in items or []:
+                proxied = register_cover_url(item.cover)
+                if proxied:
+                    item.cover = proxied
+            return platform_name, list(items or []), None
+        except Exception as exc:  # noqa: BLE001
+            return platform_name, [], str(exc)
+
     sections: list[DiscoverSection] = []
+    any_live = False
     for kind in kind_list:
-        if kind not in title_map:
-            continue
-        # 预留：未来在 platforms.*.discover_hot / discover_new 拉取后填充 items
+        results = await asyncio.gather(*[_load(target, kind) for target in targets])
+        items = []
+        errors: dict[str, str] = {}
+        successful_platforms = 0
+        for platform_name, platform_items, error in results:
+            if error:
+                errors[platform_name.value] = error
+            else:
+                successful_platforms += 1
+                items.extend(platform_items)
+        available = successful_platforms > 0
+        any_live = any_live or available
         sections.append(
             DiscoverSection(
                 kind=kind,
                 title=title_map[kind],
-                items=[],  # type: ignore[arg-type]
-                available=False,
+                items=items,
+                available=available,
                 message=(
-                    f"{plat_hint} · {title_map[kind]} 数据待接入服务端平台协议"
-                    "（Frida/App 榜单接口）。可先用「资源搜索」按关键词查找。"
+                    f"{plat_hint}暂未返回{title_map[kind]}内容"
+                    if available
+                    else f"{plat_hint}{title_map[kind]}暂不可用"
                 ),
-                platform_errors={},
+                platform_errors=errors,
             )
         )
 
     return DiscoverResponse(
         sections=sections,
         platforms_queried=[p.value for p in targets],
-        data_mode="stub",
-        note=f"当前平台：{plat_hint}。榜单/上新 API 契约已就绪；真实数据待 platforms 适配层接入。",
+        data_mode="live" if any_live else "stub",
+        note=(
+            f"{plat_hint}发现内容已更新"
+            if any_live
+            else f"{plat_hint}发现内容当前不可用，可继续使用资源搜索"
+        ),
     )
 
 
@@ -330,6 +441,82 @@ async def create_job(
     # 创建成功后累加配额计数
     increment_job_quota(identity, db)
     return record.to_response()
+
+
+@api_router.post("/v1/jobs/batch", response_model=BatchJobCreateResponse)
+async def create_jobs_batch(
+    body: BatchJobCreateRequest,
+    identity: Identity = Depends(require_vip),
+    db: Session = Depends(get_db),
+) -> BatchJobCreateResponse:
+    """批量创建任务；逐项返回 created/skipped/errors，不因单项失败回滚整批。"""
+    import uuid
+
+    from app.quota import check_job_quota, increment_job_quota
+
+    manager = get_job_manager()
+    owner_user_id = identity.user_id if identity.kind == "user" else None
+    owner_kind = identity.kind if identity.kind == "user" else "ops"
+    existing, _ = await manager.list_jobs_for(identity, page=1, page_size=1000)
+    existing_by_key: dict[tuple[PlatformName, str], list] = {}
+    for record in existing:
+        existing_by_key.setdefault((record.platform, record.item_id), []).append(record)
+
+    created: list[BatchJobCreatedItem] = []
+    skipped: list[BatchJobSkippedItem] = []
+    errors: list[BatchJobErrorItem] = []
+
+    for item in body.items:
+        key = (item.platform, item.id)
+        prior = existing_by_key.get(key, [])
+        completed = next((job for job in prior if job.status == JobStatus.success), None)
+        if body.duplicate_policy == "skip_completed" and completed is not None:
+            skipped.append(
+                BatchJobSkippedItem(
+                    item_id=item.id,
+                    platform=item.platform,
+                    reason="already_completed",
+                    existing_job_id=completed.job_id,
+                )
+            )
+            continue
+
+        try:
+            get_platform(item.platform)
+            check_job_quota(identity, db)
+            record = await manager.create_job(
+                platform=item.platform,
+                item_id=item.id,
+                range_spec=item.range,
+                options=item.options,
+                max_active=get_settings().max_queued_jobs,
+                owner_user_id=owner_user_id,
+                owner_kind=owner_kind,
+            )
+            increment_job_quota(identity, db)
+            existing_by_key.setdefault(key, []).append(record)
+            created.append(
+                BatchJobCreatedItem(
+                    item_id=item.id,
+                    platform=item.platform,
+                    job_id=record.job_id,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(
+                BatchJobErrorItem(
+                    item_id=item.id,
+                    platform=item.platform,
+                    message=str(getattr(exc, "detail", exc)),
+                )
+            )
+
+    return BatchJobCreateResponse(
+        batch_id=f"batch-{uuid.uuid4().hex[:12]}",
+        created=created,
+        skipped=skipped,
+        errors=errors,
+    )
 
 
 @api_router.get("/v1/jobs", response_model=JobListResponse)

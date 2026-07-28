@@ -6,10 +6,11 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from app.models import DetailResponse, PlatformName, SearchItem, SegmentInfo
+from app.models import DetailResponse, DiscoverItem, PlatformName, SearchItem, SegmentInfo
 from platforms.base import BasePlatform, ProgressCallback
 from platforms.hongguo.bridge import (
     HongguoVendorError,
+    call_with_session_recovery,
     load_hongguo_api,
     load_offline_dl,
     vendor_ready,
@@ -18,6 +19,76 @@ from platforms.hongguo.bridge import (
 
 class HongguoPlatform(BasePlatform):
     name = PlatformName.hongguo.value
+
+    async def discover(
+        self,
+        kind: str,
+        *,
+        limit: int = 24,
+        **kwargs: Any,
+    ) -> list[DiscoverItem]:
+        """红果真实热榜/今日上新。
+
+        热榜使用短剧分类按热度排序；上新使用红果官方“今日上新”标记。
+        列表接口免签，仍复用 vendor 配置、缓存和响应解析。
+        """
+
+        def _run() -> list[DiscoverItem]:
+            from platforms.hongguo.bridge import ensure_config
+
+            ensure_config()
+            H = load_hongguo_api()
+            bounded_limit = max(1, min(int(limit), 50))
+            if kind == "hot":
+                rows = H.browse(
+                    "short_play",
+                    sort="hot_score",
+                    max_items=bounded_limit,
+                ) or []
+            elif kind == "new":
+                rows = H.latest(
+                    "short_play",
+                    only_today=True,
+                    max_items=bounded_limit,
+                ) or []
+            else:
+                raise ValueError(f"unsupported discover kind: {kind}")
+
+            items: list[DiscoverItem] = []
+            for index, row in enumerate(rows[:bounded_limit], start=1):
+                sid = str(row.get("series_id") or row.get("id") or "")
+                if not sid:
+                    continue
+                items.append(
+                    DiscoverItem(
+                        rank=index if kind == "hot" else None,
+                        id=sid,
+                        title=str(row.get("title") or sid),
+                        cover=str(row.get("cover") or "") or None,
+                        author=str(row.get("copyright") or "") or None,
+                        desc=str(row.get("intro") or "") or None,
+                        platform=PlatformName.hongguo,
+                        source_label="红果短剧",
+                        badge="热" if kind == "hot" else "新",
+                        extra={
+                            "episode_count": row.get("episode_cnt"),
+                            "score": row.get("score"),
+                            "play_count": row.get("play_cnt"),
+                            "category": row.get("category"),
+                            "today": row.get("today"),
+                        },
+                    )
+                )
+            return items
+
+        try:
+            return await asyncio.to_thread(call_with_session_recovery, _run)
+        except HongguoVendorError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            from app.errors import format_platform_error
+
+            raise RuntimeError(format_platform_error(exc)) from exc
 
     async def search(self, query: str, page: int = 1, **kwargs: Any) -> list[SearchItem]:
         def _run() -> list[SearchItem]:
@@ -58,7 +129,7 @@ class HongguoPlatform(BasePlatform):
             return items
 
         try:
-            return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(call_with_session_recovery, _run)
         except HongguoVendorError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -100,7 +171,7 @@ class HongguoPlatform(BasePlatform):
             )
 
         try:
-            return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(call_with_session_recovery, _run)
         except HongguoVendorError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -185,7 +256,7 @@ class HongguoPlatform(BasePlatform):
             return paths
 
         try:
-            return await asyncio.to_thread(_run)
+            return await asyncio.to_thread(call_with_session_recovery, _run)
         except HongguoVendorError:
             raise
         except Exception as exc:  # noqa: BLE001

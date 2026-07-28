@@ -12,6 +12,10 @@ from __future__ import annotations
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import Callable, TypeVar
+
+
+T = TypeVar("T")
 
 
 def _install_root() -> Path:
@@ -92,6 +96,54 @@ def load_hongguo_api():
     import hongguo as H  # type: ignore  # noqa: WPS433 — vendor path
 
     return H
+
+
+def _is_dead_frida_session(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "script has been destroyed",
+            "session is detached",
+            "connection is closed",
+            "transport error",
+            "invalid operation",
+            "timed out trying to sync up with agent",
+            "unable to communicate with remote frida-server",
+        )
+    )
+
+
+def _reset_local_oracle() -> None:
+    """Discard the vendor's cached Frida session after the app process restarts."""
+    H = load_hongguo_api()
+    lock = getattr(H, "_oracle_lock", None)
+    if lock is None:
+        setattr(H, "_oracle", None)
+        return
+    with lock:
+        old = getattr(H, "_oracle", None)
+        setattr(H, "_oracle", None)
+        session = getattr(old, "session", None)
+        if session is not None:
+            try:
+                session.detach()
+            except Exception:  # noqa: BLE001 - the old session is already unusable
+                pass
+
+
+def call_with_session_recovery(operation: Callable[[], T]) -> T:
+    """Retry one signed vendor operation after rebuilding a stale Frida session."""
+    try:
+        return operation()
+    except Exception as exc:
+        if not _is_dead_frida_session(exc):
+            raise
+        _reset_local_oracle()
+        from platforms.runtime import probe_all_runtimes
+
+        probe_all_runtimes(try_start_agent=True, try_start_apps=True)
+        return operation()
 
 
 def vendor_ready() -> dict:

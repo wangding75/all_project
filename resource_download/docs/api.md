@@ -107,12 +107,13 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 ## GET /v1/discover
 
-首页发现：热榜 / 今日上新（**契约已就绪**）。
+首页发现：聚合真实热榜 / 今日上新；单个平台失败时仍返回其他平台结果。
 
 | 参数 | 说明 |
 |------|------|
 | platform | `hongguo` \| `fanqie` \| `all`（默认 all） |
 | kinds | 逗号分隔：`hot,new`（默认） |
+| limit | 每个平台每个分区数量，`1..50`（默认 24） |
 
 返回：
 
@@ -122,19 +123,73 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
     {
       "kind": "hot",
       "title": "🔥 热榜",
-      "items": [],
-      "available": false,
-      "message": "…",
+      "items": [
+        {
+          "rank": 1,
+          "id": "7660841866979445784",
+          "title": "作品名称",
+          "platform": "hongguo",
+          "source_label": "红果短剧",
+          "badge": "热",
+          "extra": {
+            "episode_count": 72,
+            "score": "8.3",
+            "play_count": 74876768
+          }
+        }
+      ],
+      "available": true,
+      "message": "",
       "platform_errors": {}
     }
   ],
   "platforms_queried": ["fanqie", "hongguo"],
-  "data_mode": "stub",
-  "note": "真实 App 榜单待 platforms 适配层接入"
+  "data_mode": "live",
+  "note": "红果短剧发现内容已更新"
 }
 ```
 
-`data_mode=stub` 时 `items` 为空属预期；接入后改为 `live` 并填充 `DiscoverItem`。
+当前红果短剧已接入真实热榜与今日上新；不支持发现数据的平台会写入
+`platform_errors`，不会阻断已成功平台。
+
+---
+
+## POST /v1/batch/resolve
+
+批量识别链接或资源 ID，最多 100 条，单条失败不影响整批。
+
+```json
+{
+  "inputs": ["https://fanqienovel.com/page/123", "7660841866979445784"],
+  "platform_hint": "all"
+}
+```
+
+返回 `items[]`（成功识别的 `SearchItem`）与 `errors[]`。
+
+---
+
+## POST /v1/jobs/batch
+
+批量加入下载队列，最多 100 条：
+
+```json
+{
+  "items": [
+    {
+      "platform": "hongguo",
+      "id": "7660841866979445784",
+      "range": "all",
+      "options": {"title": "作品名称"}
+    }
+  ],
+  "queue_mode": "enqueue",
+  "duplicate_policy": "skip_completed"
+}
+```
+
+响应逐项返回 `created`、`skipped`、`errors`。任务管理器默认最多并发执行
+`MAX_CONCURRENT_JOBS=5` 个任务，其余任务保持 `pending` 排队。
 
 ---
 
