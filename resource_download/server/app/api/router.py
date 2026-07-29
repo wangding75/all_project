@@ -127,16 +127,48 @@ async def health() -> HealthResponse:
     )
 
 
+def _version_tuple(value: str) -> tuple[int, ...]:
+    import re
+
+    parts = re.findall(r"\d+", str(value or ""))
+    return tuple(int(part) for part in parts[:4]) or (0,)
+
+
 @api_router.get("/v1/version", response_model=VersionResponse)
-async def get_version() -> VersionResponse:
-    """获取应用权威当前版本及更新检视状态。"""
+async def get_version(
+    current_version: str = Query("", description="当前桌面客户端版本"),
+    install_id: str = Query("", description="客户端安装实例 ID，用于稳定灰度"),
+) -> VersionResponse:
+    """返回可配置的 Windows 客户端发布清单。"""
+    settings = get_settings()
+    latest = settings.client_latest_version.strip() or __version__
+    update_enabled = bool(settings.client_update_url.strip())
+    has_update = bool(
+        update_enabled
+        and current_version.strip()
+        and _version_tuple(latest) > _version_tuple(current_version)
+    )
+    rollout = max(0, min(100, settings.client_update_rollout_percentage))
+    if has_update and rollout < 100 and install_id.strip():
+        import hashlib
+
+        bucket = int(hashlib.sha256(install_id.strip().encode("utf-8")).hexdigest()[:8], 16) % 100
+        has_update = bucket < rollout
+    minimum = settings.client_minimum_version.strip()
+    mandatory = bool(settings.client_update_mandatory)
+    if minimum and current_version.strip():
+        mandatory = mandatory or _version_tuple(current_version) < _version_tuple(minimum)
     return VersionResponse(
         version=__version__,
-        update_check_enabled=False,
-        latest_version=__version__,
-        has_update=False,
-        download_url="",
-        release_notes="ResourceDownloader 统一版本描述。",
+        update_check_enabled=update_enabled,
+        latest_version=latest,
+        has_update=has_update,
+        download_url=settings.client_update_url.strip() if has_update else "",
+        sha256=settings.client_update_sha256.strip() if has_update else "",
+        mandatory=mandatory if has_update else False,
+        minimum_supported_version=minimum,
+        rollout_percentage=rollout,
+        release_notes=settings.client_release_notes.strip() or "当前已是最新版本。",
     )
 
 
@@ -214,6 +246,9 @@ async def search(
         platforms_queried=[p.value for p in targets],
         platform_errors=errors,
         total=len(items),
+        page=page,
+        page_size=20,
+        has_more=any(len(platform_items) >= 20 for platform_items, _error in results),
     )
 
 
@@ -363,7 +398,7 @@ async def discover(
     return DiscoverResponse(
         sections=sections,
         platforms_queried=[p.value for p in targets],
-        data_mode="live" if any_live else "stub",
+        data_mode="live" if any_live else "unavailable",
         note=(
             f"{plat_hint}发现内容已更新"
             if any_live
@@ -627,6 +662,80 @@ async def list_files(
                 )
 
     return FileListResponse(total=len(items), items=items)
+
+
+@api_router.get("/v1/files/thumbnail")
+async def get_file_thumbnail(
+    file_id: str = Query(..., min_length=1),
+    identity: Identity = Depends(require_identity),
+) -> FileResponse:
+    """生成或读取媒体缩略图；视频抽帧，小说优先使用同目录真实封面。"""
+    import asyncio
+    import hashlib
+    import shutil
+
+    manager = get_job_manager()
+    if not manager.can_access_file(file_id, identity):
+        raise HTTPException(status_code=404, detail="指定文件不存在")
+    source = manager.resolve_file(file_id)
+    if source is None or not source.is_file():
+        raise HTTPException(status_code=404, detail="指定文件不存在")
+
+    cache_dir = get_settings().data_dir / "cache" / "thumbnails"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(f"{source.resolve()}:{source.stat().st_mtime_ns}".encode()).hexdigest()
+    target = cache_dir / f"{key}.jpg"
+
+    def _materialize() -> None:
+        if target.is_file() and target.stat().st_size > 0:
+            return
+        cover = next(
+            (
+                path
+                for path in (source.parent / "封面.jpg", source.parent.parent / "封面.jpg")
+                if path.is_file()
+            ),
+            None,
+        )
+        if cover is not None:
+            shutil.copyfile(cover, target)
+            return
+        if source.suffix.lower() != ".mp4":
+            return
+        ffmpeg = os.environ.get("FFMPEG_BINARY") or shutil.which("ffmpeg")
+        if not ffmpeg:
+            try:
+                import imageio_ffmpeg
+
+                ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+            except Exception:
+                ffmpeg = None
+        if not ffmpeg:
+            return
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-loglevel",
+                "error",
+                "-ss",
+                "00:00:01",
+                "-i",
+                str(source),
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=360:-2",
+                str(target),
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+
+    await asyncio.to_thread(_materialize)
+    if not target.is_file() or target.stat().st_size == 0:
+        raise HTTPException(status_code=404, detail="该资源暂无可用缩略图")
+    return FileResponse(target, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @api_router.get("/v1/files/{file_id:path}")

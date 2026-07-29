@@ -2083,6 +2083,29 @@ html, body {
   cursor: pointer;
 }
 
+.home-card-follow {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #fff;
+  font-size: 17px;
+  cursor: pointer;
+  backdrop-filter: blur(5px);
+}
+
+.home-card-update {
+  margin-top: 5px;
+  color: #ef4444;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .home-card-select input {
   position: absolute;
   opacity: 0;

@@ -99,7 +99,8 @@ class HongguoPlatform(BasePlatform):
             # 上游 search(query, max_items=None) — page 暂不映射
             raw = H.search(query) or []
             items: list[SearchItem] = []
-            for row in raw:
+            start = max(0, (int(page) - 1) * 20)
+            for row in raw[start : start + 20]:
                 # 兼容 dict 或对象
                 if isinstance(row, dict):
                     sid = str(row.get("series_id") or row.get("id") or row.get("book_id") or "")
@@ -194,8 +195,13 @@ class HongguoPlatform(BasePlatform):
         download_cover = bool(options.get("download_cover"))
         download_desc = bool(options.get("download_desc"))
         allow_raw = bool(options.get("allow_raw"))
+        naming = options.get("naming") if isinstance(options.get("naming"), dict) else {}
 
         def _run() -> list[Path]:
+            import re
+
+            from platforms.naming import format_segment_filename
+
             H = load_hongguo_api()
             ODL = load_offline_dl()
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -208,15 +214,23 @@ class HongguoPlatform(BasePlatform):
                 progress(1.0, "prepare series")
 
             # 可选：简介元数据
-            if download_desc or download_cover:
+            episode_titles: dict[int, str] = {}
+            if download_desc or download_cover or naming:
                 try:
-                    meta, _eps = H.get_episodes(str(item_id))
+                    meta, eps = H.get_episodes(str(item_id))
                     meta = meta or {}
+                    for position, episode in enumerate(eps or [], start=1):
+                        if isinstance(episode, dict):
+                            index = int(episode.get("index") or position)
+                            episode_titles[index] = str(
+                                episode.get("title") or f"第{index}集"
+                            )
                     if download_desc:
                         (output_dir / "简介.txt").write_text(
                             f"标题：{meta.get('title') or item_id}\n"
-                            f"状态：{meta.get('status') or meta.get('desc') or ''}\n"
-                            f"集数：{meta.get('episode_cnt') or ''}\n",
+                            f"状态：{meta.get('status') or ''}\n"
+                            f"集数：{meta.get('episode_cnt') or ''}\n\n"
+                            f"{meta.get('desc') or meta.get('intro') or '暂无简介'}\n",
                             encoding="utf-8",
                         )
                     if download_cover and meta.get("cover"):
@@ -250,6 +264,27 @@ class HongguoPlatform(BasePlatform):
             playable_paths = [p for p in paths if not p.name.endswith(".raw.mp4")]
             raw_paths = [p for p in paths if p.name.endswith(".raw.mp4")]
             paths = playable_paths or (raw_paths if allow_raw else [])
+            if naming and paths:
+                renamed: list[Path] = []
+                for path in paths:
+                    match = re.search(r"第\s*0*(\d+)\s*集", path.stem)
+                    index = int(match.group(1)) if match else 0
+                    if index <= 0:
+                        renamed.append(path)
+                        continue
+                    target = path.with_name(
+                        format_segment_filename(
+                            index,
+                            episode_titles.get(index) or f"第{index}集",
+                            naming,
+                            ext=".raw.mp4" if path.name.endswith(".raw.mp4") else ".mp4",
+                        )
+                    )
+                    if target != path:
+                        target.unlink(missing_ok=True)
+                        path.replace(target)
+                    renamed.append(target)
+                paths = renamed
             if progress:
                 progress(100.0, f"done {len(paths)} files")
             if not paths:

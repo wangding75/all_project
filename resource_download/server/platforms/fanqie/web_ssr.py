@@ -201,13 +201,23 @@ def get_book_info_from_reader(item_id: str, cookie: str | None = None) -> tuple[
 
 def get_chapter_list(book_id: str, cookie: str | None = None) -> tuple[str, list[dict], dict]:
     """获取小说目录，返回 (书名, 章节列表, 字体映射)。"""
+    book_name, chapters, font_mapping, _meta = get_book_page(book_id, cookie=cookie)
+    return book_name, chapters, font_mapping
+
+
+def get_book_page(
+    book_id: str,
+    cookie: str | None = None,
+) -> tuple[str, list[dict], dict, dict]:
+    """获取小说详情、目录及真实封面/简介元数据。"""
     html = fetch_url(f"https://fanqienovel.com/page/{book_id}", cookie=cookie)
     state = extract_initial_state(html)
     font_mapping = build_font_mapping(html, cookie=cookie)
 
-    book_name = state["page"]["bookName"]
+    page = state["page"]
+    book_name = page["bookName"]
     chapters = []
-    for volume in state["page"]["chapterListWithVolume"]:
+    for volume in page["chapterListWithVolume"]:
         for ch in volume:
             chapters.append(
                 {
@@ -216,7 +226,55 @@ def get_chapter_list(book_id: str, cookie: str | None = None) -> tuple[str, list
                     "is_locked": ch.get("isChapterLock", False),
                 }
             )
-    return book_name, chapters, font_mapping
+    meta = {
+        "author": page.get("author"),
+        "abstract": page.get("abstract") or page.get("description"),
+        "cover": page.get("thumbUri"),
+        "category": page.get("category"),
+        "status": page.get("status"),
+        "word_number": page.get("wordNumber"),
+        "last_publish_time": page.get("lastPublishTime"),
+    }
+    return book_name, chapters, font_mapping, meta
+
+
+def get_home_discover(kind: str, limit: int = 24) -> list[dict]:
+    """读取番茄官网首页的真实编辑推荐、热读与最近更新数据。"""
+    html = fetch_url("https://fanqienovel.com")
+    home = extract_initial_state(html).get("home") or {}
+    bounded = max(1, min(int(limit), 50))
+    if kind == "hot":
+        groups = ("editorList", "weekList", "boyList", "girlList")
+    elif kind == "new":
+        groups = ("updateList",)
+    else:
+        raise ValueError(f"unsupported discover kind: {kind}")
+
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for group in groups:
+        for row in home.get(group) or []:
+            if not isinstance(row, dict):
+                continue
+            book_id = str(row.get("bookId") or row.get("book_id") or "")
+            if not book_id or book_id in seen:
+                continue
+            seen.add(book_id)
+            rows.append(
+                {
+                    "book_id": book_id,
+                    "title": str(row.get("bookName") or row.get("title") or book_id),
+                    "cover": row.get("thumbUri") or row.get("cover"),
+                    "author": row.get("author"),
+                    "desc": row.get("abstract"),
+                    "category": row.get("category"),
+                    "update_time": row.get("updateTime"),
+                    "latest_chapter": row.get("title") if kind == "new" else None,
+                }
+            )
+            if len(rows) >= bounded:
+                return rows
+    return rows
 
 
 def html_to_markdown(html_content: str) -> str:

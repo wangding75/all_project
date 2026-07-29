@@ -102,7 +102,7 @@ X-API-Key: <api_key>
 要求：
 
 - 单个平台失败时返回其他平台结果，并写入 `platform_errors`。
-- `data_mode` 使用 `live | cached | stub`。
+- `data_mode` 使用 `live | unavailable`；不可用时返回明确故障态，不再伪装成占位数据。
 - 缓存数据必须返回 `generated_at`，方便 UI 显示更新时间。
 
 ## 4. P0：批量识别

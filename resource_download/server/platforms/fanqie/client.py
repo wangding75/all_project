@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -141,8 +143,25 @@ def sign(url: str, headers: dict[str, str]) -> dict[str, str]:
 
 
 def refresh_session() -> None:
-    """从运行中的番茄 App 重新捕获 token（占位；与红果无关）。"""
-    pass
+    """从运行中的番茄 App 捕获新会话配置并重建签名连接。"""
+    global _CFG
+
+    get_oracle().close()
+    grabber = REPO_ROOT / "tools" / "setup" / "grab_fanqie_config.py"
+    if not grabber.is_file():
+        raise RuntimeError(f"缺少番茄会话捕获脚本: {grabber}")
+    result = subprocess.run(
+        [sys.executable, str(grabber)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0 or not CFG_PATH.is_file():
+        message = (result.stderr or result.stdout or "unknown error").strip()
+        raise RuntimeError(f"番茄会话刷新失败: {message[-800:]}")
+    with _CFG_LOCK:
+        _CFG = json.loads(CFG_PATH.read_text(encoding="utf-8"))
 
 
 def build_url(path: str, extra: dict[str, str] | None = None) -> str:
@@ -181,6 +200,13 @@ def api(method: str, path: str, body: dict | None = None, extra_query: dict[str,
             return api_once(method, path, body, extra_query, signed=signed)
         except Exception as e:
             last = e
+            if attempt == 0 and getattr(e, "response", None) is not None:
+                status = getattr(e.response, "status_code", 0)
+                if status in {401, 403}:
+                    try:
+                        refresh_session()
+                    except Exception:
+                        pass
             time.sleep(1.5 * (attempt + 1))
     raise last if last else RuntimeError("API request failed")
 

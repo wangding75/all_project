@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     max_concurrent_jobs: int = 5
     max_queued_jobs: int = 100
 
+    # Windows 客户端发布清单。未配置下载地址时更新检查保持关闭。
+    client_latest_version: str = ""
+    client_minimum_version: str = ""
+    client_update_url: str = ""
+    client_update_sha256: str = ""
+    client_release_notes: str = ""
+    client_update_mandatory: bool = False
+    client_update_rollout_percentage: int = 100
+
     # ADB 与 Frida 配置（番茄 App 会话 / 书名搜索 / App 下载）
     adb_path: str = "adb"
     adb_device: str = "127.0.0.1:16384"  # 模拟器 adb 地址，务必与 adb devices 一致

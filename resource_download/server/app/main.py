@@ -106,6 +106,14 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def track_request_metrics(request: Request, call_next):
+    from app.logger import metrics_tracker
+
+    metrics_tracker.inc_request()
+    return await call_next(request)
+
+
 @app.exception_handler(SignPoolUnavailableError)
 async def sign_pool_unavailable_exception_handler(_request: Request, exc: SignPoolUnavailableError):
     return JSONResponse(

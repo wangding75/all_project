@@ -369,7 +369,7 @@ def bootstrap_config_on_startup() -> dict[str, Any]:
 
 
 def _maybe_bootstrap_hongguo_from_fanqie() -> None:
-    """若 hongguo_config 不存在而 fanqie_config 存在，写一份最小占位（仅减少冷启动报错）。"""
+    """若仅存在番茄配置，明确提示需单独捕获红果会话。"""
     cfg = _cfg_dir()
     hg = cfg / "hongguo_config.json"
     fq = cfg / "fanqie_config.json"

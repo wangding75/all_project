@@ -43,6 +43,9 @@ class SearchResponse(BaseModel):
     # 某平台失败时仍返回其它平台结果，错误写在此
     platform_errors: dict[str, str] = Field(default_factory=dict)
     total: int = 0
+    page: int = 1
+    page_size: int = 20
+    has_more: bool = False
 
 
 class DiscoverItem(BaseModel):
@@ -72,8 +75,8 @@ class DiscoverSection(BaseModel):
 class DiscoverResponse(BaseModel):
     sections: list[DiscoverSection] = Field(default_factory=list)
     platforms_queried: list[str] = Field(default_factory=list)
-    # stub | live
-    data_mode: str = "stub"
+    # live | unavailable
+    data_mode: str = "unavailable"
     note: str = ""
 
 
@@ -216,6 +219,10 @@ class VersionResponse(BaseModel):
     latest_version: str
     has_update: bool = False
     download_url: str = ""
+    sha256: str = ""
+    mandatory: bool = False
+    minimum_supported_version: str = ""
+    rollout_percentage: int = 100
     release_notes: str = ""
 
 
@@ -225,7 +232,7 @@ class RedeemRequest(BaseModel):
 
 class RedeemResponse(BaseModel):
     success: bool = False
-    message: str = "卡密兑换功能暂未开启（Stub）。"
+    message: str = ""
     vip_expires_at: str = ""
 
 
@@ -257,7 +264,7 @@ class FileOpenResponse(BaseModel):
 class JobsSummaryResponse(BaseModel):
     active_jobs: int = 0
     completed_jobs: int = 0
-    total_speed_human: str = "0.0 MB/s"
+    total_speed_human: str = "0 B/s"
     disk_free_human: str = "128.4 GB"
 
 

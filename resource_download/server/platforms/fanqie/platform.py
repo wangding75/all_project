@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
-from app.models import DetailResponse, PlatformName, SearchItem, SegmentInfo
+from app.models import DetailResponse, DiscoverItem, PlatformName, SearchItem, SegmentInfo
 from platforms.base import BasePlatform, ProgressCallback
 from platforms.fanqie import web_ssr
 
@@ -51,6 +51,44 @@ def _normalize_book_id(item_id: str) -> str:
 class FanqiePlatform(BasePlatform):
     name = PlatformName.fanqie.value
 
+    async def discover(
+        self,
+        kind: str,
+        *,
+        limit: int = 24,
+        **kwargs: Any,
+    ) -> list[DiscoverItem]:
+        """番茄官网真实热读推荐与最近更新。"""
+
+        def _load() -> list[DiscoverItem]:
+            rows = web_ssr.get_home_discover(kind, limit=limit)
+            return [
+                DiscoverItem(
+                    rank=index if kind == "hot" else None,
+                    id=str(row["book_id"]),
+                    title=str(row["title"]),
+                    cover=str(row["cover"]) if row.get("cover") else None,
+                    author=str(row["author"]) if row.get("author") else None,
+                    desc=str(row["desc"]) if row.get("desc") else None,
+                    platform=PlatformName.fanqie,
+                    source_label="番茄小说",
+                    badge="热" if kind == "hot" else "新",
+                    extra={
+                        "category": row.get("category"),
+                        "update_time": row.get("update_time"),
+                        "latest_chapter": row.get("latest_chapter"),
+                    },
+                )
+                for index, row in enumerate(rows, start=1)
+            ]
+
+        try:
+            return await asyncio.to_thread(_load)
+        except Exception as exc:  # noqa: BLE001
+            from app.errors import format_platform_error
+
+            raise RuntimeError(format_platform_error(exc)) from exc
+
     async def search(self, query: str, page: int = 1, **kwargs: Any) -> list[SearchItem]:
         """支持：书名关键词（App 签名搜索）/ 书 ID / fanqienovel URL。
 
@@ -90,7 +128,7 @@ class FanqiePlatform(BasePlatform):
             raw = app_client.search(q, max_items=max_items) or []
             start = (page - 1) * 20
             end = start + 20
-            slice_rows = raw[start:end] if start < len(raw) else raw[:20]
+            slice_rows = raw[start:end] if start < len(raw) else []
             items: list[SearchItem] = []
             for row in slice_rows:
                 bid = str(row.get("book_id") or "")
@@ -146,7 +184,7 @@ class FanqiePlatform(BasePlatform):
 
         def _load() -> DetailResponse:
             book_id = _normalize_book_id(item_id)
-            book_name, chapters, _font = web_ssr.get_chapter_list(book_id, cookie=cookie)
+            book_name, chapters, _font, meta = web_ssr.get_book_page(book_id, cookie=cookie)
             segments = [
                 SegmentInfo(
                     id=str(ch["item_id"]),
@@ -160,8 +198,11 @@ class FanqiePlatform(BasePlatform):
                 platform=PlatformName.fanqie,
                 id=book_id,
                 title=book_name,
+                cover=str(meta.get("cover") or "") or None,
+                author=str(meta.get("author") or "") or None,
+                desc=str(meta.get("abstract") or "") or None,
                 segments=segments,
-                extra={"chapter_count": len(segments)},
+                extra={"chapter_count": len(segments), **meta},
             )
 
         try:
@@ -194,7 +235,7 @@ class FanqiePlatform(BasePlatform):
             # App 模式：签名+解密均在 com.dragon.read 内完成，不依赖红果 App。
             # Web 模式：公开页 + 字体映射，亦不依赖红果。
             book_id = _normalize_book_id(item_id)
-            book_name, chapters, font_mapping = web_ssr.get_chapter_list(book_id, cookie=cookie)
+            book_name, chapters, font_mapping, meta = web_ssr.get_book_page(book_id, cookie=cookie)
             selected = _parse_range(range_spec, len(chapters))
 
             work_dir = output_dir / web_ssr.sanitize_filename(book_name)
@@ -205,18 +246,24 @@ class FanqiePlatform(BasePlatform):
                 try:
                     desc_path = work_dir / "简介.txt"
                     desc_path.write_text(
-                        f"书名：{book_name}\nID：{book_id}\n章节数：{len(chapters)}\n",
+                        f"书名：{book_name}\n"
+                        f"作者：{meta.get('author') or ''}\n"
+                        f"分类：{meta.get('category') or ''}\n"
+                        f"章节数：{len(chapters)}\n\n"
+                        f"{meta.get('abstract') or '暂无简介'}\n",
                         encoding="utf-8",
                     )
                 except Exception:
                     pass
             if download_cover:
-                # Web 列表接口未必带封面 URL；占位说明文件，避免空开关无反馈
                 try:
-                    (work_dir / "封面.url.txt").write_text(
-                        "封面图需详情接口提供 cover URL 后自动下载；当前写入占位。\n",
-                        encoding="utf-8",
-                    )
+                    cover_url = str(meta.get("cover") or "")
+                    if not cover_url:
+                        raise RuntimeError("详情页未返回封面")
+                    cover_bytes = web_ssr.fetch_bytes(cover_url, cookie=cookie)
+                    if not cover_bytes:
+                        raise RuntimeError("封面响应为空")
+                    (work_dir / "封面.jpg").write_bytes(cover_bytes)
                 except Exception:
                     pass
 

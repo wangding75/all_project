@@ -88,6 +88,9 @@
     searchResults: [],
     allSearchResults: [],
     searchFilter: "all",
+    searchPage: 1,
+    searchHasMore: false,
+    lastSearchQuery: "",
     lastPlatformErrors: {},
     selectedEpisodes: new Set(),
     jobsPollTimer: null,
@@ -100,6 +103,23 @@
     discoverView: "discover",
     discoverData: null,
     homeSelectedItems: new Map(),
+    followingItems: (() => {
+      try {
+        const rows = JSON.parse(localStorage.getItem("followingItems") || "[]");
+        return new Map(
+          (Array.isArray(rows) ? rows : []).map((item) => [
+            `${String(item.platform || "hongguo")}:${item.id}`,
+            item,
+          ])
+        );
+      } catch (_) {
+        return new Map();
+      }
+    })(),
+    currentSegments: [],
+    episodePage: 1,
+    clientVersion: "1.0.0",
+    installId: "",
     // 下载偏好（本地持久化）
     prefs: {
       outputDir: localStorage.getItem("pref_outputDir") || "",
@@ -112,7 +132,6 @@
       concurrency: parseInt(localStorage.getItem("pref_concurrency") || "2", 10) || 2,
       nameUsePrefix: localStorage.getItem("pref_nameUsePrefix") !== "0",
       nameIncludeTitle: localStorage.getItem("pref_nameIncludeTitle") !== "0",
-      nameUseSuffix: localStorage.getItem("pref_nameUseSuffix") === "1",
       numberStyle: localStorage.getItem("pref_numberStyle") || "01",
       nameSeparator: localStorage.getItem("pref_nameSeparator") || ".",
     },
@@ -171,6 +190,7 @@
     detailPlatformLabel: document.getElementById("detailPlatformLabel"),
     detailId: document.getElementById("detailId"),
     detailSynopsis: document.getElementById("detailSynopsis"),
+    btnToggleFollow: document.getElementById("btnToggleFollow"),
     cardQualityWrapper: document.getElementById("cardQualityWrapper"),
     selectQuality: document.getElementById("selectQuality"),
     epiPagination: document.getElementById("epiPagination"),
@@ -212,7 +232,6 @@
     settingConcurrency: document.getElementById("settingConcurrency"),
     settingNameUsePrefix: document.getElementById("settingNameUsePrefix"),
     settingNameIncludeTitle: document.getElementById("settingNameIncludeTitle"),
-    settingNameUseSuffix: document.getElementById("settingNameUseSuffix"),
     settingNameSeparator: document.getElementById("settingNameSeparator"),
     settingNamePreview: document.getElementById("settingNamePreview"),
     settingQualityPills: document.querySelectorAll("#settingQualityPills .quality-pill"),
@@ -288,6 +307,53 @@
     if (item && item.source_label) return item.source_label;
     const p = platformOf(item);
     return (PLATFORM_META[p] && PLATFORM_META[p].label) || p;
+  }
+
+  function followingKey(item) {
+    return `${platformOf(item)}:${String(item && item.id || "")}`;
+  }
+
+  function persistFollowing() {
+    localStorage.setItem(
+      "followingItems",
+      JSON.stringify(Array.from(state.followingItems.values()))
+    );
+  }
+
+  function isFollowing(item) {
+    return !!(item && item.id && state.followingItems.has(followingKey(item)));
+  }
+
+  function toggleFollowing(item) {
+    if (!item || !item.id) return false;
+    const key = followingKey(item);
+    if (state.followingItems.has(key)) {
+      state.followingItems.delete(key);
+    } else {
+      const p = platformOf(item);
+      state.followingItems.set(key, {
+        id: String(item.id),
+        title: displayTitle(item),
+        cover: item.cover || "",
+        author: item.author || "",
+        desc: item.desc || "",
+        platform: p,
+        source_label: sourceLabelOf(item),
+        extra: item.extra || {},
+        last_seen_segments: Array.isArray(item.segments) ? item.segments.length : 0,
+        followed_at: new Date().toISOString(),
+      });
+    }
+    persistFollowing();
+    updateFollowButton();
+    return state.followingItems.has(key);
+  }
+
+  function updateFollowButton() {
+    if (!elements.btnToggleFollow) return;
+    const active = isFollowing(state.currentDetail);
+    elements.btnToggleFollow.textContent = active ? "♥ 已追更" : "♡ 追更";
+    elements.btnToggleFollow.classList.toggle("active", active);
   }
 
   function displayTitle(item) {
@@ -692,8 +758,7 @@
     if (p.nameIncludeTitle) parts.push(title || "标题");
     let name = parts.join(sep);
     if (!name) name = num;
-    if (p.nameUseSuffix) name += ".txt";
-    else name += ".txt";
+    name += ".txt";
     return name;
   }
 
@@ -717,7 +782,6 @@
     }
     if (elements.settingNameUsePrefix) p.nameUsePrefix = !!elements.settingNameUsePrefix.checked;
     if (elements.settingNameIncludeTitle) p.nameIncludeTitle = !!elements.settingNameIncludeTitle.checked;
-    if (elements.settingNameUseSuffix) p.nameUseSuffix = !!elements.settingNameUseSuffix.checked;
     if (elements.settingNameSeparator) p.nameSeparator = elements.settingNameSeparator.value || ".";
     // quality / numberStyle 由 pill 写入 state.prefs
     if (elements.selectQuality && p.rememberQuality) {
@@ -739,7 +803,6 @@
     set("pref_concurrency", String(p.concurrency || 2));
     set("pref_nameUsePrefix", p.nameUsePrefix ? "1" : "0");
     set("pref_nameIncludeTitle", p.nameIncludeTitle ? "1" : "0");
-    set("pref_nameUseSuffix", p.nameUseSuffix ? "1" : "0");
     set("pref_numberStyle", p.numberStyle || "01");
     set("pref_nameSeparator", p.nameSeparator || ".");
   }
@@ -757,7 +820,6 @@
     if (elements.settingConcurrency) elements.settingConcurrency.value = String(p.concurrency || 2);
     if (elements.settingNameUsePrefix) elements.settingNameUsePrefix.checked = !!p.nameUsePrefix;
     if (elements.settingNameIncludeTitle) elements.settingNameIncludeTitle.checked = !!p.nameIncludeTitle;
-    if (elements.settingNameUseSuffix) elements.settingNameUseSuffix.checked = !!p.nameUseSuffix;
     if (elements.settingNameSeparator) elements.settingNameSeparator.value = p.nameSeparator || ".";
     if (elements.settingQualityPills) {
       elements.settingQualityPills.forEach((btn) => {
@@ -793,7 +855,6 @@
       naming: {
         use_prefix: !!p.nameUsePrefix,
         include_title: !!p.nameIncludeTitle,
-        use_suffix: !!p.nameUseSuffix,
         number_style: p.numberStyle || "01",
         separator: p.nameSeparator || ".",
       },
@@ -834,7 +895,8 @@
     });
 
     if (pageId === "page-home") {
-      loadDiscover();
+      if (state.discoverView === "discover") loadDiscover();
+      else renderHomeFeatureView(state.discoverView);
       stopJobsPolling();
     } else if (pageId === "page-library") {
       loadLocalFiles();
@@ -854,7 +916,7 @@
   }
 
   // 4. 执行资源搜索（支持 platform=all 聚合 + 来源标记）
-  async function doSearch() {
+  async function doSearch(page, append) {
     const query = elements.inputSearchQuery.value.trim();
     if (!query) {
       toast(
@@ -867,21 +929,47 @@
       );
       return;
     }
-    elements.btnSearch.textContent = "搜索中...";
-    elements.btnSearch.disabled = true;
-    setSearchBanner("正在搜索…（聚合时可能需等待签名环境）", "info");
-    renderSearchSkeleton();
+    const nextPage = Number(page) > 0 ? Number(page) : 1;
+    const isAppend = !!append && query === state.lastSearchQuery;
+    if (isAppend && elements.btnLoadMore) {
+      elements.btnLoadMore.textContent = "加载中...";
+      elements.btnLoadMore.disabled = true;
+    } else {
+      elements.btnSearch.textContent = "搜索中...";
+      elements.btnSearch.disabled = true;
+      setSearchBanner("正在搜索…（聚合时可能需等待签名环境）", "info");
+      renderSearchSkeleton();
+    }
 
     try {
       const platParam = state.platform || "all";
       const timeoutMs = platParam === "hongguo" ? 30000 : 45000;
       const data = await apiFetch(
-        `/v1/search?platform=${encodeURIComponent(platParam)}&q=${encodeURIComponent(query)}`,
+        `/v1/search?platform=${encodeURIComponent(platParam)}&q=${encodeURIComponent(query)}&page=${nextPage}`,
         { timeoutMs }
       );
       const items = Array.isArray(data) ? data : (data.items || []);
       const platformErrors = Array.isArray(data) ? {} : (data.platform_errors || {});
-      state.allSearchResults = items;
+      if (isAppend) {
+        const merged = [...state.allSearchResults];
+        const seen = new Set(merged.map((item) => `${platformOf(item)}:${item.id}`));
+        items.forEach((item) => {
+          const key = `${platformOf(item)}:${item.id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            merged.push(item);
+          }
+        });
+        state.allSearchResults = merged;
+      } else {
+        state.allSearchResults = items;
+      }
+      state.searchPage = nextPage;
+      state.lastSearchQuery = query;
+      state.searchHasMore = !!(data && data.has_more);
+      if (elements.btnLoadMore) {
+        elements.btnLoadMore.style.display = state.searchHasMore ? "" : "none";
+      }
       state.lastPlatformErrors = platformErrors;
       state.searchFilter = "all";
       if (elements.searchFilterChips) {
@@ -892,7 +980,7 @@
       applySearchFilter();
 
       const errKeys = Object.keys(platformErrors);
-      if (items.length > 0) {
+      if (state.allSearchResults.length > 0) {
         if (errKeys.length > 0) {
           const errHtml = errKeys
             .map((k) => `<div>· <b>${escapeHtml(k)}</b>: ${escapeHtml(platformErrors[k])}</div>`)
@@ -903,9 +991,11 @@
           setSearchBanner("", "");
         }
         if (elements.searchRightPanel) elements.searchRightPanel.style.display = "flex";
-        const first = (state.searchResults && state.searchResults[0]) || items[0];
-        state.selectedPlatform = platformOf(first);
-        loadDetail(first.id, state.selectedPlatform);
+        if (!isAppend) {
+          const first = (state.searchResults && state.searchResults[0]) || items[0];
+          state.selectedPlatform = platformOf(first);
+          loadDetail(first.id, state.selectedPlatform);
+        }
       } else {
         let msg = "未搜索到相关资源，请尝试更改关键词或使用「载入 ID」。";
         if (errKeys.length > 0) {
@@ -924,10 +1014,16 @@
       toast(`搜索失败: ${e.message}`, "error");
       state.allSearchResults = [];
       state.searchResults = [];
+      state.searchHasMore = false;
+      if (elements.btnLoadMore) elements.btnLoadMore.style.display = "none";
       renderSearchResults([]);
     } finally {
       elements.btnSearch.textContent = "搜索";
       elements.btnSearch.disabled = false;
+      if (elements.btnLoadMore) {
+        elements.btnLoadMore.textContent = "加载更多资源";
+        elements.btnLoadMore.disabled = false;
+      }
     }
   }
 
@@ -1065,30 +1161,45 @@
       }
 
       renderEpisodesGrid(detail.segments || []);
+      updateFollowButton();
     } catch (e) {
       toast(`获取详情失败: ${e.message}`, "error");
     }
   }
 
-  function renderEpisodesGrid(segments) {
+  function renderEpisodesGrid(segments, preserveSelection) {
     if (!elements.epiChipGrid) return;
     elements.epiChipGrid.innerHTML = "";
-    state.selectedEpisodes.clear();
+    if (!preserveSelection) {
+      state.currentSegments = Array.isArray(segments) ? segments : [];
+      state.episodePage = 1;
+      state.selectedEpisodes.clear();
+      state.currentSegments.forEach((seg, idx) => {
+        state.selectedEpisodes.add(seg.index || idx + 1);
+      });
+    }
+    const allSegments = state.currentSegments;
 
-    if (!segments || segments.length === 0) {
+    if (!allSegments.length) {
       elements.epiChipGrid.innerHTML =
         `<div class="epi-empty-hint">暂无章节/剧集列表。可尝试「下载全部」，或确认资源 ID 是否正确。</div>`;
+      if (elements.epiPagination) elements.epiPagination.innerHTML = "";
       updateSelectedCountLabel();
       return;
     }
 
-    segments.forEach((seg, idx) => {
-      const epIndex = seg.index || idx + 1;
-      state.selectedEpisodes.add(epIndex);
+    const pageSize = 100;
+    const totalPages = Math.max(1, Math.ceil(allSegments.length / pageSize));
+    state.episodePage = Math.min(totalPages, Math.max(1, state.episodePage));
+    const start = (state.episodePage - 1) * pageSize;
+    const pageRows = allSegments.slice(start, start + pageSize);
+
+    pageRows.forEach((seg, idx) => {
+      const epIndex = seg.index || start + idx + 1;
       const label = document.createElement("label");
       label.className = "epi-chip-item";
       label.innerHTML = `
-        <input type="checkbox" checked value="${epIndex}">
+        <input type="checkbox" ${state.selectedEpisodes.has(epIndex) ? "checked" : ""} value="${epIndex}">
         <span>${escapeHtml(seg.title || "第 " + epIndex + " 集")}</span>
       `;
 
@@ -1104,6 +1215,23 @@
       elements.epiChipGrid.appendChild(label);
     });
 
+    if (elements.epiPagination) {
+      elements.epiPagination.innerHTML = totalPages > 1
+        ? `<button class="btn-secondary" id="btnEpisodePrev" ${state.episodePage <= 1 ? "disabled" : ""}>上一页</button>
+           <span>第 ${state.episodePage} / ${totalPages} 页</span>
+           <button class="btn-secondary" id="btnEpisodeNext" ${state.episodePage >= totalPages ? "disabled" : ""}>下一页</button>`
+        : "";
+      const prev = document.getElementById("btnEpisodePrev");
+      const next = document.getElementById("btnEpisodeNext");
+      if (prev) prev.addEventListener("click", () => {
+        state.episodePage -= 1;
+        renderEpisodesGrid(state.currentSegments, true);
+      });
+      if (next) next.addEventListener("click", () => {
+        state.episodePage += 1;
+        renderEpisodesGrid(state.currentSegments, true);
+      });
+    }
     updateSelectedCountLabel();
   }
 
@@ -1158,71 +1286,97 @@
     });
   }
 
-  function renderHomeFeatureView(view) {
+  async function renderHomeFeatureView(view) {
     if (!elements.homeSections) return;
     const plat = state.discoverPlatform || "hongguo";
     const meta = PLATFORM_META[plat] || PLATFORM_META.hongguo;
-    const configs = {
-      ranking: {
-        eyebrow: "RANKING",
-        icon: "↗",
-        title: `${meta.short}排行榜`,
-        copy: "按热度、涨幅和口碑发现近期值得关注的作品。",
-        chips: ["热度榜", "飙升榜", "新作榜"],
-        action: "先去搜索热门作品",
-      },
-      calendar: {
-        eyebrow: "CALENDAR",
-        icon: "▦",
-        title: `${meta.short}上线日历`,
-        copy: "按日期查看待上线与近期更新内容，减少错过新作和新集。",
-        chips: ["今天", "明天", "本周", "下周"],
-        action: "搜索近期作品",
-      },
-      following: {
-        eyebrow: "FOLLOWING",
-        icon: "♡",
-        title: "我的追更",
-        copy: "收藏作品并订阅更新，后续可在发现新集时提醒或自动加入队列。",
-        chips: ["全部订阅", "今日更新", "等待更新"],
-        action: "查找想追更的作品",
-      },
-    };
-    const config = configs[view] || configs.ranking;
     if (elements.homeDiscoverNote) {
-      elements.homeDiscoverNote.innerHTML =
-        `<span class="home-note-dot"></span>${escapeHtml(config.title)}界面已就绪，内容服务后续接入`;
+      elements.homeDiscoverNote.innerHTML = `<span class="home-note-dot"></span>正在加载${escapeHtml(meta.short)}内容`;
     }
-    elements.homeSections.innerHTML = `
-      <section class="home-feature-shell" data-view="${escapeHtml(view)}">
-        <div class="home-feature-head">
-          <div>
-            <div class="home-feature-eyebrow">${escapeHtml(config.eyebrow)}</div>
-            <h2>${escapeHtml(config.title)}</h2>
-            <p>${escapeHtml(config.copy)}</p>
-          </div>
-          <div class="home-feature-icon">${escapeHtml(config.icon)}</div>
-        </div>
-        <div class="home-feature-filters">
-          ${config.chips
-            .map((chip, index) => `<button class="home-feature-chip${index === 0 ? " active" : ""}" disabled>${escapeHtml(chip)}</button>`)
-            .join("")}
-        </div>
-        <div class="home-feature-empty">
-          <div class="home-feature-empty-visual">
-            <span>${escapeHtml(config.icon)}</span>
-          </div>
-          <div class="home-empty-title">${escapeHtml(config.title)}即将可用</div>
-          <div class="home-empty-copy">页面结构已经完成；接入对应接口后即可显示真实内容和操作状态。</div>
-          <button class="btn-primary" id="btnHomeFeatureSearch">${escapeHtml(config.action)}</button>
-        </div>
-      </section>`;
-    const searchBtn = document.getElementById("btnHomeFeatureSearch");
-    if (searchBtn) {
-      searchBtn.addEventListener("click", () => {
-        if (typeof setPlatform === "function") setPlatform(plat);
-        switchPage("page-search");
-      });
+    elements.homeSections.innerHTML = `<div class="home-loading"><div class="home-loading-card"></div><div class="home-loading-card"></div></div>`;
+    try {
+      if (view === "following") {
+        const storedItems = Array.from(state.followingItems.values()).filter(
+          (item) => platformOf(item) === plat
+        );
+        const items = await Promise.all(
+          storedItems.map(async (item) => {
+            try {
+              const detail = await apiFetch(
+                `/v1/detail?platform=${encodeURIComponent(plat)}&id=${encodeURIComponent(item.id)}`
+              );
+              const count = Array.isArray(detail.segments) ? detail.segments.length : 0;
+              return {
+                ...item,
+                ...detail,
+                extra: {
+                  ...(item.extra || {}),
+                  ...(detail.extra || {}),
+                  has_update: count > Number(item.last_seen_segments || 0),
+                  current_segments: count,
+                },
+              };
+            } catch (_) {
+              return item;
+            }
+          })
+        );
+        renderDiscover({
+          sections: [{
+            kind: "following",
+            title: "♡ 我的追更",
+            available: true,
+            items,
+          }],
+          platforms_queried: [plat],
+          data_mode: "live",
+        });
+        if (!items.length && elements.homeDiscoverNote) {
+          elements.homeDiscoverNote.innerHTML =
+            `<span class="home-note-dot"></span>还没有追更的${escapeHtml(meta.kind)}，在内容卡片或详情页点击“追更”即可加入`;
+        }
+        return;
+      }
+      const kind = view === "calendar" ? "new" : "hot";
+      const data = await apiFetch(
+        `/v1/discover?platform=${encodeURIComponent(plat)}&kinds=${kind}&limit=50`,
+        { timeoutMs: 15000 }
+      );
+      let sections;
+      if (view === "calendar") {
+        const groups = new Map();
+        (data.sections || []).flatMap((section) => section.items || []).forEach((item) => {
+          const rawTime = item.extra && item.extra.update_time;
+          const numeric = Number(rawTime || 0);
+          const date = numeric
+            ? new Date(numeric > 1e12 ? numeric : numeric * 1000)
+            : new Date();
+          const key = isNaN(date.getTime()) ? "日期未知" : date.toLocaleDateString("zh-CN");
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(item);
+        });
+        sections = Array.from(groups.entries()).map(([date, items]) => ({
+          kind: "calendar",
+          title: `▦ ${date} 更新 · ${meta.short}`,
+          available: true,
+          items,
+        }));
+      } else {
+        sections = (data.sections || []).map((section) => ({
+          ...section,
+          title: `↗ ${meta.short}热度排行榜`,
+        }));
+      }
+      renderDiscover({ ...data, sections });
+    } catch (error) {
+      elements.homeSections.innerHTML = `
+        <div class="home-error">
+          <div class="home-error-title">加载失败</div>
+          <div class="home-error-copy">${escapeHtml(error.message || "请稍后重试")}</div>
+          <button class="btn-primary" id="btnHomeFeatureRetry">重新加载</button>
+        </div>`;
+      const retry = document.getElementById("btnHomeFeatureRetry");
+      if (retry) retry.addEventListener("click", () => renderHomeFeatureView(view));
     }
   }
 
@@ -1310,7 +1464,7 @@
       box.setAttribute("data-kind", sec.kind || "");
       const status = sec.available
         ? `${(sec.items || []).length} 条内容`
-        : "即将上线";
+        : "暂时无法获取";
       const sectionTitle = sec.title || (sec.kind === "hot" ? "🔥 热门榜单" : "✨ 今日上新");
 
       let body = "";
@@ -1331,6 +1485,7 @@
               <div class="home-card" data-id="${escapeHtml(it.id)}" data-platform="${escapeHtml(p)}">
                 <div class="home-card-cover">
                   ${rank}${cover}
+                  <button class="home-card-follow" type="button" title="追更 ${escapeHtml(title)}">${isFollowing(it) ? "♥" : "♡"}</button>
                   <label class="home-card-select" title="选择 ${escapeHtml(title)}">
                     <input class="home-card-checkbox" type="checkbox" aria-label="选择 ${escapeHtml(title)}">
                     <span>✓</span>
@@ -1338,6 +1493,7 @@
                 </div>
                 <div class="home-card-body">
                   <div class="home-card-title">${escapeHtml(title)}</div>
+                  ${it.extra && it.extra.has_update ? `<div class="home-card-update">发现 ${escapeHtml(String(it.extra.current_segments || ""))} 条内容 · 有更新</div>` : ""}
                   <div class="home-card-footer">
                     <span class="source-badge ${escapeHtml(p)}">${escapeHtml(m.emoji)} ${escapeHtml(it.source_label || m.label)}</span>
                     <span class="home-card-open">查看 ›</span>
@@ -1366,6 +1522,21 @@
         ${body}`;
       box.querySelectorAll(".home-card").forEach((card) => {
         const checkbox = card.querySelector(".home-card-checkbox");
+        const followButton = card.querySelector(".home-card-follow");
+        if (followButton) {
+          followButton.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const id = card.getAttribute("data-id");
+            const p = card.getAttribute("data-platform") || plat;
+            const item = (sec.items || []).find((candidate) => String(candidate.id) === String(id));
+            if (!item) return;
+            const active = toggleFollowing({ ...item, platform: p });
+            followButton.textContent = active ? "♥" : "♡";
+            if (state.discoverView === "following" && !active) {
+              renderHomeFeatureView("following");
+            }
+          });
+        }
         if (checkbox) {
           checkbox.addEventListener("click", (event) => event.stopPropagation());
           checkbox.addEventListener("change", () => {
@@ -1385,6 +1556,16 @@
         card.addEventListener("click", () => {
           const id = card.getAttribute("data-id");
           const p = card.getAttribute("data-platform") || plat;
+          const item = (sec.items || []).find((candidate) => String(candidate.id) === String(id));
+          if (item && isFollowing({ ...item, platform: p })) {
+            const key = `${p}:${id}`;
+            const stored = state.followingItems.get(key);
+            if (stored && item.extra && item.extra.current_segments) {
+              stored.last_seen_segments = Number(item.extra.current_segments);
+              state.followingItems.set(key, stored);
+              persistFollowing();
+            }
+          }
           state.selectedPlatform = p;
           switchPage("page-search");
           if (elements.searchRightPanel) elements.searchRightPanel.style.display = "flex";
@@ -1637,6 +1818,7 @@
       card.innerHTML = `
         <div class="media-thumb-wrapper">
           <span class="media-type-tag" style="${isVideo ? '' : 'background: var(--color-fanqie);'}">${isVideo ? '🔴 MP4' : '🍅 TXT'}</span>
+          <img class="media-thumbnail-image" alt="${escapeHtml(file.title)}" hidden>
           <div class="media-placeholder" aria-hidden="true">${isVideo ? '🎬' : '📖'}</div>
         </div>
         <div class="media-body">
@@ -1659,6 +1841,7 @@
       });
 
       elements.libraryGrid.appendChild(card);
+      loadLibraryThumbnail(file, card);
     });
   }
 
@@ -1673,6 +1856,25 @@
     toast("浏览器模式的文件位于浏览器默认下载目录", "info", 4000);
   }
 
+  async function loadLibraryThumbnail(file, card) {
+    const image = card && card.querySelector(".media-thumbnail-image");
+    const placeholder = card && card.querySelector(".media-placeholder");
+    if (!image) return;
+    try {
+      const headers = {};
+      if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
+      else if (state.apiKey) headers["X-API-Key"] = state.apiKey;
+      const url =
+        `${state.apiBase}/v1/files/thumbnail?file_id=${encodeURIComponent(file.file_id)}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) return;
+      const blob = await response.blob();
+      image.src = URL.createObjectURL(blob);
+      image.hidden = false;
+      if (placeholder) placeholder.hidden = true;
+    } catch (_) {}
+  }
+
   async function syncNativeDownloadDirectory() {
     if (!(window.pywebview && window.pywebview.api && window.pywebview.api.get_download_directory)) {
       if (elements.btnChooseOutputDir) elements.btnChooseOutputDir.disabled = true;
@@ -1684,6 +1886,8 @@
       if (runtime && runtime.success && runtime.api_base) {
         state.nativeApiBase = runtime.api_base;
         state.apiBase = runtime.api_base;
+        state.clientVersion = runtime.client_version || state.clientVersion;
+        state.installId = runtime.install_id || "";
         localStorage.removeItem("apiBase");
         if (elements.settingApiBase) {
           elements.settingApiBase.value = runtime.api_base;
@@ -1699,12 +1903,51 @@
   }
 
   // 9. 检查软件版本更新 (/v1/version)
-  async function checkVersion() {
+  async function checkVersion(silent) {
     try {
-      const data = await apiFetch("/v1/version");
-      toast(`版本 ${data.latest_version}：${data.release_notes || "无说明"}`, "info", 4000);
+      const query =
+        `?current_version=${encodeURIComponent(state.clientVersion || "1.0.0")}` +
+        `&install_id=${encodeURIComponent(state.installId || "")}`;
+      const data = await apiFetch(`/v1/version${query}`);
+      if (!data.update_check_enabled || !data.has_update) {
+        if (!silent) {
+          toast(`当前版本 ${state.clientVersion} 已是最新版本`, "success", 3500);
+        }
+        return;
+      }
+      const prompt =
+        `发现新版本 ${data.latest_version}\n\n${data.release_notes || "无更新说明"}` +
+        (data.mandatory ? "\n\n该版本为必须更新。" : "\n\n是否现在下载并安装？");
+      if (!window.confirm(prompt)) {
+        if (data.mandatory) toast("必须完成更新后才能继续使用新版本功能", "warning", 5000);
+        return;
+      }
+      if (
+        window.pywebview &&
+        window.pywebview.api &&
+        window.pywebview.api.download_update &&
+        window.pywebview.api.install_update
+      ) {
+        toast("正在下载并校验更新包…", "info", 5000);
+        const result = await window.pywebview.api.download_update(
+          data.download_url,
+          data.sha256 || ""
+        );
+        if (!result || !result.success) {
+          throw new Error((result && result.message) || "更新包下载失败");
+        }
+        const installed = await window.pywebview.api.install_update(
+          result.path,
+          !!data.mandatory
+        );
+        if (!installed || !installed.success) {
+          throw new Error((installed && installed.message) || "更新安装程序启动失败");
+        }
+        return;
+      }
+      window.location.href = data.download_url;
     } catch (e) {
-      toast(`检查版本失败: ${e.message}`, "error");
+      if (!silent) toast(`检查版本失败: ${e.message}`, "error");
     }
   }
 
@@ -1755,7 +1998,7 @@
 
   function applyHealthToUI(data) {
     state.lastHealth = data;
-    const verStr = data.version || "1.0.0";
+    const verStr = state.clientVersion || data.version || "1.0.0";
     const status = (data.status || "ok").toLowerCase();
     const summary = data.summary || "";
     const checks = data.checks || [];
@@ -1868,12 +2111,23 @@
     });
 
     if (elements.btnSearch) elements.btnSearch.addEventListener("click", doSearch);
+    if (elements.btnLoadMore) {
+      elements.btnLoadMore.addEventListener("click", () => {
+        if (state.searchHasMore) doSearch(state.searchPage + 1, true);
+      });
+    }
     if (elements.inputSearchQuery) {
       elements.inputSearchQuery.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
           doSearch();
         }
+      });
+    }
+    if (elements.btnToggleFollow) {
+      elements.btnToggleFollow.addEventListener("click", () => {
+        const active = toggleFollowing(state.currentDetail);
+        toast(active ? "已加入我的追更" : "已取消追更", "success");
       });
     }
 
@@ -2024,7 +2278,9 @@
       elements.btnRefreshHealth.addEventListener("click", () => checkServerHealth());
     }
 
-    if (elements.btnCheckUpdate) elements.btnCheckUpdate.addEventListener("click", checkVersion);
+    if (elements.btnCheckUpdate) {
+      elements.btnCheckUpdate.addEventListener("click", () => checkVersion(false));
+    }
 
     if (elements.btnDownloadAll) {
       elements.btnDownloadAll.addEventListener("click", () => createDownloadJob("all"));
@@ -2087,7 +2343,7 @@
         });
       });
     }
-    ["settingNameUsePrefix", "settingNameIncludeTitle", "settingNameUseSuffix", "settingNameSeparator"].forEach((id) => {
+    ["settingNameUsePrefix", "settingNameIncludeTitle", "settingNameSeparator"].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener("change", () => {
@@ -2121,6 +2377,15 @@
         }
         readPrefsFromForm();
         persistPrefs();
+        if (
+          window.pywebview &&
+          window.pywebview.api &&
+          window.pywebview.api.set_remember_download_directory
+        ) {
+          window.pywebview.api
+            .set_remember_download_directory(!!state.prefs.rememberOutputDir)
+            .catch(() => {});
+        }
         // 开发者选项：仅在表单有值时覆盖
         if (candidateBase) {
           state.apiBase = candidateBase;
@@ -2174,7 +2439,6 @@
           concurrency: 2,
           nameUsePrefix: true,
           nameIncludeTitle: true,
-          nameUseSuffix: false,
           numberStyle: "01",
           nameSeparator: ".",
         };
@@ -2189,7 +2453,6 @@
           "pref_concurrency",
           "pref_nameUsePrefix",
           "pref_nameIncludeTitle",
-          "pref_nameUseSuffix",
           "pref_numberStyle",
           "pref_nameSeparator",
         ].forEach((k) => localStorage.removeItem(k));
@@ -2217,7 +2480,10 @@
           toast("浏览器模式下请在浏览器设置中修改下载目录", "info", 4000);
           return;
         }
-        const result = await window.pywebview.api.choose_download_directory();
+        const remember = elements.settingRememberOutputDir
+          ? !!elements.settingRememberOutputDir.checked
+          : true;
+        const result = await window.pywebview.api.choose_download_directory(remember);
         if (result && result.success) {
           state.prefs.outputDir = result.path;
           if (elements.settingOutputDir) elements.settingOutputDir.value = result.path;
@@ -2313,6 +2579,8 @@
   });
 
   window.addEventListener("pywebviewready", () => {
-    syncNativeDownloadDirectory().catch(() => {});
+    syncNativeDownloadDirectory()
+      .then(() => checkVersion(true))
+      .catch(() => {});
   });
 })();

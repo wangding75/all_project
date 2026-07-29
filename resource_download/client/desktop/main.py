@@ -10,11 +10,13 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import json
 import logging
 import os
 import re
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -24,6 +26,11 @@ import urllib.request
 from pathlib import Path
 
 import webview
+
+try:
+    from client.desktop.version import CLIENT_VERSION
+except ImportError:
+    from version import CLIENT_VERSION
 
 # ---------------------------------------------------------------------------
 # 路径：client/desktop/main.py → repo root = parents[2]
@@ -99,14 +106,31 @@ class WindowApi:
         self._local_files: dict[str, Path] = {}
         local_app_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".resource-downloader"))
         self._preferences_path = local_app_data / "ResourceDownloader" / "client.json"
+        self._updates_dir = local_app_data / "ResourceDownloader" / "updates"
+        self._install_id = ""
         try:
             if self._preferences_path.is_file():
                 payload = json.loads(self._preferences_path.read_text(encoding="utf-8"))
                 saved_dir = str(payload.get("download_directory") or "").strip()
                 if saved_dir:
                     self._download_dir = Path(saved_dir).expanduser().resolve()
+                self._install_id = str(payload.get("install_id") or "").strip()
         except Exception:
             log.warning("无法读取客户端本地偏好，将使用默认下载目录")
+        if not self._install_id:
+            import uuid
+
+            self._install_id = uuid.uuid4().hex
+            self._persist_preferences(remember_directory=False)
+
+    def _persist_preferences(self, *, remember_directory: bool) -> None:
+        self._preferences_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"install_id": self._install_id}
+        if remember_directory:
+            payload["download_directory"] = str(self._download_dir)
+        temp_path = self._preferences_path.with_suffix(".tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        temp_path.replace(self._preferences_path)
 
     def bind(self, window: webview.Window) -> None:
         self._window = window
@@ -138,9 +162,11 @@ class WindowApi:
             "success": True,
             "api_base": self.api_base,
             "download_directory": str(self._download_dir),
+            "client_version": CLIENT_VERSION,
+            "install_id": self._install_id,
         }
 
-    def choose_download_directory(self) -> dict[str, object]:
+    def choose_download_directory(self, remember: bool = True) -> dict[str, object]:
         if not self._window:
             return {"success": False, "message": "窗口尚未就绪"}
         try:
@@ -153,17 +179,69 @@ class WindowApi:
             chosen = Path(selected[0]).expanduser().resolve()
             chosen.mkdir(parents=True, exist_ok=True)
             self._download_dir = chosen
-            self._preferences_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = self._preferences_path.with_suffix(".tmp")
-            temp_path.write_text(
-                json.dumps({"download_directory": str(chosen)}, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            temp_path.replace(self._preferences_path)
+            self._persist_preferences(remember_directory=bool(remember))
             return {"success": True, "path": str(chosen)}
         except Exception as exc:
             log.exception("选择本地下载目录失败")
             return {"success": False, "message": f"选择目录失败: {exc}"}
+
+    def set_remember_download_directory(self, remember: bool) -> dict[str, object]:
+        try:
+            self._persist_preferences(remember_directory=bool(remember))
+            return {"success": True, "remember": bool(remember)}
+        except Exception as exc:
+            return {"success": False, "message": f"保存目录偏好失败: {exc}"}
+
+    def download_update(self, url: str, sha256: str = "") -> dict[str, object]:
+        """安全下载更新安装包；仅接受 HTTPS 并校验服务端发布的 SHA-256。"""
+        try:
+            parsed = urllib.parse.urlparse(url)
+            if parsed.scheme != "https" or not parsed.hostname:
+                return {"success": False, "message": "更新地址必须使用 HTTPS"}
+            name = _safe_filename(Path(parsed.path).name or "ResourceDownloader-Setup.exe")
+            if not name.lower().endswith(".exe"):
+                return {"success": False, "message": "更新包必须是 Windows EXE 安装程序"}
+            self._updates_dir.mkdir(parents=True, exist_ok=True)
+            target = self._updates_dir / name
+            partial = target.with_suffix(target.suffix + ".part")
+            digest = hashlib.sha256()
+            request = urllib.request.Request(url, headers={"User-Agent": f"ResourceDownloader/{CLIENT_VERSION}"})
+            with urllib.request.urlopen(request, timeout=300) as response, partial.open("wb") as output:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            actual = digest.hexdigest().lower()
+            expected = str(sha256 or "").strip().lower()
+            if not expected or actual != expected:
+                partial.unlink(missing_ok=True)
+                return {"success": False, "message": "更新包 SHA-256 校验失败"}
+            partial.replace(target)
+            return {"success": True, "path": str(target), "sha256": actual}
+        except Exception as exc:
+            log.exception("下载客户端更新失败")
+            return {"success": False, "message": f"下载更新失败: {exc}"}
+
+    def install_update(self, path: str, mandatory: bool = False) -> dict[str, object]:
+        """启动已校验安装包，安装器负责替换旧版本。"""
+        try:
+            target = Path(path).resolve()
+            updates_root = self._updates_dir.resolve()
+            if not target.is_file() or not target.is_relative_to(updates_root):
+                return {"success": False, "message": "更新包路径无效"}
+            args = [str(target), "/SP-", "/SILENT", "/NORESTART"]
+            subprocess.Popen(args, cwd=str(target.parent))
+            if self._window:
+                self._window.destroy()
+            threading.Timer(0.5, lambda: os._exit(0)).start()
+            return {"success": True, "mandatory": bool(mandatory)}
+        except Exception as exc:
+            log.exception("启动客户端更新失败")
+            return {"success": False, "message": f"启动更新失败: {exc}"}
 
     def download_file(
         self,

@@ -296,7 +296,25 @@ ByteVC2 编码，只用于诊断，不作为通用播放器可播放下载。
 
 ## GET /v1/version
 
-客户端检查更新用。当前返回占位版本数据。
+客户端检查更新用。支持 `current_version` 和稳定灰度用的 `install_id` 查询参数。
+
+```json
+{
+  "version": "1.0.0",
+  "update_check_enabled": true,
+  "latest_version": "1.1.0",
+  "has_update": true,
+  "download_url": "https://download.example.com/ResourceDownloader-1.1.0-Setup.exe",
+  "sha256": "64位SHA-256",
+  "mandatory": false,
+  "minimum_supported_version": "1.0.0",
+  "rollout_percentage": 20,
+  "release_notes": "本次更新内容"
+}
+```
+
+未配置 `CLIENT_UPDATE_URL` 时更新检查关闭。桌面客户端只接受 HTTPS
+安装包，并在启动安装程序前严格校验 SHA-256。
 
 ---
 

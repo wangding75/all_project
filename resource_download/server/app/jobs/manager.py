@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -80,6 +81,7 @@ class JobManager:
         self._running_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
         self._run_slots = asyncio.Semaphore(max(1, self.settings.max_concurrent_jobs))
+        self._speed_samples: dict[str, tuple[float, int]] = {}
 
     def can_access_job(self, record: JobRecord, identity: Identity) -> bool:
         if identity.is_ops or identity.kind == "api_key":
@@ -199,6 +201,9 @@ class JobManager:
             self._evict_old_completed_jobs(max_history_jobs=200)
 
         await self._persist_async(record)
+        from app.logger import metrics_tracker
+
+        metrics_tracker.record_job_created(platform.value)
         task = asyncio.create_task(self._run_job(job_id))
         self._running_tasks[job_id] = task
         return record
@@ -316,10 +321,15 @@ class JobManager:
         except Exception:  # noqa: BLE001
             disk_free_human = "未知"
 
+        speed = await asyncio.to_thread(
+            self._measure_speed,
+            "ops",
+            [job.job_id for job in self._jobs.values()],
+        )
         return {
             "active_jobs": active,
             "completed_jobs": completed,
-            "total_speed_human": "0.0 MB/s",
+            "total_speed_human": self._format_speed(speed),
             "disk_free_human": disk_free_human,
         }
 
@@ -336,12 +346,51 @@ class JobManager:
         except Exception:  # noqa: BLE001
             disk_free_human = "未知"
 
+        speed_key = (
+            f"user:{identity.user_id}"
+            if identity.kind == "user"
+            else f"{identity.kind}:ops"
+        )
+        speed = await asyncio.to_thread(
+            self._measure_speed,
+            speed_key,
+            [job.job_id for job in accessible_jobs],
+        )
         return {
             "active_jobs": active,
             "completed_jobs": completed,
-            "total_speed_human": "0.0 MB/s",
+            "total_speed_human": self._format_speed(speed),
             "disk_free_human": disk_free_human,
         }
+
+    def _measure_speed(self, key: str, job_ids: list[str]) -> float:
+        total_bytes = 0
+        for job_id in job_ids:
+            job_dir = self.settings.outputs_dir / job_id
+            if not job_dir.is_dir():
+                continue
+            try:
+                total_bytes += sum(
+                    path.stat().st_size
+                    for path in job_dir.rglob("*")
+                    if path.is_file()
+                )
+            except OSError:
+                continue
+        now = time.monotonic()
+        previous = self._speed_samples.get(key)
+        self._speed_samples[key] = (now, total_bytes)
+        if previous is None or now <= previous[0] or total_bytes < previous[1]:
+            return 0.0
+        return (total_bytes - previous[1]) / (now - previous[0])
+
+    @staticmethod
+    def _format_speed(bytes_per_second: float) -> str:
+        if bytes_per_second >= 1024**2:
+            return f"{bytes_per_second / (1024**2):.1f} MB/s"
+        if bytes_per_second >= 1024:
+            return f"{bytes_per_second / 1024:.1f} KB/s"
+        return f"{bytes_per_second:.0f} B/s"
 
     def resolve_file(self, file_id: str) -> Path | None:
         file_id_clean = file_id.strip()
@@ -450,6 +499,9 @@ class JobManager:
                     record.error = None
                     record.updated_at = _utc_now()
             await self._persist_async(record)
+            from app.logger import metrics_tracker
+
+            metrics_tracker.record_job_success(record.platform.value)
         except asyncio.CancelledError:
             out_dir = self.settings.outputs_dir / job_id
             if out_dir.exists():
@@ -473,6 +525,9 @@ class JobManager:
                     record.message = "failed"
                     record.updated_at = _utc_now()
                     await self._persist_async(record)
+                    from app.logger import metrics_tracker
+
+                    metrics_tracker.record_job_failed(record.platform.value)
         finally:
             if slot_acquired:
                 self._run_slots.release()
