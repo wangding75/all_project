@@ -55,6 +55,10 @@ async def lifespan(_app: FastAPI):
 
     manager = get_job_manager()
     await manager.load_jobs()
+    from app.automation import get_hongguo_monitor_service
+
+    monitor = get_hongguo_monitor_service()
+    monitor.start()
 
     if settings.sign_pool_enabled:
         from app.sign_pool import get_sign_pool
@@ -95,6 +99,7 @@ async def lifespan(_app: FastAPI):
 
     yield
     logging.info("服务端收到退出信号，开始执行优雅关机流程...")
+    await monitor.stop()
     await manager.shutdown()
 
 

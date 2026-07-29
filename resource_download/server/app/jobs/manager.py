@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -43,6 +44,7 @@ class JobRecord:
     updated_at: str = field(default_factory=_utc_now)
     owner_user_id: int | None = None
     owner_kind: str | None = None
+    queue_position: int = 0
 
     def to_response(self) -> JobResponse:
         extra_dict: dict[str, Any] = {
@@ -53,6 +55,7 @@ class JobRecord:
             extra_dict["owner_user_id"] = self.owner_user_id
         if self.owner_kind is not None:
             extra_dict["owner_kind"] = self.owner_kind
+        extra_dict["queue_position"] = self.queue_position
         # 客户端建任务时传入的书名/剧名
         if isinstance(self.options, dict):
             title = self.options.get("title")
@@ -80,8 +83,13 @@ class JobManager:
         self._jobs: dict[str, JobRecord] = {}
         self._running_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
-        self._run_slots = asyncio.Semaphore(max(1, self.settings.max_concurrent_jobs))
+        self._persist_lock = threading.Lock()
         self._speed_samples: dict[str, tuple[float, int]] = {}
+        self._queue_counter = 0
+        self._paused_owners: set[str] = set()
+        self._dispatcher_task: asyncio.Task | None = None
+        self._queue_changed = asyncio.Event()
+        self._closing = False
 
     def can_access_job(self, record: JobRecord, identity: Identity) -> bool:
         if identity.is_ops or identity.kind == "api_key":
@@ -93,6 +101,18 @@ class JobManager:
                 and record.owner_user_id == identity.user_id
             )
         return False
+
+    @staticmethod
+    def _owner_key(owner_kind: str | None, owner_user_id: int | None) -> str:
+        if owner_kind == "user" and owner_user_id is not None:
+            return f"user:{owner_user_id}"
+        return "ops"
+
+    @staticmethod
+    def _identity_owner_key(identity: Identity) -> str:
+        if identity.kind == "user" and identity.user_id is not None:
+            return f"user:{identity.user_id}"
+        return "ops"
 
     def can_access_file(self, file_id: str, identity: Identity) -> bool:
         if identity.is_ops or identity.kind == "api_key":
@@ -124,7 +144,7 @@ class JobManager:
                         continue
                     status_str = data.get("status", "pending")
                     status = JobStatus(status_str) if status_str in JobStatus.__members__ else JobStatus.failed
-                    was_active = status in (JobStatus.pending, JobStatus.running, JobStatus.cancelling)
+                    was_active = status in (JobStatus.running, JobStatus.cancelling)
                     if was_active:
                         status = JobStatus.failed
                         data["error"] = "服务重启，任务已被中断"
@@ -146,9 +166,19 @@ class JobManager:
                         updated_at=data.get("updated_at", _utc_now()),
                         owner_user_id=data.get("owner_user_id"),
                         owner_kind=data.get("owner_kind"),
+                        queue_position=int(data.get("queue_position") or 0),
                     )
+                    if record.queue_position <= 0:
+                        self._queue_counter += 1
+                        record.queue_position = self._queue_counter
+                    else:
+                        self._queue_counter = max(self._queue_counter, record.queue_position)
                     self._jobs[job_id] = record
-                    if was_active:
+                    if record.status == JobStatus.paused:
+                        self._paused_owners.add(
+                            self._owner_key(record.owner_kind, record.owner_user_id)
+                        )
+                    if was_active or not data.get("queue_position"):
                         self._persist(record)
                 except Exception as exc:  # noqa: BLE001
                     logger.error("读取坏损任务 JSON 文件失败: %s, 错误: %s", file_path, exc)
@@ -157,13 +187,23 @@ class JobManager:
                         os.replace(file_path, corrupted_path)
                     except Exception:  # noqa: BLE001
                         pass
+        self._ensure_dispatcher()
+        self._queue_changed.set()
 
     async def shutdown(self) -> None:
         """优雅关闭：通知所有运行中的任务取消，等待 Task 结束并持久化最终状态。"""
+        self._closing = True
+        self._queue_changed.set()
+        if self._dispatcher_task and not self._dispatcher_task.done():
+            self._dispatcher_task.cancel()
+            try:
+                await self._dispatcher_task
+            except asyncio.CancelledError:
+                pass
         async with self._lock:
             running_job_ids = [
                 j_id for j_id, j in self._jobs.items()
-                if j.status in (JobStatus.pending, JobStatus.running, JobStatus.cancelling)
+                if j.status in (JobStatus.running, JobStatus.cancelling)
             ]
         for job_id in running_job_ids:
             await self.cancel_job(job_id)
@@ -178,16 +218,34 @@ class JobManager:
         max_active: int | None = None,
         owner_user_id: int | None = None,
         owner_kind: str | None = None,
+        priority: bool = False,
     ) -> JobRecord:
+        # TestClient / embedded 模式可能在同一进程内完成一次 shutdown 后重新启动。
+        if self._closing:
+            self._closing = False
+            self._dispatcher_task = None
         async with self._lock:
             active_count = sum(
-                1 for j in self._jobs.values() if j.status in (JobStatus.pending, JobStatus.running)
+                1
+                for j in self._jobs.values()
+                if j.status in (JobStatus.pending, JobStatus.paused, JobStatus.running)
             )
             queue_limit = max_active or self.settings.max_queued_jobs
             if active_count >= queue_limit:
                 raise RuntimeError("job queue capacity reached")
 
             job_id = uuid.uuid4().hex[:12]
+            if priority:
+                queue_position = min(
+                    (
+                        job.queue_position
+                        for job in self._jobs.values()
+                        if job.status in (JobStatus.pending, JobStatus.paused)
+                    ),
+                    default=1,
+                ) - 1
+            else:
+                queue_position = self._queue_counter + 1
             record = JobRecord(
                 job_id=job_id,
                 platform=platform,
@@ -196,7 +254,17 @@ class JobManager:
                 options=options or {},
                 owner_user_id=owner_user_id,
                 owner_kind=owner_kind,
+                queue_position=queue_position,
+                status=(
+                    JobStatus.paused
+                    if self._owner_key(owner_kind, owner_user_id)
+                    in self._paused_owners
+                    else JobStatus.pending
+                ),
             )
+            if record.status == JobStatus.paused:
+                record.message = "queue paused"
+            self._queue_counter = max(self._queue_counter + 1, queue_position)
             self._jobs[job_id] = record
             self._evict_old_completed_jobs(max_history_jobs=200)
 
@@ -204,9 +272,51 @@ class JobManager:
         from app.logger import metrics_tracker
 
         metrics_tracker.record_job_created(platform.value)
-        task = asyncio.create_task(self._run_job(job_id))
-        self._running_tasks[job_id] = task
+        self._ensure_dispatcher()
+        self._queue_changed.set()
         return record
+
+    def _ensure_dispatcher(self) -> None:
+        if self._closing:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        if self._dispatcher_task is None or self._dispatcher_task.done():
+            self._dispatcher_task = loop.create_task(self._dispatch_loop())
+
+    async def _dispatch_loop(self) -> None:
+        while not self._closing:
+            await self._queue_changed.wait()
+            self._queue_changed.clear()
+            while not self._closing:
+                async with self._lock:
+                    running_count = sum(
+                        1 for job in self._jobs.values() if job.status == JobStatus.running
+                    )
+                    capacity = max(1, self.settings.max_concurrent_jobs) - running_count
+                    if capacity <= 0:
+                        break
+                    pending = sorted(
+                        (
+                            job
+                            for job in self._jobs.values()
+                            if job.status == JobStatus.pending
+                        ),
+                        key=lambda job: (job.queue_position, job.created_at),
+                    )
+                    if not pending:
+                        break
+                    selected = pending[:capacity]
+                    for record in selected:
+                        record.status = JobStatus.running
+                        record.message = "running"
+                        record.updated_at = _utc_now()
+                        task = asyncio.create_task(self._run_job(record.job_id))
+                        self._running_tasks[record.job_id] = task
+                for record in selected:
+                    await self._persist_async(record)
 
     def _evict_old_completed_jobs(self, max_history_jobs: int = 200) -> None:
         """当内存中的 Job 总数超出上限时，安全淘汰最旧的已结束任务。"""
@@ -216,6 +326,7 @@ class JobManager:
         completed_jobs = [
             j for j in self._jobs.values()
             if j.status in (JobStatus.success, JobStatus.failed, JobStatus.cancelled)
+            and not j.files
         ]
         if not completed_jobs:
             return
@@ -225,6 +336,10 @@ class JobManager:
         overlimit_count = len(self._jobs) - max_history_jobs
         for j in completed_jobs[:overlimit_count]:
             self._jobs.pop(j.job_id, None)
+            try:
+                (self.settings.jobs_dir / f"{j.job_id}.json").unlink(missing_ok=True)
+            except OSError:
+                pass
 
     async def get_job(self, job_id: str) -> JobRecord | None:
         async with self._lock:
@@ -270,12 +385,140 @@ class JobManager:
             end = start + page_size
             return filtered[start:end], total
 
+    async def queue_state_for(self, identity: Identity) -> dict[str, Any]:
+        async with self._lock:
+            items = [
+                job
+                for job in self._jobs.values()
+                if self.can_access_job(job, identity)
+                and job.status in (JobStatus.pending, JobStatus.paused, JobStatus.running)
+            ]
+            items.sort(
+                key=lambda job: (
+                    0 if job.status == JobStatus.running else 1,
+                    job.queue_position,
+                    job.created_at,
+                )
+            )
+            return {
+                "paused": self._identity_owner_key(identity) in self._paused_owners,
+                "max_concurrent_jobs": max(1, self.settings.max_concurrent_jobs),
+                "running_count": sum(job.status == JobStatus.running for job in items),
+                "pending_count": sum(
+                    job.status in (JobStatus.pending, JobStatus.paused) for job in items
+                ),
+                "items": [job.to_response() for job in items],
+            }
+
+    async def pause_queue_for(self, identity: Identity) -> int:
+        changed: list[JobRecord] = []
+        async with self._lock:
+            self._paused_owners.add(self._identity_owner_key(identity))
+            for record in self._jobs.values():
+                if record.status == JobStatus.pending and self.can_access_job(record, identity):
+                    record.status = JobStatus.paused
+                    record.message = "queue paused"
+                    record.updated_at = _utc_now()
+                    changed.append(record)
+        for record in changed:
+            await self._persist_async(record)
+        return len(changed)
+
+    async def resume_queue_for(self, identity: Identity) -> int:
+        changed: list[JobRecord] = []
+        async with self._lock:
+            self._paused_owners.discard(self._identity_owner_key(identity))
+            for record in self._jobs.values():
+                if record.status == JobStatus.paused and self.can_access_job(record, identity):
+                    record.status = JobStatus.pending
+                    record.message = "queued"
+                    record.updated_at = _utc_now()
+                    changed.append(record)
+        for record in changed:
+            await self._persist_async(record)
+        if changed:
+            self._ensure_dispatcher()
+            self._queue_changed.set()
+        return len(changed)
+
+    async def reorder_queue_for(self, identity: Identity, job_ids: list[str]) -> bool:
+        requested = list(dict.fromkeys(job_ids))
+        async with self._lock:
+            movable = [
+                job
+                for job in self._jobs.values()
+                if self.can_access_job(job, identity)
+                and job.status in (JobStatus.pending, JobStatus.paused)
+            ]
+            movable_by_id = {job.job_id: job for job in movable}
+            if any(job_id not in movable_by_id for job_id in requested):
+                return False
+            remaining = sorted(
+                (job for job in movable if job.job_id not in requested),
+                key=lambda job: (job.queue_position, job.created_at),
+            )
+            ordered = [movable_by_id[job_id] for job_id in requested] + remaining
+            # 用户只能在自己原先占有的队列位置槽内重排，不能插队到其他用户之前。
+            positions = sorted(job.queue_position for job in movable)
+            for position, record in zip(positions, ordered, strict=True):
+                record.queue_position = position
+                record.updated_at = _utc_now()
+            changed = list(ordered)
+            self._queue_counter = max(
+                self._queue_counter,
+                max((job.queue_position for job in self._jobs.values()), default=0),
+            )
+        for record in changed:
+            await self._persist_async(record)
+        self._queue_changed.set()
+        return True
+
+    async def retry_job_for(self, job_id: str, identity: Identity) -> JobRecord | None:
+        async with self._lock:
+            record = self._jobs.get(job_id)
+            if (
+                record is None
+                or not self.can_access_job(record, identity)
+                or record.status not in (JobStatus.failed, JobStatus.cancelled)
+            ):
+                return None
+            self._queue_counter += 1
+            record.status = (
+                JobStatus.paused
+                if self._owner_key(record.owner_kind, record.owner_user_id)
+                in self._paused_owners
+                else JobStatus.pending
+            )
+            record.progress = 0.0
+            record.message = "queued for retry"
+            record.error = None
+            record.files = []
+            record.queue_position = self._queue_counter
+            record.updated_at = _utc_now()
+        output_dir = self.settings.outputs_dir / job_id
+        if output_dir.exists():
+            import shutil
+
+            await asyncio.to_thread(shutil.rmtree, output_dir, True)
+        await self._persist_async(record)
+        from app.logger import metrics_tracker
+
+        metrics_tracker.record_job_created(record.platform.value)
+        self._ensure_dispatcher()
+        self._queue_changed.set()
+        return record
+
     async def cancel_job(self, job_id: str) -> bool:
         to_persist: JobRecord | None = None
         task_to_cancel: asyncio.Task | None = None
         async with self._lock:
             record = self._jobs.get(job_id)
-            if record is not None and record.status in (JobStatus.pending, JobStatus.running, JobStatus.cancelling):
+            if record is not None and record.status in (
+                JobStatus.pending,
+                JobStatus.paused,
+                JobStatus.running,
+                JobStatus.cancelling,
+            ):
                 record.status = JobStatus.cancelling
                 record.message = "cancelling"
                 record.updated_at = _utc_now()
@@ -299,6 +542,7 @@ class JobManager:
 
         if to_persist:
             await self._persist_async(to_persist)
+            self._queue_changed.set()
             return True
         return False
 
@@ -312,7 +556,11 @@ class JobManager:
     async def summary(self) -> dict[str, Any]:
         import shutil
         async with self._lock:
-            active = sum(1 for j in self._jobs.values() if j.status in (JobStatus.pending, JobStatus.running))
+            active = sum(
+                1
+                for j in self._jobs.values()
+                if j.status in (JobStatus.pending, JobStatus.paused, JobStatus.running)
+            )
             completed = sum(1 for j in self._jobs.values() if j.status == JobStatus.success)
 
         try:
@@ -337,7 +585,11 @@ class JobManager:
         import shutil
         async with self._lock:
             accessible_jobs = [j for j in self._jobs.values() if self.can_access_job(j, identity)]
-            active = sum(1 for j in accessible_jobs if j.status in (JobStatus.pending, JobStatus.running))
+            active = sum(
+                1
+                for j in accessible_jobs
+                if j.status in (JobStatus.pending, JobStatus.paused, JobStatus.running)
+            )
             completed = sum(1 for j in accessible_jobs if j.status == JobStatus.success)
 
         try:
@@ -426,25 +678,11 @@ class JobManager:
                 record.updated_at = _utc_now()
 
     async def _run_job(self, job_id: str) -> None:
-        slot_acquired = False
-        try:
-            await self._run_slots.acquire()
-            slot_acquired = True
-        except asyncio.CancelledError:
-            self._running_tasks.pop(job_id, None)
-            raise
-
         try:
             async with self._lock:
                 record = self._jobs.get(job_id)
-                if record is None:
-                    self._run_slots.release()
+                if record is None or record.status != JobStatus.running:
                     return
-                record.status = JobStatus.running
-                record.message = "running"
-                record.updated_at = _utc_now()
-            await self._persist_async(record)
-
             out_dir = self.settings.outputs_dir / job_id
             out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -452,13 +690,6 @@ class JobManager:
 
             def on_progress(pct: float, msg: str) -> None:
                 asyncio.run_coroutine_threadsafe(self._update_progress_safe(job_id, pct, msg), loop)
-        except BaseException:
-            if slot_acquired:
-                self._run_slots.release()
-            self._running_tasks.pop(job_id, None)
-            raise
-
-        try:
             platform = get_platform(record.platform)
 
             paths = await platform.download(
@@ -529,9 +760,8 @@ class JobManager:
 
                     metrics_tracker.record_job_failed(record.platform.value)
         finally:
-            if slot_acquired:
-                self._run_slots.release()
             self._running_tasks.pop(job_id, None)
+            self._queue_changed.set()
 
     async def _persist_async(self, record: JobRecord) -> None:
         await asyncio.to_thread(self._persist, record)
@@ -539,28 +769,31 @@ class JobManager:
     def _persist(self, record: JobRecord) -> None:
         target_path = self.settings.jobs_dir / f"{record.job_id}.json"
         tmp_path = self.settings.jobs_dir / f"{record.job_id}.json.tmp"
-        payload = {
-            "job_id": record.job_id,
-            "platform": record.platform.value,
-            "item_id": record.item_id,
-            "range": record.range_spec,
-            "options": record.options,
-            "status": record.status.value,
-            "progress": record.progress,
-            "message": record.message,
-            "error": record.error,
-            "files": [f.model_dump() for f in record.files],
-            "created_at": record.created_at,
-            "updated_at": record.updated_at,
-            "owner_user_id": record.owner_user_id,
-            "owner_kind": record.owner_kind,
-        }
-        content = json.dumps(payload, ensure_ascii=False, indent=2)
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, target_path)
+        with self._persist_lock:
+            # 在互斥区内读取可变 JobRecord，避免较旧快照后写覆盖较新状态。
+            payload = {
+                "job_id": record.job_id,
+                "platform": record.platform.value,
+                "item_id": record.item_id,
+                "range": record.range_spec,
+                "options": record.options,
+                "status": record.status.value,
+                "progress": record.progress,
+                "message": record.message,
+                "error": record.error,
+                "files": [f.model_dump() for f in record.files],
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+                "owner_user_id": record.owner_user_id,
+                "owner_kind": record.owner_kind,
+                "queue_position": record.queue_position,
+            }
+            content = json.dumps(payload, ensure_ascii=False, indent=2)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, target_path)
 
 
 _manager: JobManager | None = None

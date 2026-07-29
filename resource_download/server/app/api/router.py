@@ -36,7 +36,11 @@ from app.models import (
     JobResponse,
     JobsSummaryResponse,
     JobStatus,
+    HongguoMonitorConfig,
+    HongguoMonitorStatus,
     PlatformName,
+    QueueReorderRequest,
+    QueueStateResponse,
     RedeemRequest,
     RedeemResponse,
     DiscoverResponse,
@@ -531,6 +535,7 @@ async def create_jobs_batch(
                 max_active=get_settings().max_queued_jobs,
                 owner_user_id=owner_user_id,
                 owner_kind=owner_kind,
+                priority=body.queue_mode == "start_immediately",
             )
             increment_job_quota(identity, db)
             existing_by_key.setdefault(key, []).append(record)
@@ -584,6 +589,40 @@ async def jobs_summary(
     return JobsSummaryResponse(**data)
 
 
+@api_router.get("/v1/jobs/queue", response_model=QueueStateResponse)
+async def get_queue(
+    identity: Identity = Depends(require_identity),
+) -> QueueStateResponse:
+    return QueueStateResponse(**await get_job_manager().queue_state_for(identity))
+
+
+@api_router.post("/v1/jobs/queue/pause")
+async def pause_queue(
+    identity: Identity = Depends(require_identity),
+) -> dict[str, Any]:
+    count = await get_job_manager().pause_queue_for(identity)
+    return {"paused": True, "affected": count}
+
+
+@api_router.post("/v1/jobs/queue/resume")
+async def resume_queue(
+    identity: Identity = Depends(require_identity),
+) -> dict[str, Any]:
+    count = await get_job_manager().resume_queue_for(identity)
+    return {"paused": False, "affected": count}
+
+
+@api_router.post("/v1/jobs/queue/reorder")
+async def reorder_queue(
+    body: QueueReorderRequest,
+    identity: Identity = Depends(require_identity),
+) -> dict[str, Any]:
+    ok = await get_job_manager().reorder_queue_for(identity, body.job_ids)
+    if not ok:
+        raise HTTPException(status_code=400, detail="队列包含不存在、运行中或无权操作的任务")
+    return {"success": True, "job_ids": body.job_ids}
+
+
 @api_router.get("/v1/jobs/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: str,
@@ -593,6 +632,22 @@ async def get_job(
     record = await manager.get_job_for(job_id, identity)
     if record is None:
         raise HTTPException(status_code=404, detail="job not found")
+    return record.to_response()
+
+
+@api_router.post("/v1/jobs/{job_id}/retry", response_model=JobResponse)
+async def retry_job(
+    job_id: str,
+    identity: Identity = Depends(require_vip),
+    db: Session = Depends(get_db),
+) -> JobResponse:
+    from app.quota import check_job_quota, increment_job_quota
+
+    check_job_quota(identity, db)
+    record = await get_job_manager().retry_job_for(job_id, identity)
+    if record is None:
+        raise HTTPException(status_code=400, detail="只有失败或已取消任务可以重试")
+    increment_job_quota(identity, db)
     return record.to_response()
 
 
@@ -610,6 +665,45 @@ async def cancel_job(
     if not cancelled:
         raise HTTPException(status_code=400, detail="Job 无法取消（可能已完成、已失败或不存在）")
     return {"message": "Job successfully cancelled", "job_id": job_id}
+
+
+@api_router.get(
+    "/v1/automation/hongguo-new",
+    response_model=HongguoMonitorStatus,
+)
+async def get_hongguo_new_monitor(
+    identity: Identity = Depends(require_identity),
+) -> HongguoMonitorStatus:
+    from app.automation import get_hongguo_monitor_service
+
+    return await get_hongguo_monitor_service().get_status(identity)
+
+
+@api_router.put(
+    "/v1/automation/hongguo-new",
+    response_model=HongguoMonitorStatus,
+)
+async def configure_hongguo_new_monitor(
+    body: HongguoMonitorConfig,
+    identity: Identity = Depends(require_vip),
+) -> HongguoMonitorStatus:
+    if body.quality != "1080p":
+        raise HTTPException(status_code=400, detail="红果自动下载当前仅支持可播放的 1080p")
+    from app.automation import get_hongguo_monitor_service
+
+    return await get_hongguo_monitor_service().configure(identity, body)
+
+
+@api_router.post(
+    "/v1/automation/hongguo-new/scan",
+    response_model=HongguoMonitorStatus,
+)
+async def scan_hongguo_new_now(
+    identity: Identity = Depends(require_vip),
+) -> HongguoMonitorStatus:
+    from app.automation import get_hongguo_monitor_service
+
+    return await get_hongguo_monitor_service().scan_now(identity)
 
 
 @api_router.get("/v1/files", response_model=FileListResponse)

@@ -94,6 +94,8 @@
     lastPlatformErrors: {},
     selectedEpisodes: new Set(),
     jobsPollTimer: null,
+    queueState: null,
+    hongguoMonitor: null,
     libraryFilter: "all",
     librarySearch: "",
     libraryFiles: [],
@@ -202,6 +204,9 @@
     // 下载任务页面
     jobsList: document.getElementById("jobsList"),
     btnOpenOutputDir: document.getElementById("btnOpenOutputDir"),
+    btnQueuePause: document.getElementById("btnQueuePause"),
+    btnRefreshJobs: document.getElementById("btnRefreshJobs"),
+    queueStateText: document.getElementById("queueStateText"),
     jobCountBadge: document.getElementById("jobCountBadge"),
     statActiveJobs: document.querySelector(".jobs-stat-item:nth-child(1) .jobs-stat-val"),
     statCompletedJobs: document.querySelector(".jobs-stat-item:nth-child(2) .jobs-stat-val"),
@@ -243,6 +248,12 @@
     btnSaveSettings: document.getElementById("btnSaveSettings"),
     btnResetSettings: document.getElementById("btnResetSettings"),
     btnCheckUpdate: document.getElementById("btnCheckUpdate"),
+    settingHgMonitorEnabled: document.getElementById("settingHgMonitorEnabled"),
+    settingHgMonitorAutoQueue: document.getElementById("settingHgMonitorAutoQueue"),
+    settingHgMonitorInterval: document.getElementById("settingHgMonitorInterval"),
+    settingHgMonitorLimit: document.getElementById("settingHgMonitorLimit"),
+    settingHgMonitorStatus: document.getElementById("settingHgMonitorStatus"),
+    btnScanHgNewNow: document.getElementById("btnScanHgNewNow"),
 
     // 登录 / 注册弹窗
     modalAuth: document.getElementById("modalAuth"),
@@ -295,6 +306,7 @@
   function jobStatusLabel(job) {
     const status = String(job.status || "");
     if (status === "pending") return "等待服务端处理";
+    if (status === "paused") return "队列已暂停";
     if (status === "running") return `服务端处理中 · ${Math.round(job.progress || 0)}%`;
     if (status === "cancelling") return "正在安全取消";
     if (status === "cancelled") return "任务已取消";
@@ -904,6 +916,9 @@
     } else if (pageId === "page-jobs") {
       refreshJobsPage();
       startJobsPolling();
+    } else if (pageId === "page-settings") {
+      loadHongguoMonitor();
+      stopJobsPolling();
     } else {
       stopJobsPolling();
     }
@@ -1424,6 +1439,7 @@
     if (!elements.homeSections) return;
     const plat = state.discoverPlatform || "hongguo";
     const meta = PLATFORM_META[plat] || PLATFORM_META.hongguo;
+    state.discoverData = data;
 
     // 服务端已按 platform 过滤；客户端再滤一次 items 的 platform 字段
     let sections = (data.sections || []).map((sec) => {
@@ -1438,7 +1454,7 @@
     if (elements.homeDiscoverNote) {
       elements.homeDiscoverNote.innerHTML = totalItems
         ? `<span class="home-note-dot"></span>已更新 ${escapeHtml(meta.short)} · 共 ${totalItems} 条内容`
-        : `<span class="home-note-dot"></span>${escapeHtml(meta.short)}榜单正在准备中，资源搜索已可使用`;
+        : `<span class="home-note-dot"></span>${escapeHtml(meta.short)}当前未返回发现内容，可刷新或使用资源搜索`;
     }
 
     if (!sections.length) {
@@ -1645,16 +1661,27 @@
   // 7. 动态任务列表与状态轮询
   async function refreshJobsPage() {
     try {
-      const [summary, jobsRes] = await Promise.all([
+      const [summary, jobsRes, queue] = await Promise.all([
         apiFetch("/v1/jobs/summary"),
         apiFetch("/v1/jobs?page=1&page_size=50"),
+        apiFetch("/v1/jobs/queue"),
       ]);
+      state.queueState = queue;
 
       if (elements.statActiveJobs) elements.statActiveJobs.textContent = summary.active_jobs;
       if (elements.statCompletedJobs) elements.statCompletedJobs.textContent = summary.completed_jobs;
       if (elements.statTotalSpeed) elements.statTotalSpeed.textContent = summary.total_speed_human;
       if (elements.statDiskFree) elements.statDiskFree.textContent = summary.disk_free_human;
       if (elements.jobCountBadge) elements.jobCountBadge.textContent = summary.active_jobs;
+      if (elements.queueStateText) {
+        elements.queueStateText.textContent =
+          `运行中 ${queue.running_count} · 等待 ${queue.pending_count} · 并发上限 ${queue.max_concurrent_jobs}`;
+      }
+      if (elements.btnQueuePause) {
+        elements.btnQueuePause.textContent = queue.paused
+          ? "▶ 恢复等待队列"
+          : "⏸ 暂停等待队列";
+      }
 
       const jobs = jobsRes.items || [];
       renderJobsList(jobs);
@@ -1693,7 +1720,10 @@
       const isSuccess = job.status === "success";
       const isFailed = job.status === "failed";
       const isCancelled = job.status === "cancelled";
-      const isRunning = job.status === "running" || job.status === "pending";
+      const isRunning = job.status === "running";
+      const isQueued = job.status === "pending" || job.status === "paused";
+      const queuePosition = job.extra && job.extra.queue_position;
+      if (job.status === "paused") card.classList.add("paused");
 
       let statusBadge = escapeHtml(jobStatusLabel(job));
       if (isSuccess) statusBadge = `✅ ${statusBadge}`;
@@ -1705,8 +1735,8 @@
       card.innerHTML = `
         <div class="job-item-info" style="width: 100%;">
           <div class="job-item-header">
-            <span class="job-item-title">${isHongguo ? '🔴' : '🍅'} ${escapeHtml((job.extra && job.extra.title) || job.item_id)} <span style="opacity:.65;font-weight:500">[${escapeHtml(job.platform)} · ${escapeHtml(job.item_id)}]</span></span>
-            <span class="job-item-speed">${isSuccess ? '✅ 完成' : isFailed ? '❌ 失败' : isRunning ? '⚡ 进行中' : '已停止'}</span>
+            <span class="job-item-title">${isQueued ? `<span class="job-queue-position">#${escapeHtml(String(queuePosition || "—"))}</span>` : ""}${isHongguo ? '🔴' : '🍅'} ${escapeHtml((job.extra && job.extra.title) || job.item_id)} <span style="opacity:.65;font-weight:500">[${escapeHtml(job.platform)} · ${escapeHtml(job.item_id)}]</span></span>
+            <span class="job-item-speed">${isSuccess ? '✅ 完成' : isFailed ? '❌ 失败' : isRunning ? '⚡ 进行中' : isQueued ? (job.status === "paused" ? "⏸ 已暂停" : "⏳ 排队中") : '已停止'}</span>
           </div>
           <div class="job-progress-bar-bg">
             <div class="job-progress-bar-fill" style="width: ${progressPct}%; ${isSuccess ? 'background: var(--color-success);' : isFailed ? 'background: var(--color-danger, #ef4444);' : ''}"></div>
@@ -1714,7 +1744,9 @@
           <div class="job-item-footer">
             <span>${statusBadge}</span>
             <div class="job-controls">
-              ${isRunning ? `<button class="btn-secondary btn-cancel-job" data-id="${job.job_id}">✕ 取消</button>` : ''}
+              ${isQueued ? `<button class="btn-secondary btn-queue-up" title="上移">↑</button><button class="btn-secondary btn-queue-down" title="下移">↓</button>` : ''}
+              ${isRunning || isQueued ? `<button class="btn-secondary btn-cancel-job" data-id="${job.job_id}">✕ 取消</button>` : ''}
+              ${isFailed || isCancelled ? `<button class="btn-primary btn-retry-job">↻ 重试</button>` : ''}
               ${isSuccess && job.files.length > 0 ? `<button class="btn-primary btn-download-local">⬇️ 下载到本机</button>` : ''}
               ${isSuccess && job.files.length > 0 ? `<button class="btn-secondary btn-open-media">▶️ 下载并打开</button>` : ''}
               ${isSuccess && job.files.length > 0 ? `<button class="btn-secondary btn-open-job-folder">📂 本机目录</button>` : ''}
@@ -1756,8 +1788,67 @@
         });
       }
 
+      const btnUp = card.querySelector(".btn-queue-up");
+      if (btnUp) btnUp.addEventListener("click", () => moveQueueItem(job.job_id, -1));
+      const btnDown = card.querySelector(".btn-queue-down");
+      if (btnDown) btnDown.addEventListener("click", () => moveQueueItem(job.job_id, 1));
+      const btnRetry = card.querySelector(".btn-retry-job");
+      if (btnRetry) {
+        btnRetry.addEventListener("click", async () => {
+          try {
+            await apiFetch(`/v1/jobs/${job.job_id}/retry`, { method: "POST" });
+            toast("任务已重新加入队列", "success");
+            refreshJobsPage();
+          } catch (error) {
+            toast(`重试失败：${error.message}`, "error");
+          }
+        });
+      }
+
       elements.jobsList.appendChild(card);
     });
+  }
+
+  async function moveQueueItem(jobId, direction) {
+    const items = ((state.queueState && state.queueState.items) || [])
+      .filter((item) => item.status === "pending" || item.status === "paused")
+      .sort(
+        (a, b) =>
+          Number((a.extra && a.extra.queue_position) || 0) -
+          Number((b.extra && b.extra.queue_position) || 0)
+      );
+    const index = items.findIndex((item) => item.job_id === jobId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= items.length) return;
+    [items[index], items[target]] = [items[target], items[index]];
+    try {
+      await apiFetch("/v1/jobs/queue/reorder", {
+        method: "POST",
+        body: JSON.stringify({ job_ids: items.map((item) => item.job_id) }),
+      });
+      await refreshJobsPage();
+    } catch (error) {
+      toast(`调整队列失败：${error.message}`, "error");
+    }
+  }
+
+  async function toggleQueuePaused() {
+    const resume = !!(state.queueState && state.queueState.paused);
+    try {
+      const result = await apiFetch(
+        `/v1/jobs/queue/${resume ? "resume" : "pause"}`,
+        { method: "POST" }
+      );
+      toast(
+        resume
+          ? `已恢复 ${result.affected || 0} 个等待任务`
+          : `已暂停 ${result.affected || 0} 个等待任务`,
+        "success"
+      );
+      await refreshJobsPage();
+    } catch (error) {
+      toast(`队列操作失败：${error.message}`, "error");
+    }
   }
 
   function startJobsPolling() {
@@ -1899,6 +1990,102 @@
     if (result && result.success && result.path) {
       state.prefs.outputDir = result.path;
       if (elements.settingOutputDir) elements.settingOutputDir.value = result.path;
+    }
+  }
+
+  function renderHongguoMonitor(status) {
+    state.hongguoMonitor = status || null;
+    if (!status) return;
+    if (elements.settingHgMonitorEnabled) {
+      elements.settingHgMonitorEnabled.checked = !!status.enabled;
+    }
+    if (elements.settingHgMonitorAutoQueue) {
+      elements.settingHgMonitorAutoQueue.checked = !!status.auto_enqueue;
+    }
+    if (elements.settingHgMonitorInterval) {
+      elements.settingHgMonitorInterval.value = String(status.interval_seconds || 60);
+    }
+    if (elements.settingHgMonitorLimit) {
+      elements.settingHgMonitorLimit.value = String(status.scan_limit || 50);
+    }
+    if (elements.settingHgMonitorStatus) {
+      const baseline = status.baseline_initialized
+        ? `已建立基线 ${status.known_count || 0} 条`
+        : "尚未建立基线";
+      const scan = status.last_scan_at ? `上次扫描 ${formatDate(status.last_scan_at)}` : "尚未扫描";
+      const result = `本次发现 ${status.last_detected_count || 0} 条，累计入队 ${status.total_enqueued_count || 0} 条`;
+      elements.settingHgMonitorStatus.textContent =
+        `${baseline} · ${scan} · ${result}` +
+        (status.last_error ? ` · 错误：${status.last_error}` : "");
+      elements.settingHgMonitorStatus.style.color = status.last_error
+        ? "var(--color-error)"
+        : "var(--text-muted)";
+    }
+  }
+
+  async function loadHongguoMonitor() {
+    try {
+      renderHongguoMonitor(await apiFetch("/v1/automation/hongguo-new"));
+    } catch (error) {
+      if (elements.settingHgMonitorStatus) {
+        elements.settingHgMonitorStatus.textContent = `无法读取上新策略：${error.message}`;
+        elements.settingHgMonitorStatus.style.color = "var(--color-error)";
+      }
+    }
+  }
+
+  async function saveHongguoMonitor() {
+    if (!elements.settingHgMonitorEnabled) return;
+    const interval = Math.min(
+      86400,
+      Math.max(30, parseInt(elements.settingHgMonitorInterval.value, 10) || 60)
+    );
+    const limit = Math.min(
+      50,
+      Math.max(1, parseInt(elements.settingHgMonitorLimit.value, 10) || 50)
+    );
+    const status = await apiFetch("/v1/automation/hongguo-new", {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: !!elements.settingHgMonitorEnabled.checked,
+        auto_enqueue: !!elements.settingHgMonitorAutoQueue.checked,
+        interval_seconds: interval,
+        scan_limit: limit,
+        quality: "1080p",
+        concurrency: state.prefs.concurrency || 2,
+        download_cover: !!state.prefs.downloadCover,
+        download_desc: !!state.prefs.downloadDesc,
+      }),
+    });
+    renderHongguoMonitor(status);
+  }
+
+  async function scanHongguoNewNow() {
+    if (!elements.btnScanHgNewNow) return;
+    elements.btnScanHgNewNow.disabled = true;
+    elements.btnScanHgNewNow.textContent = "识别中…";
+    try {
+      await saveHongguoMonitor();
+      const before = !!(state.hongguoMonitor && state.hongguoMonitor.baseline_initialized);
+      const status = await apiFetch("/v1/automation/hongguo-new/scan", {
+        method: "POST",
+        timeoutMs: 90000,
+      });
+      renderHongguoMonitor(status);
+      if (!before && status.baseline_initialized) {
+        toast("当前红果上新已建立为基线，后续新增资源才会触发自动入队", "success", 5000);
+      } else {
+        toast(
+          `识别完成：发现 ${status.last_detected_count || 0} 条新资源，累计入队 ${status.total_enqueued_count || 0} 条`,
+          status.last_error ? "warning" : "success",
+          5000
+        );
+      }
+    } catch (error) {
+      toast(`红果上新识别失败：${error.message}`, "error", 5000);
+    } finally {
+      elements.btnScanHgNewNow.disabled = false;
+      elements.btnScanHgNewNow.textContent = "立即识别";
     }
   }
 
@@ -2238,7 +2425,7 @@
           updateHomeSelectionBar();
           if (created) {
             switchPage("page-jobs");
-            await loadJobs();
+            await refreshJobsPage();
           }
         } catch (error) {
           toast(`加入下载队列失败：${error.message}`, "error", 5000);
@@ -2280,6 +2467,15 @@
 
     if (elements.btnCheckUpdate) {
       elements.btnCheckUpdate.addEventListener("click", () => checkVersion(false));
+    }
+    if (elements.btnScanHgNewNow) {
+      elements.btnScanHgNewNow.addEventListener("click", scanHongguoNewNow);
+    }
+    if (elements.btnQueuePause) {
+      elements.btnQueuePause.addEventListener("click", toggleQueuePaused);
+    }
+    if (elements.btnRefreshJobs) {
+      elements.btnRefreshJobs.addEventListener("click", refreshJobsPage);
     }
 
     if (elements.btnDownloadAll) {
@@ -2365,7 +2561,7 @@
 
     // 设置页面保存与重置绑定
     if (elements.btnSaveSettings) {
-      elements.btnSaveSettings.addEventListener("click", () => {
+      elements.btnSaveSettings.addEventListener("click", async () => {
         const candidateBase = elements.settingApiBase && elements.settingApiBase.value.trim();
         if (state.nativeApiBase && candidateBase && candidateBase !== state.nativeApiBase) {
           toast("桌面客户端的服务端地址由安装配置固定，不能在页面内切换", "error", 4500);
@@ -2399,7 +2595,12 @@
         if (elements.selectQuality && state.prefs.quality) {
           elements.selectQuality.value = state.prefs.quality;
         }
-        toast("设置已保存", "success");
+        try {
+          await saveHongguoMonitor();
+          toast("设置与红果上新策略已保存", "success");
+        } catch (error) {
+          toast(`本机设置已保存，但上新策略保存失败：${error.message}`, "warning", 5000);
+        }
         checkServerHealth();
       });
     }
@@ -2442,6 +2643,10 @@
           numberStyle: "01",
           nameSeparator: ".",
         };
+        if (elements.settingHgMonitorEnabled) elements.settingHgMonitorEnabled.checked = false;
+        if (elements.settingHgMonitorAutoQueue) elements.settingHgMonitorAutoQueue.checked = false;
+        if (elements.settingHgMonitorInterval) elements.settingHgMonitorInterval.value = "60";
+        if (elements.settingHgMonitorLimit) elements.settingHgMonitorLimit.value = "50";
         [
           "pref_outputDir",
           "pref_rememberOutputDir",
@@ -2457,6 +2662,9 @@
           "pref_nameSeparator",
         ].forEach((k) => localStorage.removeItem(k));
         initSettingsForm();
+        saveHongguoMonitor().catch((error) => {
+          toast(`红果上新策略重置失败：${error.message}`, "warning", 4500);
+        });
         toast("设置已恢复默认", "info");
         checkServerHealth();
       });

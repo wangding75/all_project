@@ -190,6 +190,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 响应逐项返回 `created`、`skipped`、`errors`。任务管理器默认最多并发执行
 `MAX_CONCURRENT_JOBS=5` 个任务，其余任务保持 `pending` 排队。
+`queue_mode=start_immediately` 会把本批任务放到等待队列前部。
 
 ---
 
@@ -241,8 +242,58 @@ ByteVC2 编码，只用于诊断，不作为通用播放器可播放下载。
 
 | 参数 | 说明 |
 |------|------|
-| status | 可选状态过滤：`pending` \| `running` \| `success` \| `failed` \| `cancelled` |
+| status | 可选状态过滤：`pending` \| `paused` \| `running` \| `success` \| `failed` \| `cancelled` |
 | page | 页码，默认 1 |
+
+---
+
+## 下载队列管理
+
+```http
+GET  /v1/jobs/queue
+POST /v1/jobs/queue/pause
+POST /v1/jobs/queue/resume
+POST /v1/jobs/queue/reorder
+POST /v1/jobs/{job_id}/retry
+```
+
+暂停只影响尚未开始的任务，不中断运行中的下载；恢复后按
+`queue_position` 继续调度。重排请求：
+
+```json
+{"job_ids": ["job-2", "job-1"]}
+```
+
+失败或已取消任务可通过 `retry` 重新进入队列，并再次接受 VIP 与每日配额校验。
+
+---
+
+## 红果上新识别与自动入队
+
+```http
+GET  /v1/automation/hongguo-new
+PUT  /v1/automation/hongguo-new
+POST /v1/automation/hongguo-new/scan
+```
+
+配置示例：
+
+```json
+{
+  "enabled": true,
+  "auto_enqueue": true,
+  "interval_seconds": 60,
+  "scan_limit": 50,
+  "quality": "1080p",
+  "concurrency": 2,
+  "download_cover": true,
+  "download_desc": true
+}
+```
+
+策略按用户持久化。首次扫描只建立红果当前“今日上新”ID 基线，不会把
+已有条目误加入队列；后续扫描仅识别新出现的资源。自动入队仍受 VIP、
+每日配额、队列容量、去重和 1080p 可播放格式限制，失败条目会在后续扫描重试。
 | page_size | 每页数量，默认 20 (最大 100) |
 
 ---

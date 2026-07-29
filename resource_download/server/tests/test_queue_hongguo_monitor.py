@@ -1,0 +1,176 @@
+"""持久化下载队列与红果上新自动入队测试。"""
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+from app.auth import Identity
+from app.automation.hongguo_monitor import HongguoMonitorService
+from app.config import Settings
+from app.jobs.manager import JobManager
+from app.models import (
+    DiscoverItem,
+    HongguoMonitorConfig,
+    JobStatus,
+    PlatformName,
+)
+
+
+class _ControlledPlatform:
+    def __init__(self) -> None:
+        self.started: list[str] = []
+        self.gates: dict[str, asyncio.Event] = {}
+
+    async def download(self, item_id, output_dir, **_kwargs):
+        self.started.append(str(item_id))
+        gate = self.gates.setdefault(str(item_id), asyncio.Event())
+        await gate.wait()
+        output = Path(output_dir) / f"{item_id}.mp4"
+        output.write_bytes(b"playable")
+        return [output]
+
+
+def test_queue_pause_reorder_and_resume(tmp_path, monkeypatch):
+    from app.jobs import manager as manager_module
+
+    async def _run():
+        settings = Settings(
+            data_dir=tmp_path,
+            max_concurrent_jobs=1,
+            max_queued_jobs=10,
+        )
+        platform = _ControlledPlatform()
+        monkeypatch.setattr(manager_module, "get_platform", lambda _name: platform)
+        manager = JobManager(settings)
+        identity = Identity(kind="api_key", is_ops=True)
+
+        first = await manager.create_job(PlatformName.hongguo, "first")
+        second = await manager.create_job(PlatformName.hongguo, "second")
+        third = await manager.create_job(PlatformName.hongguo, "third")
+        await asyncio.sleep(0.05)
+
+        assert platform.started == ["first"]
+        assert (await manager.get_job(second.job_id)).status == JobStatus.pending
+        assert await manager.pause_queue_for(identity) == 2
+        assert (await manager.get_job(second.job_id)).status == JobStatus.paused
+
+        assert await manager.reorder_queue_for(
+            identity,
+            [third.job_id, second.job_id],
+        )
+        queue = await manager.queue_state_for(identity)
+        queued_ids = [
+            item.job_id for item in queue["items"] if item.status == JobStatus.paused
+        ]
+        assert queued_ids == [third.job_id, second.job_id]
+
+        assert await manager.resume_queue_for(identity) == 2
+        await manager.cancel_job(first.job_id)
+        await asyncio.sleep(0.05)
+        assert platform.started == ["first", "third"]
+
+        platform.gates["third"].set()
+        await asyncio.sleep(0.05)
+        platform.gates.setdefault("second", asyncio.Event()).set()
+        await asyncio.sleep(0.05)
+        assert (await manager.get_job(third.job_id)).status == JobStatus.success
+        assert (await manager.get_job(second.job_id)).status == JobStatus.success
+        await manager.shutdown()
+
+    asyncio.run(_run())
+
+
+def test_hongguo_monitor_baselines_then_enqueues_only_new_items(
+    tmp_path,
+    monkeypatch,
+):
+    from app.automation import hongguo_monitor as monitor_module
+    from app.jobs import manager as manager_module
+
+    class _DiscoverAndDownload:
+        def __init__(self):
+            self.rows = [
+                DiscoverItem(
+                    id="old-1",
+                    title="已有短剧",
+                    platform=PlatformName.hongguo,
+                )
+            ]
+
+        async def discover(self, _kind, *, limit=50):
+            return self.rows[:limit]
+
+        async def download(self, item_id, output_dir, **_kwargs):
+            output = Path(output_dir) / f"{item_id}.mp4"
+            output.write_bytes(b"playable")
+            return [output]
+
+    async def _run():
+        settings = Settings(
+            data_dir=tmp_path,
+            max_concurrent_jobs=1,
+            max_queued_jobs=10,
+        )
+        platform = _DiscoverAndDownload()
+        monkeypatch.setattr(monitor_module, "get_platform", lambda _name: platform)
+        monkeypatch.setattr(manager_module, "get_platform", lambda _name: platform)
+        manager = JobManager(settings)
+        service = HongguoMonitorService(settings, manager)
+        identity = Identity(kind="api_key", is_ops=True)
+        await service.configure(
+            identity,
+            HongguoMonitorConfig(enabled=False, auto_enqueue=True),
+        )
+
+        baseline = await service.scan_now(identity)
+        assert baseline.baseline_initialized is True
+        assert baseline.last_detected_count == 0
+        jobs, total = await manager.list_jobs_for(identity, page_size=100)
+        assert total == 0
+
+        platform.rows.append(
+            DiscoverItem(
+                id="new-2",
+                title="刚上新的短剧",
+                platform=PlatformName.hongguo,
+            )
+        )
+        detected = await service.scan_now(identity)
+        assert detected.last_detected_count == 1
+        assert detected.total_enqueued_count == 1
+        await asyncio.sleep(0.05)
+        jobs, total = await manager.list_jobs_for(identity, page_size=100)
+        assert total == 1
+        assert jobs[0].item_id == "new-2"
+        assert jobs[0].options["source"] == "hongguo_new_monitor"
+        await service.stop()
+        await manager.shutdown()
+
+    asyncio.run(_run())
+
+
+def test_paused_queue_keeps_new_and_retried_jobs_paused(tmp_path):
+    async def _run():
+        settings = Settings(
+            data_dir=tmp_path,
+            max_concurrent_jobs=1,
+            max_queued_jobs=10,
+        )
+        manager = JobManager(settings)
+        identity = Identity(kind="api_key", is_ops=True)
+        await manager.pause_queue_for(identity)
+
+        fresh = await manager.create_job(PlatformName.hongguo, "fresh")
+        assert fresh.status == JobStatus.paused
+
+        fresh.status = JobStatus.failed
+        fresh.error = "temporary failure"
+        retried = await manager.retry_job_for(fresh.job_id, identity)
+        assert retried is not None
+        assert retried.status == JobStatus.paused
+        assert retried.error is None
+        assert manager._running_tasks == {}
+        await manager.shutdown()
+
+    asyncio.run(_run())

@@ -62,10 +62,13 @@ def mock_get_platform_slow():
         yield
 
 
-def test_job_cancellation_task_termination_and_cleanup():
+def test_job_cancellation_task_termination_and_cleanup(tmp_path):
     """验证取消任务时真正的 Task 句柄被中断，中间临时文件被物理清理。"""
     async def _run():
-        manager = get_job_manager()
+        from app.config import Settings
+        from app.jobs.manager import JobManager
+
+        manager = JobManager(Settings(data_dir=tmp_path, max_concurrent_jobs=1))
 
         # 1. 创建慢速下载 Job
         record = await manager.create_job(
@@ -98,10 +101,13 @@ def test_job_cancellation_task_termination_and_cleanup():
     asyncio.run(_run())
 
 
-def test_job_cancellation_idempotency():
+def test_job_cancellation_idempotency(tmp_path):
     """验证任务取消具有幂等性，重复取消不报错、不颠覆状态机。"""
     async def _run():
-        manager = get_job_manager()
+        from app.config import Settings
+        from app.jobs.manager import JobManager
+
+        manager = JobManager(Settings(data_dir=tmp_path, max_concurrent_jobs=1))
 
         record = await manager.create_job(
             platform=PlatformName.hongguo,

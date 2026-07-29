@@ -15,6 +15,7 @@ class PlatformName(str, Enum):
 
 class JobStatus(str, Enum):
     pending = "pending"
+    paused = "paused"
     running = "running"
     cancelling = "cancelling"
     success = "success"
@@ -273,5 +274,40 @@ class JobListResponse(BaseModel):
     page: int = 1
     page_size: int = 20
     items: list[JobResponse] = Field(default_factory=list)
+
+
+class QueueStateResponse(BaseModel):
+    paused: bool = False
+    max_concurrent_jobs: int = 1
+    running_count: int = 0
+    pending_count: int = 0
+    items: list[JobResponse] = Field(default_factory=list)
+
+
+class QueueReorderRequest(BaseModel):
+    job_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class HongguoMonitorConfig(BaseModel):
+    enabled: bool = False
+    auto_enqueue: bool = False
+    interval_seconds: int = Field(default=60, ge=30, le=86400)
+    scan_limit: int = Field(default=50, ge=1, le=50)
+    quality: str = "1080p"
+    concurrency: int = Field(default=2, ge=1, le=12)
+    download_cover: bool = False
+    download_desc: bool = False
+
+
+class HongguoMonitorStatus(HongguoMonitorConfig):
+    baseline_initialized: bool = False
+    known_count: int = 0
+    last_scan_at: str = ""
+    last_success_at: str = ""
+    last_error: str = ""
+    last_detected_count: int = 0
+    total_detected_count: int = 0
+    total_enqueued_count: int = 0
+    recent_items: list[DiscoverItem] = Field(default_factory=list)
 
 

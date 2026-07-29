@@ -14,8 +14,8 @@
 | 热度榜、飙升榜、新作榜 | `GET /v1/rankings` | P1 |
 | 上线日历 | `GET /v1/calendar` | P1 |
 | 收藏与追更订阅 | `/v1/subscriptions` CRUD | P1 |
-| 自动检查、提醒或自动下载 | 订阅策略字段 + 服务端调度器 | P1 |
-| 队列排序、暂停和批量重试 | `/v1/jobs/queue/*` | P1 |
+| 红果自动检查与自动下载 | `/v1/automation/hongguo-new` | P1 ✅ |
+| 队列排序、暂停和失败重试 | `/v1/jobs/queue/*` | P1 ✅ |
 
 所有接口沿用现有认证方式：
 
@@ -296,32 +296,17 @@ POST   /v1/subscriptions/check
 
 ```http
 GET  /v1/jobs/queue
+POST /v1/jobs/queue/pause
+POST /v1/jobs/queue/resume
 POST /v1/jobs/queue/reorder
-POST /v1/jobs/batch-actions
+POST /v1/jobs/{job_id}/retry
 ```
 
-批量动作请求：
+队列排序请求：
 
 ```json
 {
-  "job_ids": ["job-1", "job-2"],
-  "action": "retry"
-}
-```
-
-`action` 支持：
-
-- `pause`
-- `resume`
-- `cancel`
-- `retry`
-- `remove_completed`
-
-排序请求：
-
-```json
-{
-  "job_ids_in_order": ["job-2", "job-1"]
+  "job_ids": ["job-2", "job-1"]
 }
 ```
 
