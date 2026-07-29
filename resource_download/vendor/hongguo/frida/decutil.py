@@ -87,14 +87,58 @@ def decrypt_av(ct_path, key_hex, out_path):
 def remux_playable(in_path, out_path):
     """重封装剥离 CENC 信令(encv→hvc1 / enca→mp4a, 删 senc/sinf/saiz/saio), 使严格播放器可播。
     依赖 ffmpeg(-c copy 不重编码)。无 ffmpeg 时返回 None。"""
-    ff = shutil.which("ffmpeg")
+    ff = os.environ.get("FFMPEG_BINARY") or shutil.which("ffmpeg")
+    if not ff:
+        try:
+            import imageio_ffmpeg
+
+            ff = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            ff = None
     if not ff:
         print("  [!] 未找到 ffmpeg, 跳过重封装(文件残留 encv 盒, 仅宽松播放器可播)")
         return None
-    r = subprocess.run([ff, "-y", "-loglevel", "error", "-i", in_path,
-                        "-c", "copy", "-tag:v", "hvc1", out_path],
-                       capture_output=True, text=True)
-    if r.returncode != 0 or not os.path.exists(out_path):
-        print(f"  [!] ffmpeg 重封装失败: {r.stderr[:200]}")
-        return None
-    return out_path
+
+    # FFmpeg 会把仍标记为 encv/enca 的已解密轨识别为未知 codec，无法直接
+    # remux。先在临时副本中恢复原始 sample-entry fourcc；媒体 payload 已
+    # 在 decrypt_av 中完成解密，后续 -c copy 会生成不含 CENC 辅助盒的新容器。
+    patched_path = out_path + ".clear-input.mp4"
+    try:
+        data = bytearray(open(in_path, "rb").read())
+        video_entries = data.count(b"encv")
+        audio_entries = data.count(b"enca")
+        data[:] = data.replace(b"encv", b"hvc1").replace(b"enca", b"mp4a")
+        if not video_entries and not audio_entries:
+            patched_path = in_path
+        else:
+            open(patched_path, "wb").write(data)
+
+        r = subprocess.run([ff, "-y", "-loglevel", "error", "-i", patched_path,
+                            "-map", "0", "-c", "copy", "-tag:v", "hvc1", out_path],
+                           capture_output=True, text=True)
+        if r.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            print(f"  [!] ffmpeg 重封装失败: {r.stderr[:200]}")
+            return None
+
+        # ByteVC sample entries can look structurally similar to HEVC while still
+        # being proprietary. A successful container copy is not sufficient: decode
+        # a short prefix before publishing the file as a playable MP4.
+        verify = subprocess.run(
+            [ff, "-v", "error", "-t", "3", "-i", out_path, "-f", "null", "-"],
+            capture_output=True,
+            text=True,
+        )
+        if verify.returncode != 0:
+            print(f"  [!] 重封装文件无法解码: {verify.stderr[:200]}")
+            try:
+                os.remove(out_path)
+            except OSError:
+                pass
+            return None
+        return out_path
+    finally:
+        if patched_path != in_path:
+            try:
+                os.remove(patched_path)
+            except OSError:
+                pass

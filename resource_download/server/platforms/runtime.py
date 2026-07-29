@@ -124,7 +124,7 @@ def probe_shared_agent(*, try_start: bool = False) -> dict[str, Any]:
         result["agent_bin_present"] = ls.returncode == 0 and "No such" not in (ls.stderr or "")
 
         names = dev._agent_running_names()
-        if not names and try_start:
+        if try_start:
             try:
                 dev.ensure_frida_agent()
                 names = dev._agent_running_names()

@@ -67,6 +67,27 @@ def pidof(name: str) -> str | None:
     return out.split()[0]
 
 
+def _agent_processes() -> list[tuple[str, str, str]]:
+    """Return (user, pid, name) for known Frida agent processes."""
+    known_names = {
+        Path(agent_bin()).name,
+        Path(agent_src()).name,
+        "frida-server",
+        "sys_hlpd",
+        "fsd",
+    }
+    result = adb("shell", "ps", "-A", timeout=10)
+    processes: list[tuple[str, str, str]] = []
+    for raw_line in (result.stdout or "").splitlines():
+        fields = raw_line.split()
+        if len(fields) < 3:
+            continue
+        user, process_id, name = fields[0], fields[1], fields[-1]
+        if name in known_names and process_id.isdigit():
+            processes.append((user, process_id, name))
+    return processes
+
+
 def ensure_fanqie_running(*, launch_wait_sec: float = 8.0) -> int:
     """确保番茄小说进程存活，返回 pid。不涉及红果包名。"""
     from platforms.runtime import ensure_app_running
@@ -103,6 +124,19 @@ def ensure_frida_agent(*, forward_port: int = 27042) -> str:
         pass
     time.sleep(0.2)
     connect()
+
+    # MuMu 会在重启后把 adbd 恢复成 shell 权限。若 agent 已被 shell
+    # 用户提前拉起，它虽然能监听端口，却无法 attach App 进程。提权后只
+    # 清理这些不可用的非 root agent，再由下方逻辑以 root 重新启动。
+    unprivileged = [
+        process_id
+        for user, process_id, _name in _agent_processes()
+        if user != "root"
+    ]
+    for process_id in unprivileged:
+        adb("shell", "kill", "-9", process_id, timeout=8)
+    if unprivileged:
+        time.sleep(0.5)
 
     running = _agent_running_names()
     if not running:
@@ -199,7 +233,7 @@ def probe_fanqie_runtime(*, try_start_agent: bool = False) -> dict:
         result["agent_bin_present"] = ls.returncode == 0 and "No such" not in (ls.stderr or "")
 
         names = _agent_running_names()
-        if not names and try_start_agent:
+        if try_start_agent:
             try:
                 ensure_frida_agent()
                 names = _agent_running_names()

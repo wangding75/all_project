@@ -99,6 +99,18 @@ def load_hongguo_api():
 
 
 def _is_dead_frida_session(exc: BaseException) -> bool:
+    if isinstance(exc, IndexError):
+        # The vendor oracle indexes pidof(...).split()[0]; an empty result means
+        # the App exited between the runtime probe and Frida attach.
+        return True
+    if type(exc).__name__ in {
+        "InvalidOperationError",
+        "PermissionDeniedError",
+        "ProcessNotFoundError",
+        "RPCException",
+        "TransportError",
+    }:
+        return True
     message = str(exc).lower()
     return any(
         marker in message
@@ -110,6 +122,7 @@ def _is_dead_frida_session(exc: BaseException) -> bool:
             "invalid operation",
             "timed out trying to sync up with agent",
             "unable to communicate with remote frida-server",
+            "unable to access process",
         )
     )
 
@@ -132,17 +145,28 @@ def _reset_local_oracle() -> None:
                 pass
 
 
+def _ensure_hongguo_runtime() -> None:
+    from app.config import get_settings
+    from platforms.runtime import ensure_app_running, probe_shared_agent
+
+    agent = probe_shared_agent(try_start=True)
+    if not agent.get("agent_running"):
+        raise RuntimeError(agent.get("message") or "Frida agent unavailable")
+    app = ensure_app_running(get_settings().hongguo_pkg, try_start=True)
+    if not app.get("running"):
+        raise RuntimeError(app.get("message") or "Hongguo App unavailable")
+
+
 def call_with_session_recovery(operation: Callable[[], T]) -> T:
     """Retry one signed vendor operation after rebuilding a stale Frida session."""
+    _ensure_hongguo_runtime()
     try:
         return operation()
     except Exception as exc:
         if not _is_dead_frida_session(exc):
             raise
         _reset_local_oracle()
-        from platforms.runtime import probe_all_runtimes
-
-        probe_all_runtimes(try_start_agent=True, try_start_apps=True)
+        _ensure_hongguo_runtime()
         return operation()
 
 

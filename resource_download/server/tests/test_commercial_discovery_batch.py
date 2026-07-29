@@ -213,10 +213,9 @@ def test_cover_cache_rejects_arbitrary_hosts_and_converts_to_jpeg(
 
 
 def test_hongguo_session_recovery_reconnects_and_retries_once(monkeypatch):
-    from platforms import runtime
     from platforms.hongguo import bridge
 
-    calls = {"operation": 0, "reset": 0, "probe": 0}
+    calls = {"operation": 0, "reset": 0, "ensure": 0}
 
     def _operation():
         calls["operation"] += 1
@@ -227,12 +226,55 @@ def test_hongguo_session_recovery_reconnects_and_retries_once(monkeypatch):
     def _reset():
         calls["reset"] += 1
 
-    def _probe(**kwargs):
-        calls["probe"] += 1
-        assert kwargs == {"try_start_agent": True, "try_start_apps": True}
+    def _ensure():
+        calls["ensure"] += 1
 
     monkeypatch.setattr(bridge, "_reset_local_oracle", _reset)
-    monkeypatch.setattr(runtime, "probe_all_runtimes", _probe)
+    monkeypatch.setattr(bridge, "_ensure_hongguo_runtime", _ensure)
 
     assert bridge.call_with_session_recovery(_operation) == "recovered"
-    assert calls == {"operation": 2, "reset": 1, "probe": 1}
+    assert calls == {"operation": 2, "reset": 1, "ensure": 2}
+
+
+def test_hongguo_download_rejects_diagnostic_raw_output(tmp_path, monkeypatch):
+    import asyncio
+
+    from platforms.hongguo import platform as platform_module
+
+    class _Offline:
+        OUT = ""
+        STATE_DIR = ""
+
+        @staticmethod
+        def dl_series(*_args, **_kwargs):
+            output = tmp_path / "episode.raw.mp4"
+            output.write_bytes(b"diagnostic-bytevc")
+
+    monkeypatch.setattr(platform_module, "load_hongguo_api", lambda: object())
+    monkeypatch.setattr(platform_module, "load_offline_dl", lambda: _Offline)
+    monkeypatch.setattr(
+        platform_module,
+        "call_with_session_recovery",
+        lambda operation: operation(),
+    )
+
+    adapter = platform_module.HongguoPlatform()
+    with pytest.raises(RuntimeError, match="proprietary ByteVC"):
+        asyncio.run(
+            adapter.download(
+                "series-1",
+                tmp_path,
+                range_spec="1",
+                options={"quality": "720p"},
+            )
+        )
+
+    files = asyncio.run(
+        adapter.download(
+            "series-1",
+            tmp_path,
+            range_spec="1",
+            options={"quality": "720p", "allow_raw": True},
+        )
+    )
+    assert files == [tmp_path / "episode.raw.mp4"]

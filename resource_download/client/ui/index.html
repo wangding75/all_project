@@ -212,7 +212,6 @@
               <label class="config-label">🎬 视频清晰度选择 (短剧专属)</label>
               <select class="input-control" id="selectQuality">
                 <option value="1080p" selected>1080p 超清 (推荐)</option>
-                <option value="720p">720p 标清</option>
               </select>
             </div>
 
@@ -345,8 +344,10 @@
               <label class="form-label">红果默认清晰度</label>
               <div class="quality-pill-row" id="settingQualityPills">
                 <button type="button" class="quality-pill active" data-quality="1080p">1080p</button>
-                <button type="button" class="quality-pill" data-quality="720p">720p</button>
-                <button type="button" class="quality-pill" data-quality="480p">480p</button>
+                <button type="button" class="quality-pill" data-quality="720p" disabled
+                  title="平台返回 ByteVC2 私有编码，当前无法生成通用播放器可播放文件">720p（暂不兼容）</button>
+                <button type="button" class="quality-pill" data-quality="480p" disabled
+                  title="平台返回 ByteVC2 私有编码，当前无法生成通用播放器可播放文件">480p（暂不兼容）</button>
               </div>
               <label class="form-check">
                 <input type="checkbox" id="settingRememberQuality" checked> 记住清晰度选择

@@ -82,7 +82,7 @@ class HongguoPlatform(BasePlatform):
             return items
 
         try:
-            return await asyncio.to_thread(call_with_session_recovery, _run)
+            return await asyncio.to_thread(_run)
         except HongguoVendorError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -193,6 +193,7 @@ class HongguoPlatform(BasePlatform):
         concurrency = int(options.get("concurrency") or options.get("c") or 2)
         download_cover = bool(options.get("download_cover"))
         download_desc = bool(options.get("download_desc"))
+        allow_raw = bool(options.get("allow_raw"))
 
         def _run() -> list[Path]:
             H = load_hongguo_api()
@@ -246,9 +247,17 @@ class HongguoPlatform(BasePlatform):
                 for p in Path(output_dir).rglob("*.mp4")
                 if p.is_file() and not p.name.endswith(".enc.mp4") and p.stat().st_size > 0
             )
+            playable_paths = [p for p in paths if not p.name.endswith(".raw.mp4")]
+            raw_paths = [p for p in paths if p.name.endswith(".raw.mp4")]
+            paths = playable_paths or (raw_paths if allow_raw else [])
             if progress:
                 progress(100.0, f"done {len(paths)} files")
             if not paths:
+                if raw_paths:
+                    raise RuntimeError(
+                        f"hongguo quality {quality} uses proprietary ByteVC and produced only "
+                        "a diagnostic raw-decrypted file; choose 1080p for a playable MP4"
+                    )
                 raise RuntimeError(
                     "hongguo download produced no mp4; check config.json + sign backend "
                     f"(vendor={vendor_ready()})"

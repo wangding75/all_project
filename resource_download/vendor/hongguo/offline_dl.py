@@ -148,10 +148,11 @@ def dl_vid(vid, name=None, retries=2, quiet=False, quality="best", tracks=None):
                 H.download_file(tr["main_url"], out); return out
             H.download_file(tr["main_url"], ct)
             r = OD.offline_decrypt(enc.get("spade_a"), ct, out)
-            if r and os.path.exists(out) and os.path.getsize(out) > 0:
+            resolved_out = str(r or out)
+            if r and os.path.exists(resolved_out) and os.path.getsize(resolved_out) > 0:
                 try: os.remove(ct)
                 except OSError: pass
-                return out
+                return resolved_out
             last = "解密失败"
         except Exception as ex:
             last = str(ex)

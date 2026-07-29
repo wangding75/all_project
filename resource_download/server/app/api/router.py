@@ -389,7 +389,11 @@ async def detail(
     try:
         res = await impl.get_detail(id)
         if platform == PlatformName.hongguo:
-            res.extra["qualities"] = ["1080p", "720p"]
+            res.extra["qualities"] = ["1080p"]
+            res.extra["quality_note"] = (
+                "360p/480p/540p/720p use proprietary ByteVC2 and are not exposed "
+                "as playable downloads"
+            )
 
         if page is not None and page_size is not None:
             total_segments = len(res.segments)

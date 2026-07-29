@@ -200,7 +200,9 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 | platform | `hongguo` \| `fanqie` |
 | id | 剧/书 ID，或番茄 `fanqienovel.com/page|reader/...` URL |
 
-返回：`title`、`segments[]`（集/章）、`extra` 等。红果 `extra.qualities` 可能含 `1080p`/`720p`。
+返回：`title`、`segments[]`（集/章）、`extra` 等。红果当前仅在
+`extra.qualities` 暴露 `1080p`；360p/480p/540p/720p 为平台私有
+ByteVC2 编码，只用于诊断，不作为通用播放器可播放下载。
 
 ---
 
@@ -224,7 +226,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 | 字段 | 说明 |
 |------|------|
 | range | `all` \| `1-10` \| `1,3,5` |
-| options.quality | 红果清晰度（如 `best` / `1080p`） |
+| options.quality | 红果可播放清晰度，当前使用 `1080p` |
 | options.mode | 番茄：`web`（默认）或 `app`（需 Frida + 设备会话） |
 | options.cookie | 番茄 Web 可选 Cookie |
 | options.delay | 番茄章节间隔（秒） |
