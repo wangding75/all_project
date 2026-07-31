@@ -38,7 +38,13 @@ from app.models import (
     JobStatus,
     HongguoMonitorConfig,
     HongguoMonitorStatus,
+    ImageRecognizeRequest,
+    ImageRecognizeResponse,
+    PeopleResponse,
     PlatformName,
+    QueueBulkActionRequest,
+    QueueBulkRequest,
+    QueueBulkResponse,
     QueueReorderRequest,
     QueueStateResponse,
     RedeemRequest,
@@ -307,6 +313,48 @@ async def resolve_batch(
     return BatchResolveResponse(items=items, errors=errors)
 
 
+@api_router.post("/v1/image/recognize", response_model=ImageRecognizeResponse)
+async def recognize_image(
+    body: ImageRecognizeRequest,
+    _: Identity = Depends(require_identity),
+) -> ImageRecognizeResponse:
+    from app.image_recognition import decode_image_base64, recognize_cover
+
+    try:
+        image_data = decode_image_base64(body.image_base64)
+        return await recognize_cover(
+            image_data,
+            platform_hint=body.platform_hint,
+            max_candidates=body.max_candidates,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@api_router.get("/v1/hongguo/people", response_model=PeopleResponse)
+async def hongguo_people(
+    genre: str = Query("short_play"),
+    work_limit: int = Query(20, ge=1, le=30),
+    _: Identity = Depends(require_identity),
+) -> PeopleResponse:
+    if genre not in {"short_play", "comic_series", "ai_series"}:
+        raise HTTPException(status_code=400, detail=f"unsupported hongguo genre: {genre}")
+    platform = get_platform(PlatformName.hongguo)
+    if not hasattr(platform, "get_people_index"):
+        raise HTTPException(status_code=501, detail="当前红果适配器不支持演职员索引")
+    try:
+        result = await platform.get_people_index(genre=genre, work_limit=work_limit)
+        from app.media_cache import register_cover_url
+
+        for person in result.people:
+            person.avatar = register_cover_url(person.avatar)
+            for work in person.works:
+                work.cover = register_cover_url(work.cover)
+        return result
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"people index failed: {exc}") from exc
+
+
 @api_router.get("/v1/discover", response_model=DiscoverResponse)
 async def discover(
     platform: str | None = Query(
@@ -318,6 +366,23 @@ async def discover(
         description="逗号分隔：hot=热榜, new=今日/近期上新",
     ),
     limit: int = Query(24, ge=1, le=50),
+    genre: str = Query(
+        "short_play",
+        description="红果体裁：short_play | comic_series | ai_series",
+    ),
+    sort: str = Query(
+        "hot_score",
+        description="红果排序：hot_score | online_time | hot_collect",
+    ),
+    theme: str | None = Query(None, max_length=30),
+    setting: str | None = Query(None, max_length=30),
+    background: str | None = Query(None, max_length=30),
+    gender: str | None = Query(None, max_length=10),
+    days: int | None = Query(None, ge=1, le=90),
+    creation_status: str | None = Query(None, max_length=20),
+    min_episode_count: int = Query(0, ge=0, le=10000),
+    keyword: str | None = Query(None, max_length=50),
+    only_today: bool = Query(True),
     _: Identity = Depends(require_identity),
 ) -> DiscoverResponse:
     """首页发现页：聚合平台真实热榜 / 今日上新，单平台失败时降级返回。"""
@@ -338,6 +403,18 @@ async def discover(
     invalid_kinds = [kind for kind in kind_list if kind not in {"hot", "new"}]
     if invalid_kinds:
         raise HTTPException(status_code=400, detail=f"unsupported discover kinds: {invalid_kinds}")
+    allowed_genres = {"short_play", "comic_series", "ai_series"}
+    if genre not in allowed_genres:
+        raise HTTPException(status_code=400, detail=f"unsupported hongguo genre: {genre}")
+    allowed_sorts = {"hot_score", "online_time", "hot_collect"}
+    if sort not in allowed_sorts:
+        raise HTTPException(status_code=400, detail=f"unsupported hongguo sort: {sort}")
+    if days is not None and days not in {7, 14, 30, 90}:
+        raise HTTPException(status_code=400, detail="days must be one of 7, 14, 30, 90")
+    if gender not in {None, "", "男频", "女频", "1", "0"}:
+        raise HTTPException(status_code=400, detail="unsupported gender")
+    if creation_status not in {None, "", "已完结", "连载中", "完结", "连载"}:
+        raise HTTPException(status_code=400, detail="unsupported creation_status")
 
     title_map = {
         "hot": "🔥 热榜",
@@ -358,14 +435,46 @@ async def discover(
     async def _load(platform_name: PlatformName, kind: str):
         try:
             impl = get_platform(platform_name)
-            items = await impl.discover(kind, limit=limit)
+            items = await impl.discover(
+                kind,
+                limit=limit,
+                genre=genre,
+                sort=sort,
+                theme=theme,
+                setting=setting,
+                background=background,
+                gender=gender,
+                days=days,
+                status=creation_status,
+                only_today=only_today,
+            )
             from app.media_cache import register_cover_url
 
+            filtered_items = []
+            normalized_keyword = (keyword or "").strip().lower()
             for item in items or []:
+                try:
+                    episode_count = int(item.extra.get("episode_count") or 0)
+                except (TypeError, ValueError):
+                    episode_count = 0
+                if min_episode_count and episode_count < min_episode_count:
+                    continue
+                if normalized_keyword:
+                    haystack = " ".join(
+                        [
+                            str(item.title or ""),
+                            str(item.author or ""),
+                            str(item.desc or ""),
+                            str(item.extra.get("category") or ""),
+                        ]
+                    ).lower()
+                    if normalized_keyword not in haystack:
+                        continue
                 proxied = register_cover_url(item.cover)
                 if proxied:
                     item.cover = proxied
-            return platform_name, list(items or []), None
+                filtered_items.append(item)
+            return platform_name, filtered_items, None
         except Exception as exc:  # noqa: BLE001
             return platform_name, [], str(exc)
 
@@ -621,6 +730,71 @@ async def reorder_queue(
     if not ok:
         raise HTTPException(status_code=400, detail="队列包含不存在、运行中或无权操作的任务")
     return {"success": True, "job_ids": body.job_ids}
+
+
+@api_router.post("/v1/jobs/queue/bulk", response_model=QueueBulkResponse)
+async def bulk_queue_action(
+    body: QueueBulkActionRequest,
+    identity: Identity = Depends(require_identity),
+) -> QueueBulkResponse:
+    manager = get_job_manager()
+    requested = list(dict.fromkeys(body.job_ids))
+    if body.action == "pause":
+        changed, skipped = await manager.set_jobs_paused_for(
+            identity,
+            requested,
+            paused=True,
+        )
+    elif body.action == "resume":
+        changed, skipped = await manager.set_jobs_paused_for(
+            identity,
+            requested,
+            paused=False,
+        )
+    elif body.action == "archive":
+        changed, skipped = await manager.archive_jobs_for(identity, requested)
+    else:
+        changed = []
+        skipped = []
+        for job_id in requested:
+            if await manager.cancel_job_for(job_id, identity):
+                changed.append(job_id)
+            else:
+                skipped.append(job_id)
+    return QueueBulkResponse(
+        action=body.action,
+        requested=len(requested),
+        affected=len(changed),
+        skipped=skipped,
+    )
+
+
+@api_router.post("/v1/jobs/queue/bulk/retry", response_model=QueueBulkResponse)
+async def bulk_retry_jobs(
+    body: QueueBulkRequest,
+    identity: Identity = Depends(require_vip),
+    db: Session = Depends(get_db),
+) -> QueueBulkResponse:
+    from app.quota import check_job_quota, increment_job_quota
+
+    manager = get_job_manager()
+    requested = list(dict.fromkeys(body.job_ids))
+    changed: list[str] = []
+    skipped: list[str] = []
+    for job_id in requested:
+        check_job_quota(identity, db)
+        record = await manager.retry_job_for(job_id, identity)
+        if record is None:
+            skipped.append(job_id)
+            continue
+        increment_job_quota(identity, db)
+        changed.append(job_id)
+    return QueueBulkResponse(
+        action="retry",
+        requested=len(requested),
+        affected=len(changed),
+        skipped=skipped,
+    )
 
 
 @api_router.get("/v1/jobs/{job_id}", response_model=JobResponse)

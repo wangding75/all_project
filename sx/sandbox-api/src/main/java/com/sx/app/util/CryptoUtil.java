@@ -3,7 +3,10 @@ package com.sx.app.util;
 import android.util.Base64;
 
 import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
 import java.security.MessageDigest;
+import java.security.Signature;
+import java.security.spec.X509EncodedKeySpec;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -55,6 +58,37 @@ public final class CryptoUtil {
             return new String(Base64.decode(s, Base64.DEFAULT), StandardCharsets.UTF_8);
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    public static String b64UrlDecode(String s) {
+        try {
+            return new String(Base64.decode(s, Base64.URL_SAFE | Base64.NO_WRAP),
+                    StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** Verify a URL-safe Base64 RSA/SHA-256 signature over the supplied text. */
+    public static boolean verifyRsaSha256(String data, String signatureBase64Url,
+                                          String publicKeyBase64) {
+        if (data == null || signatureBase64Url == null
+                || publicKeyBase64 == null || publicKeyBase64.isEmpty()) {
+            return false;
+        }
+        try {
+            byte[] keyBytes = Base64.decode(publicKeyBase64, Base64.DEFAULT);
+            java.security.PublicKey publicKey = KeyFactory.getInstance("RSA")
+                    .generatePublic(new X509EncodedKeySpec(keyBytes));
+            Signature verifier = Signature.getInstance("SHA256withRSA");
+            verifier.initVerify(publicKey);
+            verifier.update(data.getBytes(StandardCharsets.UTF_8));
+            byte[] signature = Base64.decode(signatureBase64Url,
+                    Base64.URL_SAFE | Base64.NO_WRAP);
+            return verifier.verify(signature);
+        } catch (Exception e) {
+            return false;
         }
     }
 

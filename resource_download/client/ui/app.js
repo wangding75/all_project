@@ -92,9 +92,16 @@
     searchHasMore: false,
     lastSearchQuery: "",
     lastPlatformErrors: {},
+    imageRecognizeData: "",
+    batchResults: [],
+    batchSelected: new Set(),
+    batchResolving: false,
     selectedEpisodes: new Set(),
     jobsPollTimer: null,
     queueState: null,
+    jobs: [],
+    jobsFilter: "all",
+    jobsSelected: new Set(),
     hongguoMonitor: null,
     libraryFilter: "all",
     librarySearch: "",
@@ -103,6 +110,14 @@
     depsPanelOpen: false,
     discoverPlatform: "hongguo",
     discoverView: "discover",
+    discoverFilters: {
+      genre: "short_play",
+      sort: "hot_score",
+      gender: "",
+      days: "",
+      theme: "",
+      minEpisodes: 0,
+    },
     discoverData: null,
     homeSelectedItems: new Map(),
     followingItems: (() => {
@@ -170,6 +185,15 @@
     btnHomeSelectAll: document.getElementById("btnHomeSelectAll"),
     btnHomeClearSelection: document.getElementById("btnHomeClearSelection"),
     btnHomeAddQueue: document.getElementById("btnHomeAddQueue"),
+    homeAdvancedFilters: document.getElementById("homeAdvancedFilters"),
+    homeFilterGenre: document.getElementById("homeFilterGenre"),
+    homeFilterSort: document.getElementById("homeFilterSort"),
+    homeFilterGender: document.getElementById("homeFilterGender"),
+    homeFilterDays: document.getElementById("homeFilterDays"),
+    homeFilterTheme: document.getElementById("homeFilterTheme"),
+    homeFilterMinEpisodes: document.getElementById("homeFilterMinEpisodes"),
+    btnApplyHomeFilters: document.getElementById("btnApplyHomeFilters"),
+    btnResetHomeFilters: document.getElementById("btnResetHomeFilters"),
 
     // 搜索页面
     inputSearchQuery: document.getElementById("inputSearchQuery"),
@@ -182,6 +206,26 @@
     searchResultMeta: document.getElementById("searchResultMeta"),
     searchFilterChips: document.querySelectorAll(".filter-chip"),
     toastContainer: document.getElementById("toastContainer"),
+    imageRecognizeInput: document.getElementById("imageRecognizeInput"),
+    imageRecognizePreview: document.getElementById("imageRecognizePreview"),
+    imageRecognizeStatus: document.getElementById("imageRecognizeStatus"),
+    btnRecognizeImage: document.getElementById("btnRecognizeImage"),
+
+    // 批量导入页面
+    batchInputText: document.getElementById("batchInputText"),
+    batchFileInput: document.getElementById("batchFileInput"),
+    batchPlatformHint: document.getElementById("batchPlatformHint"),
+    batchInputCount: document.getElementById("batchInputCount"),
+    btnBatchClear: document.getElementById("btnBatchClear"),
+    btnBatchResolve: document.getElementById("btnBatchResolve"),
+    batchProgress: document.getElementById("batchProgress"),
+    batchProgressFill: document.getElementById("batchProgressFill"),
+    batchProgressText: document.getElementById("batchProgressText"),
+    batchResultSummary: document.getElementById("batchResultSummary"),
+    batchResults: document.getElementById("batchResults"),
+    btnBatchSelectSuccess: document.getElementById("btnBatchSelectSuccess"),
+    btnBatchClearSelection: document.getElementById("btnBatchClearSelection"),
+    btnBatchEnqueue: document.getElementById("btnBatchEnqueue"),
 
     // 详情面板
     searchRightPanel: document.getElementById("searchRightPanel"),
@@ -207,6 +251,11 @@
     btnQueuePause: document.getElementById("btnQueuePause"),
     btnRefreshJobs: document.getElementById("btnRefreshJobs"),
     queueStateText: document.getElementById("queueStateText"),
+    jobsStatusFilter: document.getElementById("jobsStatusFilter"),
+    btnJobsSelectVisible: document.getElementById("btnJobsSelectVisible"),
+    btnJobsClearSelected: document.getElementById("btnJobsClearSelected"),
+    jobsSelectedCount: document.getElementById("jobsSelectedCount"),
+    jobsBulkButtons: document.querySelectorAll("[data-jobs-bulk]"),
     jobCountBadge: document.getElementById("jobCountBadge"),
     statActiveJobs: document.querySelector(".jobs-stat-item:nth-child(1) .jobs-stat-val"),
     statCompletedJobs: document.querySelector(".jobs-stat-item:nth-child(2) .jobs-stat-val"),
@@ -252,7 +301,13 @@
     settingHgMonitorAutoQueue: document.getElementById("settingHgMonitorAutoQueue"),
     settingHgMonitorInterval: document.getElementById("settingHgMonitorInterval"),
     settingHgMonitorLimit: document.getElementById("settingHgMonitorLimit"),
+    settingHgMonitorMinEpisodes: document.getElementById("settingHgMonitorMinEpisodes"),
+    settingHgMonitorMaxEnqueue: document.getElementById("settingHgMonitorMaxEnqueue"),
+    settingHgMonitorInclude: document.getElementById("settingHgMonitorInclude"),
+    settingHgMonitorExclude: document.getElementById("settingHgMonitorExclude"),
+    settingHgMonitorAuthors: document.getElementById("settingHgMonitorAuthors"),
     settingHgMonitorStatus: document.getElementById("settingHgMonitorStatus"),
+    settingHgMonitorLogs: document.getElementById("settingHgMonitorLogs"),
     btnScanHgNewNow: document.getElementById("btnScanHgNewNow"),
 
     // 登录 / 注册弹窗
@@ -930,6 +985,317 @@
     if (q && String(q).trim()) doSearch();
   }
 
+  function parseBatchInputs() {
+    const raw = elements.batchInputText ? elements.batchInputText.value : "";
+    const seen = new Set();
+    const values = [];
+    String(raw || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((value) => {
+        if (!seen.has(value)) {
+          seen.add(value);
+          values.push(value);
+        }
+      });
+    return values;
+  }
+
+  function updateBatchInputCount() {
+    const count = parseBatchInputs().length;
+    if (elements.batchInputCount) elements.batchInputCount.textContent = String(count);
+    return count;
+  }
+
+  function updateBatchSelection() {
+    const selectedCount = state.batchSelected.size;
+    if (elements.btnBatchEnqueue) {
+      elements.btnBatchEnqueue.disabled = selectedCount === 0 || state.batchResolving;
+      elements.btnBatchEnqueue.textContent = selectedCount
+        ? `加入队列（${selectedCount}）`
+        : "加入队列";
+    }
+    if (elements.batchResults) {
+      elements.batchResults.querySelectorAll(".batch-result-check").forEach((checkbox) => {
+        checkbox.checked = state.batchSelected.has(checkbox.getAttribute("data-key") || "");
+      });
+    }
+  }
+
+  function renderBatchResults() {
+    if (!elements.batchResults) return;
+    const rows = state.batchResults || [];
+    const successCount = rows.filter((row) => !!row.content).length;
+    const errorCount = rows.length - successCount;
+    if (elements.batchResultSummary) {
+      elements.batchResultSummary.textContent = rows.length
+        ? `共 ${rows.length} 条 · 成功 ${successCount} · 失败 ${errorCount}`
+        : "尚未识别";
+    }
+    if (!rows.length) {
+      elements.batchResults.innerHTML = `
+        <div class="batch-empty-state">
+          <span>⌁</span>
+          <strong>等待导入内容</strong>
+          <p>识别成功后可在这里核对平台、标题和资源 ID。</p>
+        </div>`;
+      updateBatchSelection();
+      return;
+    }
+    elements.batchResults.innerHTML = rows
+      .map((row, index) => {
+        const key = String(index);
+        if (!row.content) {
+          return `
+            <div class="batch-result-row is-error">
+              <input class="batch-result-check" type="checkbox" disabled aria-label="识别失败">
+              <div class="batch-result-source">
+                <strong title="${escapeHtml(row.input)}">${escapeHtml(row.input)}</strong>
+                <span>原始输入</span>
+              </div>
+              <span class="batch-result-arrow">→</span>
+              <div class="batch-result-target">
+                <strong>${escapeHtml(row.message || "未找到对应资源")}</strong>
+                <span>${escapeHtml(row.code || "NOT_FOUND")}</span>
+              </div>
+            </div>`;
+        }
+        const item = row.content;
+        const platform = platformOf(item);
+        const platformLabel = platform === "fanqie" ? "番茄小说" : "红果短剧";
+        return `
+          <div class="batch-result-row">
+            <input class="batch-result-check" type="checkbox" data-key="${key}" aria-label="选择 ${escapeHtml(item.title)}">
+            <div class="batch-result-source">
+              <strong title="${escapeHtml(row.input)}">${escapeHtml(row.input)}</strong>
+              <span>原始输入</span>
+            </div>
+            <span class="batch-result-arrow">→</span>
+            <div class="batch-result-target">
+              <strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong>
+              <span>ID ${escapeHtml(item.id)}${item.author ? ` · ${escapeHtml(item.author)}` : ""}</span>
+            </div>
+            <span class="batch-platform-tag">${platformLabel}</span>
+          </div>`;
+      })
+      .join("");
+    elements.batchResults.querySelectorAll(".batch-result-check[data-key]").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        const key = checkbox.getAttribute("data-key") || "";
+        if (checkbox.checked) state.batchSelected.add(key);
+        else state.batchSelected.delete(key);
+        updateBatchSelection();
+      });
+    });
+    updateBatchSelection();
+  }
+
+  function setBatchProgress(done, total, label) {
+    if (elements.batchProgress) elements.batchProgress.hidden = false;
+    const ratio = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+    if (elements.batchProgressFill) elements.batchProgressFill.style.width = `${ratio}%`;
+    if (elements.batchProgressText) {
+      elements.batchProgressText.textContent = label || `已处理 ${done} / ${total}`;
+    }
+  }
+
+  async function resolveBatchInputs() {
+    if (state.batchResolving) return;
+    const inputs = parseBatchInputs();
+    if (!inputs.length) {
+      toast("请先输入剧名、书名、资源 ID 或分享链接", "warning");
+      return;
+    }
+    if (inputs.length > 1000) {
+      toast(`当前有 ${inputs.length} 条，请控制在 1000 条以内`, "warning", 4500);
+      return;
+    }
+    state.batchResolving = true;
+    state.batchResults = [];
+    state.batchSelected.clear();
+    if (elements.btnBatchResolve) {
+      elements.btnBatchResolve.disabled = true;
+      elements.btnBatchResolve.textContent = "识别中…";
+    }
+    renderBatchResults();
+    const hint = elements.batchPlatformHint ? elements.batchPlatformHint.value : "all";
+    try {
+      for (let offset = 0; offset < inputs.length; offset += 100) {
+        const chunk = inputs.slice(offset, offset + 100);
+        setBatchProgress(offset, inputs.length, `正在识别 ${offset + 1}-${offset + chunk.length} 条`);
+        const response = await apiFetch("/v1/batch/resolve", {
+          method: "POST",
+          body: JSON.stringify({ inputs: chunk, platform_hint: hint }),
+        });
+        const resolvedByInput = new Map(
+          (response.items || []).map((row) => [String(row.input), row])
+        );
+        const errorsByInput = new Map(
+          (response.errors || []).map((row) => [String(row.input), row])
+        );
+        chunk.forEach((input) => {
+          const resolved = resolvedByInput.get(input);
+          const error = errorsByInput.get(input);
+          state.batchResults.push(
+            resolved || error || {
+              input,
+              code: "EMPTY_RESPONSE",
+              message: "服务端未返回识别结果",
+            }
+          );
+        });
+        setBatchProgress(
+          Math.min(offset + chunk.length, inputs.length),
+          inputs.length,
+          `已处理 ${Math.min(offset + chunk.length, inputs.length)} / ${inputs.length}`
+        );
+        renderBatchResults();
+      }
+      state.batchResults.forEach((row, index) => {
+        if (row.content) state.batchSelected.add(String(index));
+      });
+      renderBatchResults();
+      const ok = state.batchSelected.size;
+      toast(
+        `批量识别完成：成功 ${ok} 条，失败 ${state.batchResults.length - ok} 条`,
+        ok ? "success" : "warning",
+        4500
+      );
+    } catch (error) {
+      toast(`批量识别中断：${error.message}`, "error", 5000);
+    } finally {
+      state.batchResolving = false;
+      if (elements.btnBatchResolve) {
+        elements.btnBatchResolve.disabled = false;
+        elements.btnBatchResolve.textContent = "开始识别";
+      }
+      updateBatchSelection();
+    }
+  }
+
+  async function enqueueBatchResults() {
+    const selected = Array.from(state.batchSelected)
+      .map((key) => state.batchResults[Number(key)])
+      .filter((row) => row && row.content);
+    if (!selected.length) {
+      toast("请先选择识别成功的资源", "warning");
+      return;
+    }
+    if (elements.btnBatchEnqueue) {
+      elements.btnBatchEnqueue.disabled = true;
+      elements.btnBatchEnqueue.textContent = "正在入队…";
+    }
+    let created = 0;
+    let skipped = 0;
+    let failed = 0;
+    try {
+      for (let offset = 0; offset < selected.length; offset += 100) {
+        const chunk = selected.slice(offset, offset + 100);
+        const response = await apiFetch("/v1/jobs/batch", {
+          method: "POST",
+          body: JSON.stringify({
+            items: chunk.map((row) => ({
+              platform: platformOf(row.content),
+              id: String(row.content.id),
+              range: "all",
+              options: {
+                title: displayTitle(row.content),
+                source: "batch_import",
+                original_input: row.input,
+              },
+            })),
+            queue_mode: "enqueue",
+            duplicate_policy: "skip_completed",
+          }),
+        });
+        created += (response.created || []).length;
+        skipped += (response.skipped || []).length;
+        failed += (response.errors || []).length;
+      }
+      toast(
+        `批量入队完成：创建 ${created}，跳过 ${skipped}，失败 ${failed}`,
+        failed ? "warning" : "success",
+        5000
+      );
+      if (created) switchPage("page-jobs");
+    } catch (error) {
+      toast(`批量加入队列失败：${error.message}`, "error", 5000);
+    } finally {
+      updateBatchSelection();
+    }
+  }
+
+  async function recognizeSelectedImage() {
+    if (!state.imageRecognizeData) {
+      toast("请先上传封面或海报图片", "warning");
+      return;
+    }
+    if (elements.btnRecognizeImage) {
+      elements.btnRecognizeImage.disabled = true;
+      elements.btnRecognizeImage.textContent = "比对中…";
+    }
+    if (elements.imageRecognizeStatus) {
+      elements.imageRecognizeStatus.textContent = "正在读取热榜与上新封面并计算视觉相似度…";
+    }
+    renderSearchSkeleton();
+    try {
+      const platformHint = ["hongguo", "fanqie"].includes(state.platform)
+        ? state.platform
+        : "all";
+      const response = await apiFetch("/v1/image/recognize", {
+        method: "POST",
+        body: JSON.stringify({
+          image_base64: state.imageRecognizeData,
+          platform_hint: platformHint,
+          max_candidates: 6,
+        }),
+        timeoutMs: 90000,
+      });
+      state.allSearchResults = (response.candidates || []).map((candidate) => ({
+        ...candidate.content,
+        extra: {
+          ...(candidate.content.extra || {}),
+          recognition_score: candidate.score,
+          recognition_confidence: candidate.confidence,
+        },
+      }));
+      state.searchFilter = "all";
+      state.searchHasMore = false;
+      if (elements.btnLoadMore) elements.btnLoadMore.style.display = "none";
+      applySearchFilter();
+      const best = (response.candidates || [])[0];
+      if (elements.imageRecognizeStatus) {
+        elements.imageRecognizeStatus.textContent = best
+          ? `已比对 ${response.compared_count || 0} 张封面，最高相似度 ${Math.round(best.score * 100)}%`
+          : "没有可比对的可信封面，请尝试关键词搜索";
+      }
+      if (best) {
+        setSearchBanner(
+          best.confidence === "high"
+            ? "找到高相似候选，请核对标题后打开详情。"
+            : "已按相似度列出候选；当前没有高置信匹配，请人工核对。",
+          best.confidence === "high" ? "info" : "warning"
+        );
+      } else {
+        setSearchBanner("未找到可用候选封面，可改用剧名或书名搜索。", "warning");
+      }
+    } catch (error) {
+      state.allSearchResults = [];
+      state.searchResults = [];
+      renderSearchResults([]);
+      if (elements.imageRecognizeStatus) {
+        elements.imageRecognizeStatus.textContent = `识别失败：${error.message}`;
+      }
+      toast(`图片识别失败：${error.message}`, "error", 5000);
+    } finally {
+      if (elements.btnRecognizeImage) {
+        elements.btnRecognizeImage.disabled = !state.imageRecognizeData;
+        elements.btnRecognizeImage.textContent = "识别图片";
+      }
+    }
+  }
+
   // 4. 执行资源搜索（支持 platform=all 聚合 + 来源标记）
   async function doSearch(page, append) {
     const query = elements.inputSearchQuery.value.trim();
@@ -1082,6 +1448,10 @@
       const meta = PLATFORM_META[plat] || PLATFORM_META.hongguo;
       const label = sourceLabelOf(item);
       const title = displayTitle(item);
+      const recognitionScore =
+        item.extra && typeof item.extra.recognition_score === "number"
+          ? `<span class="recognition-score">相似 ${Math.round(item.extra.recognition_score * 100)}%</span>`
+          : "";
       const card = document.createElement("div");
       card.className = `resource-card-item ${index === 0 ? "selected" : ""}`;
       card.setAttribute("data-id", item.id);
@@ -1097,7 +1467,7 @@
           ${coverHtml}
         </div>
         <div class="card-content">
-          <div class="card-title">${escapeHtml(title)}</div>
+          <div class="card-title">${escapeHtml(title)}${recognitionScore}</div>
           <div class="card-id-line">ID: ${escapeHtml(String(item.id || ""))}</div>
           <div class="card-desc">${escapeHtml(item.desc || item.author || "暂无简介…")}</div>
           <div class="card-meta-row">
@@ -1251,6 +1621,50 @@
   }
 
   // 首页发现：按平台 tab（红果 / 番茄），各展示热榜 + 今日上新
+  function readHomeFilters() {
+    state.discoverFilters = {
+      genre: elements.homeFilterGenre?.value || "short_play",
+      sort: elements.homeFilterSort?.value || "hot_score",
+      gender: elements.homeFilterGender?.value || "",
+      days: elements.homeFilterDays?.value || "",
+      theme: (elements.homeFilterTheme?.value || "").trim(),
+      minEpisodes: Math.min(
+        10000,
+        Math.max(0, parseInt(elements.homeFilterMinEpisodes?.value || "0", 10) || 0)
+      ),
+    };
+  }
+
+  function resetHomeFilters() {
+    if (elements.homeFilterGenre) elements.homeFilterGenre.value = "short_play";
+    if (elements.homeFilterSort) elements.homeFilterSort.value = "hot_score";
+    if (elements.homeFilterGender) elements.homeFilterGender.value = "";
+    if (elements.homeFilterDays) elements.homeFilterDays.value = "";
+    if (elements.homeFilterTheme) elements.homeFilterTheme.value = "";
+    if (elements.homeFilterMinEpisodes) elements.homeFilterMinEpisodes.value = "0";
+    readHomeFilters();
+  }
+
+  function discoverUrl(kinds, limit) {
+    const params = new URLSearchParams({
+      platform: state.discoverPlatform || "hongguo",
+      kinds,
+      limit: String(limit || 24),
+    });
+    if ((state.discoverPlatform || "hongguo") === "hongguo") {
+      const filters = state.discoverFilters || {};
+      params.set("genre", filters.genre || "short_play");
+      params.set("sort", filters.sort || "hot_score");
+      if (filters.gender) params.set("gender", filters.gender);
+      if (filters.days) params.set("days", String(filters.days));
+      if (filters.theme) params.set("theme", filters.theme);
+      if (filters.minEpisodes) {
+        params.set("min_episode_count", String(filters.minEpisodes));
+      }
+    }
+    return `/v1/discover?${params.toString()}`;
+  }
+
   function setDiscoverPlatform(plat) {
     const p = plat === "fanqie" ? "fanqie" : "hongguo";
     state.discoverPlatform = p;
@@ -1261,6 +1675,9 @@
         tab.classList.toggle("active", tab.getAttribute("data-platform") === p);
       });
     }
+    if (elements.homeAdvancedFilters) {
+      elements.homeAdvancedFilters.hidden = p !== "hongguo";
+    }
     if (state.discoverView === "discover") {
       loadDiscover();
     } else {
@@ -1269,7 +1686,7 @@
   }
 
   function setDiscoverView(view) {
-    const supported = ["discover", "ranking", "calendar", "following"];
+    const supported = ["discover", "ranking", "calendar", "people", "following"];
     const nextView = supported.includes(view) ? view : "discover";
     state.discoverView = nextView;
     state.homeSelectedItems.clear();
@@ -1301,6 +1718,62 @@
     });
   }
 
+  function renderPeopleIndex(data) {
+    const people = data.people || [];
+    if (!people.length) {
+      elements.homeSections.innerHTML = `
+        <div class="home-error">
+          <div class="home-empty-icon">♙</div>
+          <div class="home-error-title">暂未读取到演职员资料</div>
+          <div class="home-error-copy">上游作品需要返回实名演员资料；漫剧或 AI 短剧可能没有真人演员。</div>
+        </div>`;
+      return;
+    }
+    elements.homeSections.innerHTML = `
+      <div class="home-people-view">
+        ${people
+          .map((person) => {
+            const avatar = person.avatar
+              ? `<img src="${escapeHtml(person.avatar)}" alt="${escapeHtml(person.name)}">`
+              : "♙";
+            const works = (person.works || [])
+              .map((work) => {
+                const cover = work.cover
+                  ? `<img src="${escapeHtml(work.cover)}" alt="">`
+                  : '<span class="person-work-placeholder">🎬</span>';
+                return `
+                  <button class="person-work-button" data-id="${escapeHtml(work.id)}" type="button">
+                    ${cover}
+                    <span class="person-work-copy">
+                      <strong>${escapeHtml(work.title)}</strong>
+                      <span>${escapeHtml(work.role || "参演")}${work.episode_count ? ` · ${escapeHtml(String(work.episode_count))} 集` : ""}</span>
+                    </span>
+                  </button>`;
+              })
+              .join("");
+            return `
+              <article class="person-card">
+                <div class="person-avatar">${avatar}</div>
+                <div class="person-body">
+                  <div class="person-name">${escapeHtml(person.name)} · ${person.works.length} 部作品</div>
+                  <div class="person-intro">${escapeHtml(person.intro || "红果作品演职员资料")}</div>
+                  <div class="person-works">${works}</div>
+                </div>
+              </article>`;
+          })
+          .join("")}
+      </div>`;
+    elements.homeSections.querySelectorAll(".person-work-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        const id = button.getAttribute("data-id") || "";
+        state.selectedPlatform = "hongguo";
+        switchPage("page-search");
+        if (elements.searchRightPanel) elements.searchRightPanel.style.display = "flex";
+        loadDetail(id, "hongguo");
+      });
+    });
+  }
+
   async function renderHomeFeatureView(view) {
     if (!elements.homeSections) return;
     const plat = state.discoverPlatform || "hongguo";
@@ -1310,6 +1783,33 @@
     }
     elements.homeSections.innerHTML = `<div class="home-loading"><div class="home-loading-card"></div><div class="home-loading-card"></div></div>`;
     try {
+      if (view === "people") {
+        if (plat !== "hongguo") {
+          elements.homeSections.innerHTML = `
+            <div class="home-error">
+              <div class="home-empty-icon">♙</div>
+              <div class="home-error-title">演员作品索引当前由红果提供</div>
+              <div class="home-error-copy">番茄小说暂无统一演员字段，可切换红果查看真实演职员资料。</div>
+              <button class="btn-primary" id="btnPeopleSwitchHongguo">切换红果</button>
+            </div>`;
+          const switchButton = document.getElementById("btnPeopleSwitchHongguo");
+          if (switchButton) {
+            switchButton.addEventListener("click", () => setDiscoverPlatform("hongguo"));
+          }
+          return;
+        }
+        const genre = state.discoverFilters?.genre || "short_play";
+        const data = await apiFetch(
+          `/v1/hongguo/people?genre=${encodeURIComponent(genre)}&work_limit=20`,
+          { timeoutMs: 90000 }
+        );
+        renderPeopleIndex(data);
+        if (elements.homeDiscoverNote) {
+          elements.homeDiscoverNote.innerHTML =
+            `<span class="home-note-dot"></span>已扫描 ${data.scanned_works || 0} 部作品 · 收录 ${(data.people || []).length} 位演员`;
+        }
+        return;
+      }
       if (view === "following") {
         const storedItems = Array.from(state.followingItems.values()).filter(
           (item) => platformOf(item) === plat
@@ -1353,26 +1853,30 @@
         return;
       }
       const kind = view === "calendar" ? "new" : "hot";
+      const featureUrl =
+        discoverUrl(kind, 50) + (view === "calendar" ? "&only_today=false" : "");
       const data = await apiFetch(
-        `/v1/discover?platform=${encodeURIComponent(plat)}&kinds=${kind}&limit=50`,
+        featureUrl,
         { timeoutMs: 15000 }
       );
       let sections;
       if (view === "calendar") {
         const groups = new Map();
         (data.sections || []).flatMap((section) => section.items || []).forEach((item) => {
-          const rawTime = item.extra && item.extra.update_time;
-          const numeric = Number(rawTime || 0);
-          const date = numeric
-            ? new Date(numeric > 1e12 ? numeric : numeric * 1000)
-            : new Date();
-          const key = isNaN(date.getTime()) ? "日期未知" : date.toLocaleDateString("zh-CN");
+          const extra = item.extra || {};
+          const key =
+            String(extra.premiere || "").trim() ||
+            (extra.today
+              ? "今日上新"
+              : extra.genre === "comic_series" || extra.genre === "ai_series"
+                ? "7 天内上新"
+                : "近期上新");
           if (!groups.has(key)) groups.set(key, []);
           groups.get(key).push(item);
         });
         sections = Array.from(groups.entries()).map(([date, items]) => ({
           kind: "calendar",
-          title: `▦ ${date} 更新 · ${meta.short}`,
+          title: `▦ ${date} · ${meta.short}`,
           available: true,
           items,
         }));
@@ -1409,7 +1913,7 @@
       </div>`;
     try {
       const data = await apiFetch(
-        `/v1/discover?platform=${encodeURIComponent(plat)}&kinds=hot,new`,
+        discoverUrl("hot,new", 24),
         { timeoutMs: 15000 }
       );
       state.discoverData = data;
@@ -1497,6 +2001,10 @@
               it.rank != null
                 ? `<span class="home-card-rank">${escapeHtml(String(it.rank))}</span>`
                 : "";
+            const metrics = [];
+            if (it.extra && it.extra.episode_count) metrics.push(`${it.extra.episode_count} 集`);
+            if (it.extra && it.extra.score) metrics.push(`评分 ${it.extra.score}`);
+            if (it.extra && it.extra.category) metrics.push(String(it.extra.category));
             return `
               <div class="home-card" data-id="${escapeHtml(it.id)}" data-platform="${escapeHtml(p)}">
                 <div class="home-card-cover">
@@ -1509,6 +2017,7 @@
                 </div>
                 <div class="home-card-body">
                   <div class="home-card-title">${escapeHtml(title)}</div>
+                  ${metrics.length ? `<div class="home-card-metrics">${escapeHtml(metrics.join(" · "))}</div>` : ""}
                   ${it.extra && it.extra.has_update ? `<div class="home-card-update">发现 ${escapeHtml(String(it.extra.current_segments || ""))} 条内容 · 有更新</div>` : ""}
                   <div class="home-card-footer">
                     <span class="source-badge ${escapeHtml(p)}">${escapeHtml(m.emoji)} ${escapeHtml(it.source_label || m.label)}</span>
@@ -1684,7 +2193,13 @@
       }
 
       const jobs = jobsRes.items || [];
-      renderJobsList(jobs);
+      state.jobs = jobs;
+      const validIds = new Set(jobs.map((job) => String(job.job_id)));
+      Array.from(state.jobsSelected).forEach((jobId) => {
+        if (!validIds.has(jobId)) state.jobsSelected.delete(jobId);
+      });
+      renderJobsList(filteredJobs());
+      updateJobsBulkSelection();
       // 任务成功后按偏好打开目录（每个 job 只触发一次）
       if (state.prefs.openFolderOnComplete) {
         jobs.forEach((job) => {
@@ -1697,6 +2212,74 @@
       }
     } catch (e) {
       console.warn("刷新任务列表错误:", e);
+    }
+  }
+
+  function filteredJobs() {
+    const jobs = state.jobs || [];
+    const filter = state.jobsFilter || "all";
+    if (filter === "all") return jobs;
+    if (filter === "active") {
+      return jobs.filter((job) =>
+        ["pending", "paused", "running", "cancelling"].includes(job.status)
+      );
+    }
+    if (filter === "failed") {
+      return jobs.filter((job) => ["failed", "cancelled"].includes(job.status));
+    }
+    return jobs.filter((job) => job.status === filter);
+  }
+
+  function updateJobsBulkSelection() {
+    const count = state.jobsSelected.size;
+    if (elements.jobsSelectedCount) elements.jobsSelectedCount.textContent = `已选 ${count} 项`;
+    if (elements.jobsBulkButtons) {
+      elements.jobsBulkButtons.forEach((button) => {
+        button.disabled = count === 0;
+      });
+    }
+    if (elements.jobsList) {
+      elements.jobsList.querySelectorAll(".job-select-check").forEach((checkbox) => {
+        const selected = state.jobsSelected.has(checkbox.getAttribute("data-id") || "");
+        checkbox.checked = selected;
+        const card = checkbox.closest(".job-item-card");
+        if (card) card.classList.toggle("selected", selected);
+      });
+    }
+  }
+
+  async function runJobsBulkAction(action) {
+    const jobIds = Array.from(state.jobsSelected);
+    if (!jobIds.length) return;
+    if (
+      ["cancel", "archive"].includes(action) &&
+      !confirm(action === "archive" ? "确认清理所选终态任务记录？已下载文件不会删除。" : "确认取消所选任务？")
+    ) {
+      return;
+    }
+    elements.jobsBulkButtons.forEach((button) => {
+      button.disabled = true;
+    });
+    try {
+      const endpoint =
+        action === "retry" ? "/v1/jobs/queue/bulk/retry" : "/v1/jobs/queue/bulk";
+      const body =
+        action === "retry" ? { job_ids: jobIds } : { job_ids: jobIds, action };
+      const response = await apiFetch(endpoint, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const skipped = (response.skipped || []).length;
+      toast(
+        `批量${action === "pause" ? "暂停" : action === "resume" ? "继续" : action === "retry" ? "重试" : action === "cancel" ? "取消" : "清理"}完成：成功 ${response.affected || 0}，跳过 ${skipped}`,
+        skipped ? "warning" : "success",
+        4500
+      );
+      state.jobsSelected.clear();
+      await refreshJobsPage();
+    } catch (error) {
+      toast(`批量操作失败：${error.message}`, "error", 5000);
+      updateJobsBulkSelection();
     }
   }
 
@@ -1724,6 +2307,7 @@
       const isQueued = job.status === "pending" || job.status === "paused";
       const queuePosition = job.extra && job.extra.queue_position;
       if (job.status === "paused") card.classList.add("paused");
+      if (state.jobsSelected.has(String(job.job_id))) card.classList.add("selected");
 
       let statusBadge = escapeHtml(jobStatusLabel(job));
       if (isSuccess) statusBadge = `✅ ${statusBadge}`;
@@ -1733,6 +2317,7 @@
       const progressPct = Math.min(100, Math.max(0, job.progress || 0));
 
       card.innerHTML = `
+        <input class="job-select-check" data-id="${escapeHtml(job.job_id)}" type="checkbox" aria-label="选择任务 ${escapeHtml((job.extra && job.extra.title) || job.item_id)}">
         <div class="job-item-info" style="width: 100%;">
           <div class="job-item-header">
             <span class="job-item-title">${isQueued ? `<span class="job-queue-position">#${escapeHtml(String(queuePosition || "—"))}</span>` : ""}${isHongguo ? '🔴' : '🍅'} ${escapeHtml((job.extra && job.extra.title) || job.item_id)} <span style="opacity:.65;font-weight:500">[${escapeHtml(job.platform)} · ${escapeHtml(job.item_id)}]</span></span>
@@ -1754,6 +2339,17 @@
           </div>
         </div>
       `;
+
+      const jobCheckbox = card.querySelector(".job-select-check");
+      if (jobCheckbox) {
+        jobCheckbox.checked = state.jobsSelected.has(String(job.job_id));
+        jobCheckbox.addEventListener("change", () => {
+          const jobId = String(job.job_id);
+          if (jobCheckbox.checked) state.jobsSelected.add(jobId);
+          else state.jobsSelected.delete(jobId);
+          updateJobsBulkSelection();
+        });
+      }
 
       const btnCancel = card.querySelector(".btn-cancel-job");
       if (btnCancel) {
@@ -2008,18 +2604,49 @@
     if (elements.settingHgMonitorLimit) {
       elements.settingHgMonitorLimit.value = String(status.scan_limit || 50);
     }
+    if (elements.settingHgMonitorMinEpisodes) {
+      elements.settingHgMonitorMinEpisodes.value = String(status.min_episode_count || 0);
+    }
+    if (elements.settingHgMonitorMaxEnqueue) {
+      elements.settingHgMonitorMaxEnqueue.value = String(status.max_auto_enqueue_per_scan || 20);
+    }
+    if (elements.settingHgMonitorInclude) {
+      elements.settingHgMonitorInclude.value = (status.include_keywords || []).join(", ");
+    }
+    if (elements.settingHgMonitorExclude) {
+      elements.settingHgMonitorExclude.value = (status.exclude_keywords || []).join(", ");
+    }
+    if (elements.settingHgMonitorAuthors) {
+      elements.settingHgMonitorAuthors.value = (status.author_keywords || []).join(", ");
+    }
     if (elements.settingHgMonitorStatus) {
       const baseline = status.baseline_initialized
         ? `已建立基线 ${status.known_count || 0} 条`
         : "尚未建立基线";
       const scan = status.last_scan_at ? `上次扫描 ${formatDate(status.last_scan_at)}` : "尚未扫描";
+      const next = status.next_scan_at ? `下次 ${formatDate(status.next_scan_at)}` : "定时监控未启用";
       const result = `本次发现 ${status.last_detected_count || 0} 条，累计入队 ${status.total_enqueued_count || 0} 条`;
       elements.settingHgMonitorStatus.textContent =
-        `${baseline} · ${scan} · ${result}` +
+        `${baseline} · ${scan} · ${next} · ${result}` +
         (status.last_error ? ` · 错误：${status.last_error}` : "");
       elements.settingHgMonitorStatus.style.color = status.last_error
         ? "var(--color-error)"
         : "var(--text-muted)";
+    }
+    if (elements.settingHgMonitorLogs) {
+      const logs = (status.logs || []).slice().reverse();
+      elements.settingHgMonitorLogs.innerHTML = logs.length
+        ? logs
+            .map(
+              (entry) => `
+                <div class="monitor-log-entry ${escapeHtml(entry.level || "info")}">
+                  <span>${escapeHtml(formatDate(entry.timestamp))}</span>
+                  <span class="monitor-log-level">${entry.level === "error" ? "错误" : entry.level === "warning" ? "警告" : "信息"}</span>
+                  <span>${escapeHtml(entry.message || "")}</span>
+                </div>`
+            )
+            .join("")
+        : '<div class="monitor-log-empty">暂无监控日志</div>';
     }
   }
 
@@ -2044,6 +2671,12 @@
       50,
       Math.max(1, parseInt(elements.settingHgMonitorLimit.value, 10) || 50)
     );
+    const parseKeywords = (element) =>
+      String((element && element.value) || "")
+        .split(/[,，]/)
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(0, 20);
     const status = await apiFetch("/v1/automation/hongguo-new", {
       method: "PUT",
       body: JSON.stringify({
@@ -2051,6 +2684,17 @@
         auto_enqueue: !!elements.settingHgMonitorAutoQueue.checked,
         interval_seconds: interval,
         scan_limit: limit,
+        min_episode_count: Math.min(
+          10000,
+          Math.max(0, parseInt(elements.settingHgMonitorMinEpisodes?.value || "0", 10) || 0)
+        ),
+        max_auto_enqueue_per_scan: Math.min(
+          50,
+          Math.max(1, parseInt(elements.settingHgMonitorMaxEnqueue?.value || "20", 10) || 20)
+        ),
+        include_keywords: parseKeywords(elements.settingHgMonitorInclude),
+        exclude_keywords: parseKeywords(elements.settingHgMonitorExclude),
+        author_keywords: parseKeywords(elements.settingHgMonitorAuthors),
         quality: "1080p",
         concurrency: state.prefs.concurrency || 2,
         download_cover: !!state.prefs.downloadCover,
@@ -2297,6 +2941,94 @@
       nav.addEventListener("click", () => switchPage(nav.getAttribute("data-page")));
     });
 
+    if (elements.batchInputText) {
+      elements.batchInputText.addEventListener("input", updateBatchInputCount);
+    }
+    if (elements.batchFileInput) {
+      elements.batchFileInput.addEventListener("change", async () => {
+        const file = elements.batchFileInput.files && elements.batchFileInput.files[0];
+        if (!file) return;
+        if (file.size > 1024 * 1024) {
+          toast("TXT 文件不能超过 1 MB", "warning");
+          elements.batchFileInput.value = "";
+          return;
+        }
+        try {
+          const text = await file.text();
+          if (elements.batchInputText) {
+            const current = elements.batchInputText.value.trim();
+            elements.batchInputText.value = current ? `${current}\n${text}` : text;
+          }
+          const count = updateBatchInputCount();
+          toast(`已导入 ${file.name}，当前 ${count} 条`, "success");
+        } catch (error) {
+          toast(`读取 TXT 失败：${error.message}`, "error");
+        } finally {
+          elements.batchFileInput.value = "";
+        }
+      });
+    }
+    if (elements.btnBatchClear) {
+      elements.btnBatchClear.addEventListener("click", () => {
+        if (elements.batchInputText) elements.batchInputText.value = "";
+        state.batchResults = [];
+        state.batchSelected.clear();
+        updateBatchInputCount();
+        renderBatchResults();
+        if (elements.batchProgress) elements.batchProgress.hidden = true;
+      });
+    }
+    if (elements.btnBatchResolve) {
+      elements.btnBatchResolve.addEventListener("click", resolveBatchInputs);
+    }
+    if (elements.btnBatchSelectSuccess) {
+      elements.btnBatchSelectSuccess.addEventListener("click", () => {
+        state.batchSelected.clear();
+        state.batchResults.forEach((row, index) => {
+          if (row && row.content) state.batchSelected.add(String(index));
+        });
+        updateBatchSelection();
+      });
+    }
+    if (elements.btnBatchClearSelection) {
+      elements.btnBatchClearSelection.addEventListener("click", () => {
+        state.batchSelected.clear();
+        updateBatchSelection();
+      });
+    }
+    if (elements.btnBatchEnqueue) {
+      elements.btnBatchEnqueue.addEventListener("click", enqueueBatchResults);
+    }
+    if (elements.imageRecognizeInput) {
+      elements.imageRecognizeInput.addEventListener("change", () => {
+        const file =
+          elements.imageRecognizeInput.files && elements.imageRecognizeInput.files[0];
+        if (!file) return;
+        if (file.size > 8 * 1024 * 1024) {
+          toast("图片不能超过 8 MB", "warning");
+          elements.imageRecognizeInput.value = "";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          state.imageRecognizeData = String(reader.result || "");
+          if (elements.imageRecognizePreview) {
+            elements.imageRecognizePreview.src = state.imageRecognizeData;
+            elements.imageRecognizePreview.hidden = false;
+          }
+          if (elements.imageRecognizeStatus) {
+            elements.imageRecognizeStatus.textContent = `${file.name} · ${(file.size / 1024).toFixed(1)} KB，等待识别`;
+          }
+          if (elements.btnRecognizeImage) elements.btnRecognizeImage.disabled = false;
+        };
+        reader.onerror = () => toast("读取图片失败", "error");
+        reader.readAsDataURL(file);
+      });
+    }
+    if (elements.btnRecognizeImage) {
+      elements.btnRecognizeImage.addEventListener("click", recognizeSelectedImage);
+    }
+
     if (elements.btnSearch) elements.btnSearch.addEventListener("click", doSearch);
     if (elements.btnLoadMore) {
       elements.btnLoadMore.addEventListener("click", () => {
@@ -2349,6 +3081,22 @@
     }
     if (elements.btnRefreshDiscover) {
       elements.btnRefreshDiscover.addEventListener("click", () => {
+        if (state.discoverView === "discover") loadDiscover();
+        else renderHomeFeatureView(state.discoverView);
+      });
+    }
+    if (elements.btnApplyHomeFilters) {
+      elements.btnApplyHomeFilters.addEventListener("click", () => {
+        readHomeFilters();
+        state.homeSelectedItems.clear();
+        updateHomeSelectionBar();
+        if (state.discoverView === "discover") loadDiscover();
+        else renderHomeFeatureView(state.discoverView);
+      });
+    }
+    if (elements.btnResetHomeFilters) {
+      elements.btnResetHomeFilters.addEventListener("click", () => {
+        resetHomeFilters();
         if (state.discoverView === "discover") loadDiscover();
         else renderHomeFeatureView(state.discoverView);
       });
@@ -2476,6 +3224,32 @@
     }
     if (elements.btnRefreshJobs) {
       elements.btnRefreshJobs.addEventListener("click", refreshJobsPage);
+    }
+    if (elements.jobsStatusFilter) {
+      elements.jobsStatusFilter.addEventListener("change", () => {
+        state.jobsFilter = elements.jobsStatusFilter.value || "all";
+        renderJobsList(filteredJobs());
+        updateJobsBulkSelection();
+      });
+    }
+    if (elements.btnJobsSelectVisible) {
+      elements.btnJobsSelectVisible.addEventListener("click", () => {
+        filteredJobs().forEach((job) => state.jobsSelected.add(String(job.job_id)));
+        updateJobsBulkSelection();
+      });
+    }
+    if (elements.btnJobsClearSelected) {
+      elements.btnJobsClearSelected.addEventListener("click", () => {
+        state.jobsSelected.clear();
+        updateJobsBulkSelection();
+      });
+    }
+    if (elements.jobsBulkButtons) {
+      elements.jobsBulkButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          runJobsBulkAction(button.getAttribute("data-jobs-bulk") || "");
+        });
+      });
     }
 
     if (elements.btnDownloadAll) {
@@ -2647,6 +3421,11 @@
         if (elements.settingHgMonitorAutoQueue) elements.settingHgMonitorAutoQueue.checked = false;
         if (elements.settingHgMonitorInterval) elements.settingHgMonitorInterval.value = "60";
         if (elements.settingHgMonitorLimit) elements.settingHgMonitorLimit.value = "50";
+        if (elements.settingHgMonitorMinEpisodes) elements.settingHgMonitorMinEpisodes.value = "0";
+        if (elements.settingHgMonitorMaxEnqueue) elements.settingHgMonitorMaxEnqueue.value = "20";
+        if (elements.settingHgMonitorInclude) elements.settingHgMonitorInclude.value = "";
+        if (elements.settingHgMonitorExclude) elements.settingHgMonitorExclude.value = "";
+        if (elements.settingHgMonitorAuthors) elements.settingHgMonitorAuthors.value = "";
         [
           "pref_outputDir",
           "pref_rememberOutputDir",

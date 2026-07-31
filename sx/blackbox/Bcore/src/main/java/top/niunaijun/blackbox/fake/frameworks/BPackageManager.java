@@ -43,18 +43,17 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
 
     public Intent getLaunchIntentForPackage(String packageName, int userId) {
         Intent intentToResolve = new Intent(Intent.ACTION_MAIN);
-        intentToResolve.addCategory(Intent.CATEGORY_INFO);
+        intentToResolve.addCategory(Intent.CATEGORY_LAUNCHER);
         intentToResolve.setPackage(packageName);
         List<ResolveInfo> ris = queryIntentActivities(intentToResolve,
                 0,
                 intentToResolve.resolveTypeIfNeeded(BlackBoxCore.getContext().getContentResolver()),
                 userId);
 
-        // Otherwise, try to find a main launcher activity.
+        // Otherwise, try to find CATEGORY_INFO activity.
         if (ris == null || ris.size() <= 0) {
-            // reuse the intent instance
-            intentToResolve.removeCategory(Intent.CATEGORY_INFO);
-            intentToResolve.addCategory(Intent.CATEGORY_LAUNCHER);
+            intentToResolve.removeCategory(Intent.CATEGORY_LAUNCHER);
+            intentToResolve.addCategory(Intent.CATEGORY_INFO);
             intentToResolve.setPackage(packageName);
             ris = queryIntentActivities(intentToResolve,
                     0,

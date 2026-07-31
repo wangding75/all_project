@@ -66,7 +66,8 @@ public class SxServerLicenseClient {
                 JSONObject data = resp.getJSONObject("data");
                 boolean valid = data.optBoolean("valid", false);
                 long expireAt = data.optLong("expire_at", 0L);
-                return new LicenseResult(valid, token, expireAt, msg);
+                String refreshedToken = data.optString("token", token);
+                return new LicenseResult(valid, refreshedToken, expireAt, msg);
             }
             return LicenseResult.fail(msg);
 

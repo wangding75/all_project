@@ -30,14 +30,14 @@
 
 ## 3. 代码修复方案 (Fixes Applied)
 
-1. [RuntimeHook.cpp](file:///d:/github/all_project/sx/blackbox/Bcore/src/main/cpp/Hook/RuntimeHook.cpp)：
+1. [RuntimeHook.cpp](../../blackbox/Bcore/src/main/cpp/Hook/RuntimeHook.cpp)：
    - 补齐 `if (redirect && redirect != name) env->DeleteLocalRef(redirect);` 释放 JNI 局部引用。
    - 增加 `if (nameC)` 非空保护。
-2. [VMClassLoaderHook.cpp](file:///d:/github/all_project/sx/blackbox/Bcore/src/main/cpp/Hook/VMClassLoaderHook.cpp)：
+2. [VMClassLoaderHook.cpp](../../blackbox/Bcore/src/main/cpp/Hook/VMClassLoaderHook.cpp)：
    - 增加 `nameC` 非空校验。
-3. [IOCore.java](file:///d:/github/all_project/sx/blackbox/Bcore/src/main/java/top/niunaijun/blackbox/core/IOCore.java)：
+3. [IOCore.java](../../blackbox/Bcore/src/main/java/top/niunaijun/blackbox/core/IOCore.java)：
    - 添加 `rule.put(String.format("/data/user_de/%d/%s", systemUserId, packageName), packageInfo.dataDir);`，支持高版本 Android 多用户存储隔离。
-4. [test-dingtalk-stability.ps1](file:///d:/github/all_project/sx/tools/dingtalk-automation/test-dingtalk-stability.ps1)：
+4. [test-dingtalk-stability.ps1](../../tools/dingtalk-automation/test-dingtalk-stability.ps1)：
    - 自动跑满连续 3 轮 x 20 分钟（1200 秒/轮）长效观察，包含进程存活校验与界面截图存盘 (`screenshot_run<N>.png`)。
 
 ---

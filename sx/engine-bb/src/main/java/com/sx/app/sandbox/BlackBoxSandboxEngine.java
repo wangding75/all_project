@@ -235,6 +235,9 @@ public class BlackBoxSandboxEngine implements SandboxEngine {
         }
         try {
             Log.d(TAG, "Launching " + packageName + " for user " + userId);
+            if ("com.alibaba.android.rimet".equals(packageName)) {
+                com.sx.app.sandbox.spoof.hook.DingTalkHook.initPrivacyPreferencesOnDisk(mApp, packageName, userId);
+            }
             return BlackBoxCore.get().launchApk(packageName, userId);
         } catch (Throwable e) {
             Log.e(TAG, "Error launching " + packageName + " for user " + userId, e);

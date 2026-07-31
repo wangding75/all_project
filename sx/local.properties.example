@@ -1,0 +1,13 @@
+# Keep the real local.properties file untracked.
+sdk.dir=C\:\\Users\\YOUR_USER\\AppData\\Local\\Android\\Sdk
+
+# Debug may use an HTTP LAN/emulator endpoint because the debug source set
+# explicitly permits cleartext. Production/release deployments must use HTTPS.
+license.server_url=https://license.example.com
+
+# Must match server CLIENT_SIGN_SECRET. This value is expected to be visible in
+# the APK and must never be reused as the server Token signing key.
+license.app_secret=CHANGE_ME_CLIENT_SIGN_SECRET
+
+# Base64 of the RSA SubjectPublicKeyInfo DER matching TOKEN_PRIVATE_KEY_PEM.
+license.token_public_key=CHANGE_ME_RSA_PUBLIC_KEY_DER_BASE64

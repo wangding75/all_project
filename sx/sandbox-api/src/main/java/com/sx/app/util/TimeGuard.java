@@ -1,6 +1,7 @@
 package com.sx.app.util;
 
 import android.content.Context;
+import android.os.SystemClock;
 import android.util.Log;
 
 import com.sx.app.data.SxPrefs;
@@ -27,6 +28,9 @@ public final class TimeGuard {
 
     private static final String TAG = "TimeGuard";
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor();
+    private static final long MAX_NETWORK_CLOCK_SKEW_MS = 10L * 60 * 1000;
+    private static final long MAX_UNANCHORED_FORWARD_JUMP_MS =
+            7L * 24 * 60 * 60 * 1000;
 
     private TimeGuard() {}
 
@@ -35,12 +39,33 @@ public final class TimeGuard {
         long lastGood = o.optLong("lastGood", 0L);
         long systemNow = System.currentTimeMillis();
         long fileStamp = readFileStamp(context);
+        long elapsedNow = SystemClock.elapsedRealtime();
+        long networkTime = o.optLong("networkTime", 0L);
+        long networkElapsed = o.optLong("networkElapsed", -1L);
 
-        long candidate = Math.max(systemNow, Math.max(lastGood, fileStamp));
-        // If system clock is far behind last good, treat as rollback and use last good
-        if (lastGood > 0 && systemNow + 60_000L < lastGood) {
-            Log.w(TAG, "Clock rollback suspected: system=" + systemNow + " lastGood=" + lastGood);
-            candidate = Math.max(lastGood, fileStamp);
+        long candidate;
+        if (networkTime > 0 && networkElapsed >= 0 && elapsedNow >= networkElapsed) {
+            long estimatedNetworkNow = networkTime + (elapsedNow - networkElapsed);
+            long difference = Math.abs(systemNow - estimatedNetworkNow);
+            if (difference <= MAX_NETWORK_CLOCK_SKEW_MS) {
+                candidate = Math.max(systemNow, estimatedNetworkNow);
+            } else {
+                // A trusted HTTPS Date anchor can repair both rollback and a
+                // mistakenly configured far-future system clock.
+                Log.w(TAG, "System clock differs from network anchor: system="
+                        + systemNow + " estimated=" + estimatedNetworkNow);
+                candidate = estimatedNetworkNow;
+            }
+        } else {
+            long previous = Math.max(lastGood, fileStamp);
+            if (previous > 0
+                    && systemNow > previous + MAX_UNANCHORED_FORWARD_JUMP_MS) {
+                Log.w(TAG, "Rejecting untrusted forward clock jump: system="
+                        + systemNow + " previous=" + previous);
+                candidate = previous;
+            } else {
+                candidate = Math.max(systemNow, previous);
+            }
         }
         persist(context, candidate);
         return candidate;
@@ -51,21 +76,33 @@ public final class TimeGuard {
         EXEC.execute(() -> {
             long net = fetchNetworkTimeMillis();
             if (net > 0) {
-                long localTrusted = getTrustedNow(app);
-                long merged = Math.max(net, localTrusted);
-                persist(app, merged);
+                persistNetworkAnchor(app, net, SystemClock.elapsedRealtime());
             }
         });
     }
 
-    private static void persist(Context context, long millis) {
+    private static synchronized void persist(Context context, long millis) {
         try {
-            JSONObject o = new JSONObject();
+            JSONObject o = SxPrefs.getJson(context, SxPrefs.KEY_TIME_GUARD);
             o.put("lastGood", millis);
             SxPrefs.putJson(context, SxPrefs.KEY_TIME_GUARD, o);
             writeFileStamp(context, millis);
         } catch (Exception e) {
             Log.e(TAG, "persist failed", e);
+        }
+    }
+
+    private static synchronized void persistNetworkAnchor(
+            Context context, long networkMillis, long elapsedMillis) {
+        try {
+            JSONObject o = SxPrefs.getJson(context, SxPrefs.KEY_TIME_GUARD);
+            o.put("lastGood", networkMillis);
+            o.put("networkTime", networkMillis);
+            o.put("networkElapsed", elapsedMillis);
+            SxPrefs.putJson(context, SxPrefs.KEY_TIME_GUARD, o);
+            writeFileStamp(context, networkMillis);
+        } catch (Exception e) {
+            Log.e(TAG, "persist network anchor failed", e);
         }
     }
 

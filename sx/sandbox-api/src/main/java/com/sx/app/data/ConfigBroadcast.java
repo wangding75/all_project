@@ -6,7 +6,8 @@ import android.util.Log;
 
 /**
  * Notify host + virtual client processes that spoof config changed.
- * Mirrors ConfigProvider put_config broadcast behavior (bound + unbound).
+ * Uses a package-bound, signature-protected broadcast so only host processes
+ * can publish or receive configuration changes.
  */
 public final class ConfigBroadcast {
 
@@ -27,17 +28,13 @@ public final class ConfigBroadcast {
         try {
             String hostPkg = resolveHostPkg(context);
             String action = actionName(hostPkg);
+            String permission = hostPkg + ".permission.INTERNAL_CONFIG";
 
             Intent bound = new Intent(action);
             bound.setPackage(hostPkg);
             bound.putExtra(EXTRA_PKG, pkg);
             bound.putExtra(EXTRA_USER_ID, userId);
-            context.sendBroadcast(bound);
-
-            Intent unbound = new Intent(action);
-            unbound.putExtra(EXTRA_PKG, pkg);
-            unbound.putExtra(EXTRA_USER_ID, userId);
-            context.sendBroadcast(unbound);
+            context.sendBroadcast(bound, permission);
         } catch (Exception e) {
             Log.w(TAG, "notifyChanged failed", e);
         }

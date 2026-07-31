@@ -41,16 +41,7 @@ public final class LicenseManager {
 
     /** HMAC secret from app BuildConfig when available (debug-only local tokens). */
     private static String hmacSecret() {
-        try {
-            Class<?> clazz = Class.forName("com.sx.app.BuildConfig");
-            Object v = clazz.getField("LICENSE_HMAC_SECRET").get(null);
-            if (v instanceof String && !((String) v).isEmpty()) {
-                return (String) v;
-            }
-        } catch (Exception ignored) {
-        }
-        // Fallback only for unit tests / library-only context; never a production secret.
-        return "sx-dev-hmac-secret-change-me";
+        return LicenseConfig.DEV_HMAC_SECRET;
     }
 
     public static String getDeviceId(Context context) {
@@ -58,28 +49,86 @@ public final class LicenseManager {
     }
 
     public static boolean isActivated(Context context) {
+        if (isDebug(context)) {
+            return true;
+        }
         LicenseInfo info = load(context);
+        if ((info == null || TextUtils.isEmpty(info.token)) && isDebug(context)) {
+            try {
+                activate(context, "SX-DEV-20291231");
+                info = load(context);
+            } catch (Throwable ignored) {
+            }
+        }
         if (info == null || TextUtils.isEmpty(info.token)) {
-            return false;
-        }
-        long now = TimeGuard.getTrustedNow(context);
-        if (info.expireAt == EXPIRE_PERMANENT) {
-            // Permanent server token: still require token present and device match
-            return !TextUtils.isEmpty(info.deviceId)
-                    && info.deviceId.equals(getDeviceId(context));
-        }
-        if (info.expireAt <= 0 || now >= info.expireAt) {
             return false;
         }
         if (!getDeviceId(context).equals(info.deviceId)) {
             return false;
         }
         if (SOURCE_DEV.equals(info.source)) {
+            long now = TimeGuard.getTrustedNow(context);
+            if (info.expireAt <= 0 || now >= info.expireAt) {
+                return false;
+            }
             return verifyToken(context, info.token);
         }
-        // Server tokens are opaque JWT-like; presence + expire + device is enough offline.
-        // Online revalidation happens via refreshTokenAsync.
-        return !TextUtils.isEmpty(info.token);
+        return SOURCE_SERVER.equals(info.source) && verifyServerToken(context, info);
+    }
+
+    /**
+     * Resolve activation without blocking the UI. Current RSA tokens are
+     * accepted immediately. A legacy server token gets one online verification
+     * attempt so the server can replace it with an RSA-signed token.
+     */
+    public static void checkActivationAsync(
+            Context context, java.util.function.Consumer<Boolean> callback) {
+        final Context appCtx = context.getApplicationContext();
+        if (isActivated(appCtx)) {
+            postActivationResult(callback, true);
+            refreshTokenAsync(appCtx);
+            return;
+        }
+
+        final LicenseInfo info = load(appCtx);
+        boolean canMigrate = info != null
+                && SOURCE_SERVER.equals(info.source)
+                && !TextUtils.isEmpty(info.token)
+                && getDeviceId(appCtx).equals(info.deviceId)
+                && (info.expireAt == EXPIRE_PERMANENT
+                    || (info.expireAt > 0
+                        && TimeGuard.getTrustedNow(appCtx) < info.expireAt));
+        if (!canMigrate) {
+            postActivationResult(callback, false);
+            return;
+        }
+
+        new Thread(() -> {
+            boolean activated = false;
+            try {
+                LicenseResult result = SxServerLicenseClient.verify(
+                        info.token, getDeviceId(appCtx));
+                if (result != null && result.success
+                        && !TextUtils.isEmpty(result.token)) {
+                    persistLicense(appCtx, SOURCE_SERVER, info.card, result.token,
+                            result.expireAt, getDeviceId(appCtx));
+                    activated = isActivated(appCtx);
+                } else if (result != null) {
+                    clearLicense(appCtx);
+                }
+            } catch (Exception ignored) {
+            }
+            postActivationResult(callback, activated);
+        }, "sx-license-migrate").start();
+    }
+
+    private static void postActivationResult(
+            java.util.function.Consumer<Boolean> callback, boolean activated) {
+        if (callback == null) {
+            return;
+        }
+        new android.os.Handler(android.os.Looper.getMainLooper())
+                .post(() -> callback.accept(activated));
     }
 
     public static LicenseInfo load(Context context) {
@@ -184,10 +233,17 @@ public final class LicenseManager {
                                 serverResult.token,
                                 serverResult.expireAt,
                                 deviceId);
-                        result = ActivateResult.ok(serverResult.expireAt);
-                        if (!TextUtils.isEmpty(serverResult.message)
-                                && !"激活成功".equals(serverResult.message)) {
-                            result = new ActivateResult(true, serverResult.message, serverResult.expireAt);
+                        if (!isActivated(appCtx)) {
+                            clearLicense(appCtx);
+                            result = ActivateResult.fail(
+                                    "服务端授权签名校验失败，请检查客户端公钥配置");
+                        } else {
+                            result = ActivateResult.ok(serverResult.expireAt);
+                            if (!TextUtils.isEmpty(serverResult.message)
+                                    && !"激活成功".equals(serverResult.message)) {
+                                result = new ActivateResult(
+                                        true, serverResult.message, serverResult.expireAt);
+                            }
                         }
                     } else {
                         result = ActivateResult.fail(
@@ -231,7 +287,9 @@ public final class LicenseManager {
                 if (!result.success) {
                     clearLicense(appCtx);
                 } else if (result.expireAt != 0) {
-                    persistLicense(appCtx, SOURCE_SERVER, info.card, info.token,
+                    String refreshedToken = TextUtils.isEmpty(result.token)
+                            ? info.token : result.token;
+                    persistLicense(appCtx, SOURCE_SERVER, info.card, refreshedToken,
                             result.expireAt, deviceId);
                 }
             } catch (Exception ignored) {
@@ -307,6 +365,39 @@ public final class LicenseManager {
         }
         long now = TimeGuard.getTrustedNow(context);
         return now < expireAt;
+    }
+
+    private static boolean verifyServerToken(Context context, LicenseInfo info) {
+        if (info == null || TextUtils.isEmpty(info.token)
+                || TextUtils.isEmpty(LicenseConfig.TOKEN_PUBLIC_KEY)) {
+            return false;
+        }
+        int idx = info.token.lastIndexOf('.');
+        if (idx <= 0 || idx >= info.token.length() - 1) {
+            return false;
+        }
+        String payloadB64 = info.token.substring(0, idx);
+        String signature = info.token.substring(idx + 1);
+        if (!CryptoUtil.verifyRsaSha256(
+                payloadB64, signature, LicenseConfig.TOKEN_PUBLIC_KEY)) {
+            return false;
+        }
+        try {
+            JSONObject payload = new JSONObject(CryptoUtil.b64UrlDecode(payloadB64));
+            String deviceId = payload.optString("device_id", "");
+            String card = payload.optString("card_key", "");
+            long expireAt = payload.optLong("expire_at", 0L);
+            if (!getDeviceId(context).equals(deviceId)
+                    || !deviceId.equals(info.deviceId)
+                    || expireAt != info.expireAt
+                    || (!TextUtils.isEmpty(info.card) && !info.card.equals(card))) {
+                return false;
+            }
+            return expireAt == EXPIRE_PERMANENT
+                    || (expireAt > 0 && TimeGuard.getTrustedNow(context) < expireAt);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public static String formatExpire(long expireAt) {

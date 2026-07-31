@@ -24,6 +24,10 @@ android {
             "\"${localProps.getProperty('license.server_url', 'http://10.0.2.2:8000')}\""
         buildConfigField "String", "LICENSE_APP_SECRET",
             "\"${localProps.getProperty('license.app_secret', 'sx_dev_secret_2026')}\""
+        // RSA public key used to verify server-issued licenses offline. The
+        // matching development private key lives only in server/config.py.
+        buildConfigField "String", "LICENSE_TOKEN_PUBLIC_KEY",
+            "\"${localProps.getProperty('license.token_public_key', 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxOQ0LKGsoHzxNhg0oc2WUAA9LHbQeNMnwSman/LMpMhsKCRTZbEljCgFSphU0C7DFBaxy+9yJpmdKeE4K1ejLSPkDk8agy/OlseGe1xPwgwzLShvX8Dnn6iZf/itoXkE8q6Jf+gJdm3SHboqNaUQsTw9tNGxX16K0GYOflPaMgytRP2rphfcnWBsrbq426l7pB5z0818jgn3RhQDBLBih+xI7eK7Mj8UNhAFLLk13hQdTDt3XgwyjSWClLcYXwGhTYg13N0GmGYEMQyXYa1QhCzW44cX88jKE+O4T2qca4fnRDOAfzHXw/USu9unnJBKzjphDhDTb5gmNVm/AurM/QIDAQAB')}\""
     }
 
     buildTypes {

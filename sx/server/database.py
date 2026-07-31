@@ -20,6 +20,14 @@ CREATE TABLE IF NOT EXISTS activations (
     is_active    INTEGER NOT NULL DEFAULT 1,
     UNIQUE(card_key)
 );
+
+CREATE TABLE IF NOT EXISTS deliveries (
+    order_id     TEXT PRIMARY KEY,
+    product_id   TEXT NOT NULL,
+    quantity     INTEGER NOT NULL,
+    cards_json   TEXT NOT NULL,
+    created_at   INTEGER NOT NULL
+);
 """
 
 async def get_db():

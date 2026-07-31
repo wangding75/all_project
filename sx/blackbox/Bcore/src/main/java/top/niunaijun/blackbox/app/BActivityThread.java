@@ -185,6 +185,9 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     public static int getNativeHookFlags() {
+        if (getAppConfig() != null && "com.alibaba.android.rimet".equals(getAppConfig().packageName)) {
+            return NativeCore.MASK_ALL & ~NativeCore.HOOK_UNIX_FILE_SYSTEM;
+        }
         try {
             String prop = System.getProperty("sx.native_hook_flags");
             if (prop == null || prop.trim().isEmpty()) {
@@ -579,7 +582,13 @@ public class BActivityThread extends IBActivityThread.Stub {
         mH.post(() -> {
             Intent newIntent;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                newIntent = BRReferrerIntent.get()._new(intent, BlackBoxCore.getHostPkg());
+                // Use guest package as referrer so apps do not see the host container package
+                // via Activity.getReferrer() / launched-from checks (DingTalk multi-open gate).
+                String referrerPkg = getAppPackageName();
+                if (TextUtils.isEmpty(referrerPkg)) {
+                    referrerPkg = BlackBoxCore.getHostPkg();
+                }
+                newIntent = BRReferrerIntent.get()._new(intent, referrerPkg);
             } else {
                 newIntent = intent;
             }

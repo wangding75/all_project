@@ -6,7 +6,16 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from app.models import DetailResponse, DiscoverItem, PlatformName, SearchItem, SegmentInfo
+from app.models import (
+    DetailResponse,
+    DiscoverItem,
+    PeopleResponse,
+    PersonProfile,
+    PersonWork,
+    PlatformName,
+    SearchItem,
+    SegmentInfo,
+)
 from platforms.base import BasePlatform, ProgressCallback
 from platforms.hongguo.bridge import (
     HongguoVendorError,
@@ -39,16 +48,23 @@ class HongguoPlatform(BasePlatform):
             ensure_config()
             H = load_hongguo_api()
             bounded_limit = max(1, min(int(limit), 50))
+            genre = str(kwargs.get("genre") or "short_play")
             if kind == "hot":
                 rows = H.browse(
-                    "short_play",
-                    sort="hot_score",
+                    genre,
+                    theme=kwargs.get("theme"),
+                    setting=kwargs.get("setting"),
+                    background=kwargs.get("background"),
+                    sort=str(kwargs.get("sort") or "hot_score"),
+                    gender=kwargs.get("gender"),
+                    days=kwargs.get("days"),
+                    status=kwargs.get("status"),
                     max_items=bounded_limit,
                 ) or []
             elif kind == "new":
                 rows = H.latest(
-                    "short_play",
-                    only_today=True,
+                    genre,
+                    only_today=bool(kwargs.get("only_today", True)),
                     max_items=bounded_limit,
                 ) or []
             else:
@@ -76,6 +92,10 @@ class HongguoPlatform(BasePlatform):
                             "play_count": row.get("play_cnt"),
                             "category": row.get("category"),
                             "today": row.get("today"),
+                            "genre": genre,
+                            "premiere": row.get("premiere"),
+                            "comment_count": row.get("comment_count"),
+                            "duration": row.get("duration"),
                         },
                     )
                 )
@@ -167,8 +187,83 @@ class HongguoPlatform(BasePlatform):
                 segments=segments,
                 extra={
                     "episode_cnt": meta.get("episode_cnt"),
+                    "status": meta.get("status"),
+                    "play_count": meta.get("play_cnt"),
+                    "followed_count": meta.get("followed_cnt"),
+                    "create_time": meta.get("create_time"),
+                    "category": meta.get("category") or [],
+                    "celebrities": meta.get("celebrities") or [],
                     "vendor": vendor_ready(),
                 },
+            )
+
+        try:
+            return await asyncio.to_thread(call_with_session_recovery, _run)
+        except HongguoVendorError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            from app.errors import format_platform_error
+
+            raise RuntimeError(format_platform_error(exc)) from exc
+
+    async def get_people_index(
+        self,
+        *,
+        genre: str = "short_play",
+        work_limit: int = 20,
+    ) -> PeopleResponse:
+        """Build a real actor/works index from hot works plus batched series metadata."""
+
+        def _run() -> PeopleResponse:
+            H = load_hongguo_api()
+            bounded_limit = max(1, min(int(work_limit), 30))
+            rows = H.browse(
+                genre,
+                sort="hot_score",
+                max_items=bounded_limit,
+            ) or []
+            by_id = {
+                str(row.get("series_id") or row.get("id") or ""): row
+                for row in rows
+                if row.get("series_id") or row.get("id")
+            }
+            metadata, failures = H.get_episodes_batch(list(by_id), batch_size=20)
+            people: dict[str, PersonProfile] = {}
+            for series_id, meta in metadata.items():
+                row = by_id.get(str(series_id), {})
+                for celebrity in meta.get("celebrities") or []:
+                    name = str(celebrity.get("演员") or "").strip()
+                    if not name:
+                        continue
+                    profile = people.setdefault(
+                        name,
+                        PersonProfile(
+                            name=name,
+                            avatar=str(celebrity.get("头像") or "") or None,
+                            intro=str(celebrity.get("简介") or ""),
+                        ),
+                    )
+                    if any(work.id == str(series_id) for work in profile.works):
+                        continue
+                    profile.works.append(
+                        PersonWork(
+                            id=str(series_id),
+                            title=str(row.get("title") or meta.get("title") or series_id),
+                            cover=str(row.get("cover") or meta.get("cover") or "") or None,
+                            role=str(celebrity.get("角色") or ""),
+                            episode_count=int(
+                                row.get("episode_cnt") or meta.get("episode_cnt") or 0
+                            ),
+                        )
+                    )
+            ordered = sorted(
+                people.values(),
+                key=lambda profile: (-len(profile.works), profile.name),
+            )
+            return PeopleResponse(
+                people=ordered,
+                scanned_works=len(by_id),
+                errors=[str(item.get("error") or "") for item in failures[:10]],
             )
 
         try:

@@ -190,7 +190,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String resolvedType = (String) args[2];
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, BActivityThread.getUserId());
             if (resolveInfo == null) {
-                return method.invoke(who, args);
+                try {
+                    return method.invoke(who, args);
+                } catch (Throwable t) {
+                    Log.w(TAG, "System startService failed: " + t.getMessage());
+                    return null;
+                }
             }
 
             int requireForegroundIndex = getRequireForeground();

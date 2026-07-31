@@ -114,7 +114,7 @@ final 字段需 **Hook getter 反射路径** 或引擎提供的 Build 欺骗能�
 | 模式 | 行为 |
 |------|------|
 | 冷启动 | 必加载最新 Profile |
-| 热更新 | 发 IPC/广播；Hook 侧 AtomicReference 替换；失败则提示重启分身 |
+| 热更新 | 发送包内、签名权限保护的广播；接收端清理 Profile 缓存并通过监听器重新加载当前 `packageName + userId` 配置，各 Hook 更新静态配置引用；失败则提示重启分身 |
 
 ---
 

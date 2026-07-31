@@ -120,7 +120,13 @@ def test_hongguo_monitor_baselines_then_enqueues_only_new_items(
         identity = Identity(kind="api_key", is_ops=True)
         await service.configure(
             identity,
-            HongguoMonitorConfig(enabled=False, auto_enqueue=True),
+            HongguoMonitorConfig(
+                enabled=False,
+                auto_enqueue=True,
+                min_episode_count=10,
+                exclude_keywords=["忽略"],
+                max_auto_enqueue_per_scan=1,
+            ),
         )
 
         baseline = await service.scan_now(identity)
@@ -134,11 +140,23 @@ def test_hongguo_monitor_baselines_then_enqueues_only_new_items(
                 id="new-2",
                 title="刚上新的短剧",
                 platform=PlatformName.hongguo,
+                extra={"episode_count": 24},
+            )
+        )
+        platform.rows.append(
+            DiscoverItem(
+                id="ignored-3",
+                title="忽略这条上新",
+                platform=PlatformName.hongguo,
+                extra={"episode_count": 30},
             )
         )
         detected = await service.scan_now(identity)
         assert detected.last_detected_count == 1
         assert detected.total_enqueued_count == 1
+        assert detected.recent_items[0].id == "new-2"
+        assert detected.logs[-1].detected == 1
+        assert "过滤 1 条" in detected.logs[-1].message
         await asyncio.sleep(0.05)
         jobs, total = await manager.list_jobs_for(identity, page_size=100)
         assert total == 1
@@ -171,6 +189,59 @@ def test_paused_queue_keeps_new_and_retried_jobs_paused(tmp_path):
         assert retried.status == JobStatus.paused
         assert retried.error is None
         assert manager._running_tasks == {}
+        await manager.shutdown()
+
+    asyncio.run(_run())
+
+
+def test_selected_queue_actions_and_archive_keep_file_authorization(tmp_path):
+    async def _run():
+        settings = Settings(
+            data_dir=tmp_path,
+            max_concurrent_jobs=1,
+            max_queued_jobs=10,
+        )
+        manager = JobManager(settings)
+        identity = Identity(kind="api_key", is_ops=True)
+        await manager.pause_queue_for(identity)
+        first = await manager.create_job(PlatformName.hongguo, "first")
+        second = await manager.create_job(PlatformName.hongguo, "second")
+        manager._closing = True
+        manager._paused_owners.clear()
+        first.status = JobStatus.pending
+        first.pause_scope = ""
+        second.status = JobStatus.pending
+        second.pause_scope = ""
+
+        changed, skipped = await manager.set_jobs_paused_for(
+            identity,
+            [first.job_id],
+            paused=True,
+        )
+        assert changed == [first.job_id]
+        assert skipped == []
+        assert (await manager.get_job(first.job_id)).pause_scope == "item"
+        assert (await manager.get_job(second.job_id)).status == JobStatus.pending
+
+        resumed, skipped = await manager.set_jobs_paused_for(
+            identity,
+            [first.job_id, "missing"],
+            paused=False,
+        )
+        assert resumed == [first.job_id]
+        assert skipped == ["missing"]
+
+        await manager.cancel_job(first.job_id)
+        archived, skipped = await manager.archive_jobs_for(
+            identity,
+            [first.job_id, second.job_id],
+        )
+        assert archived == [first.job_id]
+        assert skipped == [second.job_id]
+        visible, total = await manager.list_jobs_for(identity, page_size=20)
+        assert total == 1
+        assert visible[0].job_id == second.job_id
+        assert await manager.get_job_for(first.job_id, identity) is not None
         await manager.shutdown()
 
     asyncio.run(_run())

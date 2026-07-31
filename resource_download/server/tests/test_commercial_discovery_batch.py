@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from io import BytesIO
 
@@ -20,7 +21,7 @@ class _DiscoverPlatform:
         self.platform = platform
         self.fail = fail
 
-    async def discover(self, kind: str, *, limit: int = 24):
+    async def discover(self, kind: str, *, limit: int = 24, **_kwargs):
         if self.fail:
             raise RuntimeError(f"{self.platform.value} unavailable")
         return [
@@ -95,6 +96,45 @@ def test_discover_rejects_unknown_kind(commercial_client):
         headers={"X-API-Key": "commercial-test-key"},
     )
     assert response.status_code == 400
+
+
+def test_discover_forwards_real_filters_and_applies_episode_threshold(
+    commercial_client,
+    monkeypatch,
+):
+    calls = []
+
+    class _FilteredPlatform:
+        async def discover(self, kind, *, limit, **kwargs):
+            calls.append((kind, limit, kwargs))
+            return [
+                DiscoverItem(
+                    id="short",
+                    title="玄幻短剧",
+                    platform=PlatformName.hongguo,
+                    extra={"episode_count": 8, "category": "玄幻"},
+                ),
+                DiscoverItem(
+                    id="long",
+                    title="玄幻长剧",
+                    platform=PlatformName.hongguo,
+                    extra={"episode_count": 30, "category": "玄幻"},
+                ),
+            ]
+
+    monkeypatch.setattr(router_module, "get_platform", lambda _name: _FilteredPlatform())
+    response = commercial_client.get(
+        "/v1/discover?platform=hongguo&kinds=hot&genre=ai_series"
+        "&sort=hot_collect&theme=玄幻&gender=男频&days=7"
+        "&min_episode_count=20&keyword=玄幻",
+        headers={"X-API-Key": "commercial-test-key"},
+    )
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["sections"][0]["items"]] == ["long"]
+    assert calls[0][2]["genre"] == "ai_series"
+    assert calls[0][2]["sort"] == "hot_collect"
+    assert calls[0][2]["theme"] == "玄幻"
+    assert calls[0][2]["days"] == 7
 
 
 def test_batch_jobs_create_each_item_and_return_batch_result(
@@ -176,6 +216,31 @@ def test_batch_resolve_returns_success_and_per_item_error(
     assert payload["errors"][0]["code"] == "NOT_FOUND"
 
 
+def test_queue_bulk_control_returns_affected_and_skipped(
+    commercial_client,
+    monkeypatch,
+):
+    class _BulkManager:
+        async def set_jobs_paused_for(self, _identity, job_ids, *, paused):
+            assert paused is True
+            assert job_ids == ["job-1", "missing"]
+            return ["job-1"], ["missing"]
+
+    monkeypatch.setattr(router_module, "get_job_manager", lambda: _BulkManager())
+    response = commercial_client.post(
+        "/v1/jobs/queue/bulk",
+        headers={"X-API-Key": "commercial-test-key"},
+        json={"job_ids": ["job-1", "missing", "job-1"], "action": "pause"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "action": "pause",
+        "requested": 2,
+        "affected": 1,
+        "skipped": ["missing"],
+    }
+
+
 def test_cover_cache_rejects_arbitrary_hosts_and_converts_to_jpeg(
     tmp_path,
     monkeypatch,
@@ -212,6 +277,110 @@ def test_cover_cache_rejects_arbitrary_hosts_and_converts_to_jpeg(
     assert media_cache.materialize_cover("not-a-valid-cover-id") is None
 
 
+def test_cover_recognition_returns_real_similarity_candidate(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from app import image_recognition
+
+    source = BytesIO()
+    Image.new("RGB", (240, 360), color=(180, 35, 70)).save(source, format="PNG")
+    target = tmp_path / "target.jpg"
+    Image.new("RGB", (240, 360), color=(180, 35, 70)).save(target, format="JPEG")
+
+    class _CoverPlatform:
+        async def discover(self, kind, *, limit):
+            return [
+                DiscoverItem(
+                    id="poster-1",
+                    title="相同海报",
+                    cover="https://p3-reading-sign.fqnovelpic.com/poster.jpg",
+                    platform=PlatformName.hongguo,
+                    badge=kind,
+                )
+            ]
+
+    monkeypatch.setattr(image_recognition, "get_platform", lambda _name: _CoverPlatform())
+    monkeypatch.setattr(
+        image_recognition,
+        "register_cover_url",
+        lambda _url: "/v1/covers/1234567890abcdef12345678.jpg",
+    )
+    monkeypatch.setattr(image_recognition, "materialize_cover", lambda _cover_id: target)
+
+    result = asyncio.run(
+        image_recognition.recognize_cover(
+            source.getvalue(),
+            platform_hint="hongguo",
+            max_candidates=3,
+        )
+    )
+    assert result.compared_count == 1
+    assert result.candidates[0].content.id == "poster-1"
+    assert result.candidates[0].confidence == "high"
+    assert result.candidates[0].score > 0.95
+
+
+def test_image_recognition_rejects_invalid_base64(commercial_client):
+    response = commercial_client.post(
+        "/v1/image/recognize",
+        headers={"X-API-Key": "commercial-test-key"},
+        json={"image_base64": "this-is-not-base64!", "platform_hint": "all"},
+    )
+    assert response.status_code == 400
+
+
+def test_hongguo_people_index_uses_batched_real_metadata(monkeypatch):
+    from platforms.hongguo import platform as platform_module
+
+    class _HongguoApi:
+        @staticmethod
+        def browse(_genre, **_kwargs):
+            return [
+                {
+                    "series_id": "series-1",
+                    "title": "演员测试剧",
+                    "cover": "https://p3-reading-sign.fqnovelpic.com/work.jpg",
+                    "episode_cnt": 24,
+                }
+            ]
+
+        @staticmethod
+        def get_episodes_batch(series_ids, batch_size):
+            assert series_ids == ["series-1"]
+            assert batch_size == 20
+            return {
+                "series-1": {
+                    "title": "演员测试剧",
+                    "episode_cnt": 24,
+                    "celebrities": [
+                        {
+                            "演员": "测试演员",
+                            "角色": "主角",
+                            "头像": "https://p3-reading-sign.fqnovelpic.com/avatar.jpg",
+                            "简介": "演员资料",
+                        }
+                    ],
+                }
+            }, []
+
+    monkeypatch.setattr(platform_module, "load_hongguo_api", lambda: _HongguoApi)
+    monkeypatch.setattr(
+        platform_module,
+        "call_with_session_recovery",
+        lambda operation: operation(),
+    )
+    result = asyncio.run(
+        platform_module.HongguoPlatform().get_people_index(
+            genre="short_play",
+            work_limit=20,
+        )
+    )
+    assert result.scanned_works == 1
+    assert result.people[0].name == "测试演员"
+    assert result.people[0].works[0].role == "主角"
+    assert result.people[0].works[0].id == "series-1"
+
+
 def test_hongguo_session_recovery_reconnects_and_retries_once(monkeypatch):
     from platforms.hongguo import bridge
 
@@ -237,8 +406,6 @@ def test_hongguo_session_recovery_reconnects_and_retries_once(monkeypatch):
 
 
 def test_hongguo_download_rejects_diagnostic_raw_output(tmp_path, monkeypatch):
-    import asyncio
-
     from platforms.hongguo import platform as platform_module
 
     class _Offline:

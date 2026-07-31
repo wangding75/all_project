@@ -58,6 +58,7 @@ public class ProfileRepository {
         }
         String pkg = resolveHostPkg(context);
         IntentFilter filter = new IntentFilter(ConfigBroadcast.actionName(pkg));
+        String permission = pkg + ".permission.INTERNAL_CONFIG";
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context ctx, Intent intent) {
@@ -77,9 +78,10 @@ public class ProfileRepository {
         };
         try {
             if (Build.VERSION.SDK_INT >= 33) {
-                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+                context.registerReceiver(
+                        receiver, filter, permission, null, Context.RECEIVER_NOT_EXPORTED);
             } else {
-                context.registerReceiver(receiver, filter);
+                context.registerReceiver(receiver, filter, permission, null);
             }
             mReceiverRegistered = true;
         } catch (Exception e) {

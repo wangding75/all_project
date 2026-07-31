@@ -92,6 +92,42 @@ public class OsStub extends ClassInvocationStub {
         }
     }
 
+    @ProxyMethod("chown")
+    public static class chown extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                return method.invoke(who, args);
+            } catch (Throwable t) {
+                return 0;
+            }
+        }
+    }
+
+    @ProxyMethod("fchown")
+    public static class fchown extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                return method.invoke(who, args);
+            } catch (Throwable t) {
+                return 0;
+            }
+        }
+    }
+
+    @ProxyMethod("lchown")
+    public static class lchown extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                return method.invoke(who, args);
+            } catch (Throwable t) {
+                return 0;
+            }
+        }
+    }
+
     private static int getFakeUid(int callUid) {
         if (callUid > 0 && callUid <= Process.FIRST_APPLICATION_UID)
             return callUid;

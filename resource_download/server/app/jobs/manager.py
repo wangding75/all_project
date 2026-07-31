@@ -45,6 +45,8 @@ class JobRecord:
     owner_user_id: int | None = None
     owner_kind: str | None = None
     queue_position: int = 0
+    archived: bool = False
+    pause_scope: str = ""
 
     def to_response(self) -> JobResponse:
         extra_dict: dict[str, Any] = {
@@ -56,6 +58,9 @@ class JobRecord:
         if self.owner_kind is not None:
             extra_dict["owner_kind"] = self.owner_kind
         extra_dict["queue_position"] = self.queue_position
+        extra_dict["archived"] = self.archived
+        if self.pause_scope:
+            extra_dict["pause_scope"] = self.pause_scope
         # 客户端建任务时传入的书名/剧名
         if isinstance(self.options, dict):
             title = self.options.get("title")
@@ -167,6 +172,8 @@ class JobManager:
                         owner_user_id=data.get("owner_user_id"),
                         owner_kind=data.get("owner_kind"),
                         queue_position=int(data.get("queue_position") or 0),
+                        archived=bool(data.get("archived", False)),
+                        pause_scope=str(data.get("pause_scope") or ""),
                     )
                     if record.queue_position <= 0:
                         self._queue_counter += 1
@@ -174,7 +181,7 @@ class JobManager:
                     else:
                         self._queue_counter = max(self._queue_counter, record.queue_position)
                     self._jobs[job_id] = record
-                    if record.status == JobStatus.paused:
+                    if record.status == JobStatus.paused and record.pause_scope != "item":
                         self._paused_owners.add(
                             self._owner_key(record.owner_kind, record.owner_user_id)
                         )
@@ -264,6 +271,7 @@ class JobManager:
             )
             if record.status == JobStatus.paused:
                 record.message = "queue paused"
+                record.pause_scope = "queue"
             self._queue_counter = max(self._queue_counter + 1, queue_position)
             self._jobs[job_id] = record
             self._evict_old_completed_jobs(max_history_jobs=200)
@@ -359,7 +367,7 @@ class JobManager:
         page_size: int = 20,
     ) -> tuple[list[JobRecord], int]:
         async with self._lock:
-            filtered = list(self._jobs.values())
+            filtered = [job for job in self._jobs.values() if not job.archived]
             if status is not None:
                 filtered = [j for j in filtered if j.status == status]
             filtered.sort(key=lambda j: j.created_at, reverse=True)
@@ -376,7 +384,11 @@ class JobManager:
         page_size: int = 20,
     ) -> tuple[list[JobRecord], int]:
         async with self._lock:
-            filtered = [j for j in self._jobs.values() if self.can_access_job(j, identity)]
+            filtered = [
+                j
+                for j in self._jobs.values()
+                if self.can_access_job(j, identity) and not j.archived
+            ]
             if status is not None:
                 filtered = [j for j in filtered if j.status == status]
             filtered.sort(key=lambda j: j.created_at, reverse=True)
@@ -391,6 +403,7 @@ class JobManager:
                 job
                 for job in self._jobs.values()
                 if self.can_access_job(job, identity)
+                and not job.archived
                 and job.status in (JobStatus.pending, JobStatus.paused, JobStatus.running)
             ]
             items.sort(
@@ -418,6 +431,7 @@ class JobManager:
                 if record.status == JobStatus.pending and self.can_access_job(record, identity):
                     record.status = JobStatus.paused
                     record.message = "queue paused"
+                    record.pause_scope = "queue"
                     record.updated_at = _utc_now()
                     changed.append(record)
         for record in changed:
@@ -432,6 +446,7 @@ class JobManager:
                 if record.status == JobStatus.paused and self.can_access_job(record, identity):
                     record.status = JobStatus.pending
                     record.message = "queued"
+                    record.pause_scope = ""
                     record.updated_at = _utc_now()
                     changed.append(record)
         for record in changed:
@@ -489,10 +504,12 @@ class JobManager:
                 in self._paused_owners
                 else JobStatus.pending
             )
+            record.pause_scope = "queue" if record.status == JobStatus.paused else ""
             record.progress = 0.0
             record.message = "queued for retry"
             record.error = None
             record.files = []
+            record.archived = False
             record.queue_position = self._queue_counter
             record.updated_at = _utc_now()
         output_dir = self.settings.outputs_dir / job_id
@@ -553,6 +570,71 @@ class JobManager:
                 return False
         return await self.cancel_job(job_id)
 
+    async def set_jobs_paused_for(
+        self,
+        identity: Identity,
+        job_ids: list[str],
+        *,
+        paused: bool,
+    ) -> tuple[list[str], list[str]]:
+        """Pause/resume selected waiting jobs without changing the whole owner queue."""
+        requested = list(dict.fromkeys(job_ids))
+        changed: list[JobRecord] = []
+        skipped: list[str] = []
+        owner_paused = self._identity_owner_key(identity) in self._paused_owners
+        async with self._lock:
+            for job_id in requested:
+                record = self._jobs.get(job_id)
+                if record is None or not self.can_access_job(record, identity):
+                    skipped.append(job_id)
+                    continue
+                if paused and record.status == JobStatus.pending:
+                    record.status = JobStatus.paused
+                    record.message = "paused by user"
+                    record.pause_scope = "item"
+                elif not paused and record.status == JobStatus.paused and not owner_paused:
+                    record.status = JobStatus.pending
+                    record.message = "queued"
+                    record.pause_scope = ""
+                else:
+                    skipped.append(job_id)
+                    continue
+                record.updated_at = _utc_now()
+                changed.append(record)
+        for record in changed:
+            await self._persist_async(record)
+        if changed:
+            self._ensure_dispatcher()
+            self._queue_changed.set()
+        return [record.job_id for record in changed], skipped
+
+    async def archive_jobs_for(
+        self,
+        identity: Identity,
+        job_ids: list[str],
+    ) -> tuple[list[str], list[str]]:
+        """Hide terminal jobs from history while retaining records for file authorization."""
+        requested = list(dict.fromkeys(job_ids))
+        changed: list[JobRecord] = []
+        skipped: list[str] = []
+        async with self._lock:
+            for job_id in requested:
+                record = self._jobs.get(job_id)
+                if (
+                    record is None
+                    or not self.can_access_job(record, identity)
+                    or record.status
+                    not in (JobStatus.success, JobStatus.failed, JobStatus.cancelled)
+                ):
+                    skipped.append(job_id)
+                    continue
+                record.archived = True
+                record.updated_at = _utc_now()
+                changed.append(record)
+        for record in changed:
+            await self._persist_async(record)
+        return [record.job_id for record in changed], skipped
+
     async def summary(self) -> dict[str, Any]:
         import shutil
         async with self._lock:
@@ -584,7 +666,11 @@ class JobManager:
     async def summary_for(self, identity: Identity) -> dict[str, Any]:
         import shutil
         async with self._lock:
-            accessible_jobs = [j for j in self._jobs.values() if self.can_access_job(j, identity)]
+            accessible_jobs = [
+                j
+                for j in self._jobs.values()
+                if self.can_access_job(j, identity) and not j.archived
+            ]
             active = sum(
                 1
                 for j in accessible_jobs
@@ -787,6 +873,8 @@ class JobManager:
                 "owner_user_id": record.owner_user_id,
                 "owner_kind": record.owner_kind,
                 "queue_position": record.queue_position,
+                "archived": record.archived,
+                "pause_scope": record.pause_scope,
             }
             content = json.dumps(payload, ensure_ascii=False, indent=2)
             with open(tmp_path, "w", encoding="utf-8") as f:

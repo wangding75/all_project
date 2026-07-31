@@ -144,6 +144,46 @@ class BatchResolveResponse(BaseModel):
     errors: list[BatchResolveErrorItem] = Field(default_factory=list)
 
 
+class ImageRecognizeRequest(BaseModel):
+    image_base64: str = Field(min_length=16, max_length=12 * 1024 * 1024)
+    platform_hint: Literal["all", "hongguo", "fanqie"] = "all"
+    max_candidates: int = Field(default=5, ge=1, le=10)
+
+
+class ImageRecognizeCandidate(BaseModel):
+    score: float = Field(ge=0, le=1)
+    confidence: Literal["high", "medium", "low"]
+    method: str = "cover_similarity"
+    content: DiscoverItem
+
+
+class ImageRecognizeResponse(BaseModel):
+    candidates: list[ImageRecognizeCandidate] = Field(default_factory=list)
+    compared_count: int = 0
+    platform_errors: dict[str, str] = Field(default_factory=dict)
+
+
+class PersonWork(BaseModel):
+    id: str
+    title: str
+    cover: str | None = None
+    role: str = ""
+    episode_count: int = 0
+
+
+class PersonProfile(BaseModel):
+    name: str
+    avatar: str | None = None
+    intro: str = ""
+    works: list[PersonWork] = Field(default_factory=list)
+
+
+class PeopleResponse(BaseModel):
+    people: list[PersonProfile] = Field(default_factory=list)
+    scanned_works: int = 0
+    errors: list[str] = Field(default_factory=list)
+
+
 class SegmentInfo(BaseModel):
     id: str
     title: str
@@ -288,15 +328,43 @@ class QueueReorderRequest(BaseModel):
     job_ids: list[str] = Field(min_length=1, max_length=100)
 
 
+class QueueBulkRequest(BaseModel):
+    job_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class QueueBulkActionRequest(QueueBulkRequest):
+    action: Literal["pause", "resume", "cancel", "archive"]
+
+
+class QueueBulkResponse(BaseModel):
+    action: str
+    requested: int = 0
+    affected: int = 0
+    skipped: list[str] = Field(default_factory=list)
+
+
 class HongguoMonitorConfig(BaseModel):
     enabled: bool = False
     auto_enqueue: bool = False
     interval_seconds: int = Field(default=60, ge=30, le=86400)
     scan_limit: int = Field(default=50, ge=1, le=50)
+    min_episode_count: int = Field(default=0, ge=0, le=10000)
+    max_auto_enqueue_per_scan: int = Field(default=20, ge=1, le=50)
+    include_keywords: list[str] = Field(default_factory=list, max_length=20)
+    exclude_keywords: list[str] = Field(default_factory=list, max_length=20)
+    author_keywords: list[str] = Field(default_factory=list, max_length=20)
     quality: str = "1080p"
     concurrency: int = Field(default=2, ge=1, le=12)
     download_cover: bool = False
     download_desc: bool = False
+
+
+class HongguoMonitorLog(BaseModel):
+    timestamp: str
+    level: Literal["info", "warning", "error"] = "info"
+    message: str
+    detected: int = 0
+    enqueued: int = 0
 
 
 class HongguoMonitorStatus(HongguoMonitorConfig):
@@ -308,6 +376,8 @@ class HongguoMonitorStatus(HongguoMonitorConfig):
     last_detected_count: int = 0
     total_detected_count: int = 0
     total_enqueued_count: int = 0
+    next_scan_at: str = ""
     recent_items: list[DiscoverItem] = Field(default_factory=list)
+    logs: list[HongguoMonitorLog] = Field(default_factory=list)
 
 

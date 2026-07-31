@@ -64,7 +64,9 @@ public class ShortcutLaunchActivity extends AppCompatActivity {
         boolean ok = SandboxProvider.getEngine().launch(packageName, userId);
         if (!ok) {
             Toast.makeText(this, "启动失败：授权未激活或底层引擎未就绪", Toast.LENGTH_LONG).show();
+            finish();
+        } else {
+            finish();
         }
-        finish();
     }
 }

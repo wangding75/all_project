@@ -26,6 +26,7 @@ dist/
 
 # 运行期生成的动态会话配置目录（包含敏感 token，勿提交）
 data/config/
+data/cache/
 
 # 调试与注入二进制文件（大文件，勿提交）
 tools/setup/frida-server*

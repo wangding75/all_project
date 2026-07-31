@@ -59,6 +59,9 @@
           <div class="nav-item" data-page="page-search">
             <span>🔍 资源搜索</span>
           </div>
+          <div class="nav-item" data-page="page-batch">
+            <span>📋 批量导入</span>
+          </div>
           <div class="nav-item" data-page="page-jobs">
             <span>📥 下载任务</span>
             <span class="nav-badge" id="jobCountBadge">0</span>
@@ -120,6 +123,9 @@
             <button class="home-mode-tab" data-view="calendar">
               <span>▦</span> 上线日历
             </button>
+            <button class="home-mode-tab" data-view="people">
+              <span>♙</span> 演员作品
+            </button>
             <button class="home-mode-tab" data-view="following">
               <span>♡</span> 我的追更
             </button>
@@ -134,6 +140,35 @@
               </div>
             </div>
             <button class="btn-secondary home-refresh-button" id="btnRefreshDiscover"><span>↻</span> 刷新内容</button>
+          </div>
+
+          <div class="home-advanced-filters" id="homeAdvancedFilters">
+            <select class="input-control" id="homeFilterGenre" aria-label="红果内容类型">
+              <option value="short_play">短剧</option>
+              <option value="comic_series">漫剧</option>
+              <option value="ai_series">AI 短剧</option>
+            </select>
+            <select class="input-control" id="homeFilterSort" aria-label="榜单排序">
+              <option value="hot_score">最高热度</option>
+              <option value="online_time">最新上架</option>
+              <option value="hot_collect">最高收藏</option>
+            </select>
+            <select class="input-control" id="homeFilterGender" aria-label="受众筛选">
+              <option value="">全部受众</option>
+              <option value="男频">男频</option>
+              <option value="女频">女频</option>
+            </select>
+            <select class="input-control" id="homeFilterDays" aria-label="上新时间">
+              <option value="">不限时间</option>
+              <option value="7">7 天内上新</option>
+              <option value="14">14 天内上新</option>
+              <option value="30">30 天内上新</option>
+              <option value="90">90 天内上新</option>
+            </select>
+            <input class="input-control" id="homeFilterTheme" placeholder="主题：玄幻 / 逆袭" maxlength="30">
+            <input class="input-control home-filter-number" id="homeFilterMinEpisodes" type="number" min="0" max="10000" value="0" placeholder="最少集数">
+            <button class="btn-primary" id="btnApplyHomeFilters" type="button">应用筛选</button>
+            <button class="btn-secondary" id="btnResetHomeFilters" type="button">重置</button>
           </div>
 
           <div class="home-note" id="homeDiscoverNote" aria-live="polite"></div>
@@ -163,6 +198,15 @@
               <input type="text" class="input-control" id="inputSearchQuery" placeholder="关键词搜索；「载入」用于 ID / 链接" autocomplete="off">
               <button class="btn-primary" id="btnSearch">搜索</button>
               <button class="btn-secondary" id="btnLoad" title="按 ID 或链接直接打开详情">载入 ID</button>
+            </div>
+            <div class="image-recognize-box">
+              <label class="btn-secondary image-upload-button">
+                🖼 上传封面 / 海报
+                <input id="imageRecognizeInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+              </label>
+              <img id="imageRecognizePreview" class="image-recognize-preview" alt="待识别图片预览" hidden>
+              <span class="image-recognize-status" id="imageRecognizeStatus">支持 JPEG、PNG、WEBP，按封面视觉相似度查找候选资源</span>
+              <button class="btn-primary" id="btnRecognizeImage" type="button" disabled>识别图片</button>
             </div>
             <div class="search-banner" id="searchBanner" style="display: none;"></div>
             <div class="search-filter-row" id="searchFilterRow" style="display: none;">
@@ -240,7 +284,75 @@
         </div>
       </section>
 
-      <!-- 子页面 2: 📥 下载任务 -->
+      <!-- 子页面 2: 📋 批量导入 -->
+      <section class="subpage" id="page-batch">
+        <div class="batch-page-container">
+          <div class="batch-page-header">
+            <div>
+              <span class="batch-eyebrow">BATCH WORKBENCH</span>
+              <h2>批量识别与下载</h2>
+              <p>每行一个剧名、书名、资源 ID 或分享链接；识别确认后再加入下载队列。</p>
+            </div>
+            <div class="batch-header-stat">
+              <strong id="batchInputCount">0</strong>
+              <span>待识别条目</span>
+            </div>
+          </div>
+
+          <div class="batch-workbench">
+            <section class="batch-input-panel">
+              <div class="batch-panel-title">
+                <span>1. 导入内容</span>
+                <span class="form-hint">最多 1000 条，自动去重</span>
+              </div>
+              <textarea id="batchInputText" class="batch-textarea" placeholder="示例：
+极品皇太子
+北派寻宝笔记
+https://v.example.com/share/xxxx"></textarea>
+              <div class="batch-input-actions">
+                <label class="btn-secondary batch-file-button">
+                  导入 TXT
+                  <input id="batchFileInput" type="file" accept=".txt,text/plain" hidden>
+                </label>
+                <button class="btn-secondary" id="btnBatchClear" type="button">清空</button>
+                <select id="batchPlatformHint" class="input-control batch-platform-select" aria-label="平台提示">
+                  <option value="all">自动识别平台</option>
+                  <option value="hongguo">仅红果短剧</option>
+                  <option value="fanqie">仅番茄小说</option>
+                </select>
+                <button class="btn-primary" id="btnBatchResolve" type="button">开始识别</button>
+              </div>
+              <div class="batch-progress" id="batchProgress" hidden>
+                <div class="batch-progress-bar"><span id="batchProgressFill"></span></div>
+                <span id="batchProgressText">准备识别…</span>
+              </div>
+            </section>
+
+            <section class="batch-result-panel">
+              <div class="batch-panel-title batch-result-title">
+                <div>
+                  <span>2. 校验结果</span>
+                  <span class="batch-result-summary" id="batchResultSummary">尚未识别</span>
+                </div>
+                <div class="batch-result-actions">
+                  <button class="btn-secondary" id="btnBatchSelectSuccess" type="button">全选成功项</button>
+                  <button class="btn-secondary" id="btnBatchClearSelection" type="button">取消选择</button>
+                  <button class="btn-primary" id="btnBatchEnqueue" type="button" disabled>加入队列</button>
+                </div>
+              </div>
+              <div class="batch-results" id="batchResults">
+                <div class="batch-empty-state">
+                  <span>⌁</span>
+                  <strong>等待导入内容</strong>
+                  <p>识别成功后可在这里核对平台、标题和资源 ID。</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <!-- 子页面 3: 📥 下载任务 -->
       <section class="subpage" id="page-jobs">
         <div class="jobs-page-container">
           <!-- 统计概览卡片 -->
@@ -272,6 +384,28 @@
           <div class="queue-toolbar">
             <span id="queueStateText">正在读取队列状态…</span>
             <span class="form-hint">暂停只影响尚未开始的任务，正在下载的任务不会被中断。</span>
+          </div>
+          <div class="jobs-bulk-toolbar">
+            <div class="jobs-bulk-filter">
+              <select class="input-control" id="jobsStatusFilter" aria-label="任务状态筛选">
+                <option value="all">全部状态</option>
+                <option value="active">进行中 / 排队</option>
+                <option value="pending">等待中</option>
+                <option value="paused">已暂停</option>
+                <option value="success">已完成</option>
+                <option value="failed">失败 / 已取消</option>
+              </select>
+              <button class="btn-secondary" id="btnJobsSelectVisible" type="button">全选当前</button>
+              <button class="btn-secondary" id="btnJobsClearSelected" type="button">取消选择</button>
+              <span class="jobs-selected-count" id="jobsSelectedCount">已选 0 项</span>
+            </div>
+            <div class="jobs-bulk-actions">
+              <button class="btn-secondary" data-jobs-bulk="pause" type="button" disabled>暂停</button>
+              <button class="btn-secondary" data-jobs-bulk="resume" type="button" disabled>继续</button>
+              <button class="btn-secondary" data-jobs-bulk="retry" type="button" disabled>重试</button>
+              <button class="btn-secondary" data-jobs-bulk="cancel" type="button" disabled>取消</button>
+              <button class="btn-secondary jobs-archive-button" data-jobs-bulk="archive" type="button" disabled>清理记录</button>
+            </div>
           </div>
 
           <!-- 任务卡片列表 -->
@@ -404,9 +538,34 @@
                 <input type="number" class="input-control" id="settingHgMonitorLimit" min="1" max="50" value="50">
               </div>
             </div>
+            <div class="form-row-inline">
+              <div class="form-group" style="flex:1;">
+                <label class="form-label">最少集数</label>
+                <input type="number" class="input-control" id="settingHgMonitorMinEpisodes" min="0" max="10000" value="0">
+              </div>
+              <div class="form-group" style="flex:1;">
+                <label class="form-label">单次最多自动入队</label>
+                <input type="number" class="input-control" id="settingHgMonitorMaxEnqueue" min="1" max="50" value="20">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">标题关键词（逗号分隔，留空不过滤）</label>
+              <input type="text" class="input-control" id="settingHgMonitorInclude" placeholder="例如：逆袭, 玄幻">
+            </div>
+            <div class="form-group">
+              <label class="form-label">排除关键词（逗号分隔）</label>
+              <input type="text" class="input-control" id="settingHgMonitorExclude" placeholder="例如：预告, 花絮">
+            </div>
+            <div class="form-group">
+              <label class="form-label">版权方 / 作者关键词（逗号分隔）</label>
+              <input type="text" class="input-control" id="settingHgMonitorAuthors" placeholder="只监控指定版权方或作者">
+            </div>
             <div class="form-row-inline" style="align-items:center;">
               <button class="btn-secondary" id="btnScanHgNewNow" type="button">立即识别</button>
               <span class="form-hint" id="settingHgMonitorStatus">首次扫描只建立当前上新基线，之后仅识别真正新增的资源。</span>
+            </div>
+            <div class="monitor-log-panel" id="settingHgMonitorLogs">
+              <div class="monitor-log-empty">暂无监控日志</div>
             </div>
           </div>
 

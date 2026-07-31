@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ from app.jobs import JobManager, get_job_manager
 from app.models import (
     DiscoverItem,
     HongguoMonitorConfig,
+    HongguoMonitorLog,
     HongguoMonitorStatus,
     JobStatus,
     PlatformName,
@@ -94,6 +95,7 @@ class HongguoMonitorService:
             "total_detected_count": 0,
             "total_enqueued_count": 0,
             "recent_items": [],
+            "logs": [],
         }
 
     @staticmethod
@@ -104,11 +106,30 @@ class HongguoMonitorService:
                 recent.append(DiscoverItem(**item))
             except Exception:
                 continue
+        logs = []
+        for entry in policy.get("logs") or []:
+            try:
+                logs.append(HongguoMonitorLog(**entry))
+            except Exception:
+                continue
+        config_values = {}
+        for key, field in HongguoMonitorConfig.model_fields.items():
+            config_values[key] = (
+                policy[key]
+                if key in policy
+                else field.get_default(call_default_factory=True)
+            )
+        next_scan_at = ""
+        if config_values.get("enabled"):
+            try:
+                last = datetime.fromisoformat(str(policy.get("last_scan_at") or ""))
+            except ValueError:
+                last = datetime.now(timezone.utc)
+            next_scan_at = (
+                last + timedelta(seconds=int(config_values.get("interval_seconds") or 60))
+            ).isoformat()
         return HongguoMonitorStatus(
-            **{
-                key: policy.get(key, field.default)
-                for key, field in HongguoMonitorConfig.model_fields.items()
-            },
+            **config_values,
             baseline_initialized=bool(policy.get("baseline_initialized")),
             known_count=len(policy.get("known_ids") or []),
             last_scan_at=str(policy.get("last_scan_at") or ""),
@@ -117,8 +138,72 @@ class HongguoMonitorService:
             last_detected_count=int(policy.get("last_detected_count") or 0),
             total_detected_count=int(policy.get("total_detected_count") or 0),
             total_enqueued_count=int(policy.get("total_enqueued_count") or 0),
+            next_scan_at=next_scan_at,
             recent_items=recent,
+            logs=logs[-20:],
         )
+
+    @staticmethod
+    def _append_log(
+        policy: dict[str, Any],
+        message: str,
+        *,
+        level: str = "info",
+        detected: int = 0,
+        enqueued: int = 0,
+    ) -> None:
+        logs = list(policy.get("logs") or [])
+        logs.append(
+            {
+                "timestamp": _utc_now(),
+                "level": level,
+                "message": message,
+                "detected": detected,
+                "enqueued": enqueued,
+            }
+        )
+        policy["logs"] = logs[-200:]
+
+    @staticmethod
+    def _matches_rules(policy: dict[str, Any], item: DiscoverItem) -> bool:
+        text = " ".join(
+            [
+                str(item.title or ""),
+                str(item.desc or ""),
+                str(item.extra.get("category") or ""),
+            ]
+        ).lower()
+        author = str(item.author or "").lower()
+        include = [
+            str(value).strip().lower()
+            for value in policy.get("include_keywords") or []
+            if str(value).strip()
+        ]
+        exclude = [
+            str(value).strip().lower()
+            for value in policy.get("exclude_keywords") or []
+            if str(value).strip()
+        ]
+        authors = [
+            str(value).strip().lower()
+            for value in policy.get("author_keywords") or []
+            if str(value).strip()
+        ]
+        if include and not any(keyword in text for keyword in include):
+            return False
+        if exclude and any(keyword in text for keyword in exclude):
+            return False
+        if authors and not any(keyword in author for keyword in authors):
+            return False
+        minimum = int(policy.get("min_episode_count") or 0)
+        if minimum:
+            try:
+                episode_count = int(item.extra.get("episode_count") or 0)
+            except (TypeError, ValueError):
+                episode_count = 0
+            if episode_count < minimum:
+                return False
+        return True
 
     async def get_status(self, identity: Identity) -> HongguoMonitorStatus:
         key = _identity_key(identity)
@@ -134,7 +219,16 @@ class HongguoMonitorService:
         key = _identity_key(identity)
         async with self._lock:
             policy = self._policies.setdefault(key, self._default_policy(identity))
-            policy.update(config.model_dump())
+            values = config.model_dump()
+            for field_name in ("include_keywords", "exclude_keywords", "author_keywords"):
+                values[field_name] = list(
+                    dict.fromkeys(
+                        str(value).strip()
+                        for value in values.get(field_name) or []
+                        if str(value).strip()
+                    )
+                )[:20]
+            policy.update(values)
             policy["owner_kind"] = "user" if identity.kind == "user" else "ops"
             policy["owner_user_id"] = identity.user_id if identity.kind == "user" else None
             await asyncio.to_thread(self._persist)
@@ -180,15 +274,19 @@ class HongguoMonitorService:
             )
             known = set(str(value) for value in snapshot.get("known_ids") or [])
             baseline_initialized = bool(snapshot.get("baseline_initialized"))
-            detected = [
+            detected_all = [
                 item for item in rows if baseline_initialized and str(item.id) not in known
+            ]
+            detected = [
+                item for item in detected_all if self._matches_rules(snapshot, item)
             ]
             known.update(str(item.id) for item in rows)
             enqueued = 0
             item_errors: list[str] = []
             failed_ids: set[str] = set()
             if snapshot.get("auto_enqueue"):
-                for item in detected:
+                enqueue_limit = int(snapshot.get("max_auto_enqueue_per_scan") or 20)
+                for item in detected[:enqueue_limit]:
                     try:
                         if await self._enqueue_item(snapshot, item):
                             enqueued += 1
@@ -214,6 +312,28 @@ class HongguoMonitorService:
                 policy["recent_items"] = [
                     item.model_dump(mode="json") for item in detected[:20]
                 ]
+                if not baseline_initialized:
+                    self._append_log(
+                        policy,
+                        f"已建立上新基线，共记录 {len(rows)} 条资源",
+                    )
+                else:
+                    filtered_count = len(detected_all) - len(detected)
+                    message = (
+                        f"扫描完成：发现 {len(detected_all)} 条新增，"
+                        f"规则命中 {len(detected)} 条，入队 {enqueued} 条"
+                    )
+                    if filtered_count:
+                        message += f"，过滤 {filtered_count} 条"
+                    if item_errors:
+                        message += f"，失败 {len(item_errors)} 条"
+                    self._append_log(
+                        policy,
+                        message,
+                        level="warning" if item_errors else "info",
+                        detected=len(detected),
+                        enqueued=enqueued,
+                    )
                 await asyncio.to_thread(self._persist)
                 return self._status(policy)
         except Exception as exc:
@@ -221,6 +341,11 @@ class HongguoMonitorService:
                 policy = self._policies[key]
                 policy["last_scan_at"] = now
                 policy["last_error"] = str(exc)
+                self._append_log(
+                    policy,
+                    f"扫描失败：{exc}",
+                    level="error",
+                )
                 await asyncio.to_thread(self._persist)
                 return self._status(policy)
 

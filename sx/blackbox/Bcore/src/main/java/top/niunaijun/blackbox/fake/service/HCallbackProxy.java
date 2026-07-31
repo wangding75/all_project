@@ -79,9 +79,10 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
             try {
                 if (BuildCompat.isPie()) {
                     Integer executeTransaction = BRActivityThreadH.get().EXECUTE_TRANSACTION();
+                    android.util.Log.e(TAG, "HCallbackProxy msg.what=" + msg.what + ", executeTransaction=" + executeTransaction);
                     if (executeTransaction != null && msg.what == executeTransaction) {
                         if (handleLaunchActivity(msg.obj)) {
-                            getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
+                            getH().sendMessageDelayed(Message.obtain(msg), 10);
                             return true;
                         }
                     }
@@ -89,7 +90,7 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
                     Integer launchActivity = BRActivityThreadH.get().LAUNCH_ACTIVITY();
                     if (launchActivity != null && msg.what == launchActivity) {
                         if (handleLaunchActivity(msg.obj)) {
-                            getH().sendMessageAtFrontOfQueue(Message.obtain(msg));
+                            getH().sendMessageDelayed(Message.obtain(msg), 10);
                             return true;
                         }
                     }
@@ -110,18 +111,22 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
     }
 
     private Object getLaunchActivityItem(Object clientTransaction) {
-        List<Object> mActivityCallbacks = BRClientTransaction.get(clientTransaction).mActivityCallbacks();
-        if (mActivityCallbacks == null || mActivityCallbacks.isEmpty()) {
-            return null;
-        }
+        try {
+            List<Object> mActivityCallbacks = BRClientTransaction.get(clientTransaction).mActivityCallbacks();
+            if (mActivityCallbacks == null || mActivityCallbacks.isEmpty()) {
+                return null;
+            }
 
-        for (Object obj : mActivityCallbacks) {
-            if (obj == null) {
-                continue;
+            for (Object obj : mActivityCallbacks) {
+                if (obj == null) {
+                    continue;
+                }
+                if ("android.app.servertransaction.LaunchActivityItem".equals(obj.getClass().getName())) {
+                    return obj;
+                }
             }
-            if (BRLaunchActivityItem.getRealClass().getName().equals(obj.getClass().getCanonicalName())) {
-                return obj;
-            }
+        } catch (Throwable t) {
+            android.util.Log.e(TAG, "getLaunchActivityItem failed", t);
         }
         return null;
     }
@@ -138,19 +143,33 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
         if (r == null)
             return false;
 
-        Intent intent;
-        IBinder token;
+        Intent intent = null;
+        IBinder token = null;
         if (BuildCompat.isPie()) {
-            intent = BRLaunchActivityItem.get(r).mIntent();
-            token = BRClientTransaction.get(client).mActivityToken();
+            try {
+                java.lang.reflect.Field fIntent = r.getClass().getDeclaredField("mIntent");
+                fIntent.setAccessible(true);
+                intent = (Intent) fIntent.get(r);
+            } catch (Throwable t) {
+                android.util.Log.e(TAG, "Failed to get mIntent from LaunchActivityItem: " + t.getMessage());
+            }
+            try {
+                java.lang.reflect.Field fToken = client.getClass().getDeclaredField("mActivityToken");
+                fToken.setAccessible(true);
+                token = (IBinder) fToken.get(client);
+            } catch (Throwable t) {
+                android.util.Log.e(TAG, "Failed to get mActivityToken from ClientTransaction: " + t.getMessage());
+            }
         } else {
             ActivityThreadActivityClientRecordContext clientRecordContext = BRActivityThreadActivityClientRecord.get(r);
             intent = clientRecordContext.intent();
             token = clientRecordContext.token();
         }
 
-        if (intent == null)
+        if (intent == null) {
+            android.util.Log.e(TAG, "handleLaunchActivity: intent is NULL!");
             return false;
+        }
 
         ProxyActivityRecord stubRecord = ProxyActivityRecord.create(intent);
         ActivityInfo activityInfo = stubRecord.mActivityInfo;
@@ -162,9 +181,17 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
                 intent.setExtrasClassLoader(this.getClass().getClassLoader());
                 ProxyActivityRecord.saveStub(intent, launchIntentForPackage, stubRecord.mActivityInfo, stubRecord.mActivityRecord, stubRecord.mUserId);
                 if (BuildCompat.isPie()) {
-                    LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(r);
-                    launchActivityItemContext._set_mIntent(intent);
-                    launchActivityItemContext._set_mInfo(activityInfo);
+                    try {
+                        java.lang.reflect.Field fIntent = r.getClass().getDeclaredField("mIntent");
+                        fIntent.setAccessible(true);
+                        fIntent.set(r, intent);
+                        java.lang.reflect.Field fInfo = r.getClass().getDeclaredField("mInfo");
+                        fInfo.setAccessible(true);
+                        fInfo.set(r, activityInfo);
+                        android.util.Log.i(TAG, "Direct reflection init LaunchActivityItem -> " + activityInfo.name);
+                    } catch (Throwable t) {
+                        android.util.Log.e(TAG, "Direct reflection init LaunchActivityItem failed", t);
+                    }
                 } else {
                     ActivityThreadActivityClientRecordContext clientRecordContext = BRActivityThreadActivityClientRecord.get(r);
                     clientRecordContext._set_intent(intent);
@@ -176,40 +203,69 @@ public class HCallbackProxy implements IInjectHook, Handler.Callback {
             if (!BActivityThread.currentActivityThread().isInit()) {
                 BActivityThread.currentActivityThread().bindApplication(activityInfo.packageName,
                         activityInfo.processName);
-                return true;
             }
 
             int taskId = BRIActivityManager.get(BRActivityManagerNative.get().getDefault()).getTaskForActivity(token, false);
             BlackBoxCore.getBActivityManager().onActivityCreated(taskId, token, stubRecord.mActivityRecord);
 
             if (BuildCompat.isPie()) {
-                // Always rewrite LaunchActivityItem. On Android 12–16, performLaunchActivity
-                // still reads mInfo/mIntent from the ClientTransaction item; only patching
-                // getLaunchingActivity leaves ProxyActivity as the real instance, which then
-                // finish() tears down the guest virtual activity (HyperOS DeskClock flash).
+                // Always rewrite LaunchActivityItem via direct reflection on Android 9–14.
                 try {
-                    LaunchActivityItemContext launchActivityItemContext = BRLaunchActivityItem.get(r);
-                    launchActivityItemContext._set_mIntent(stubRecord.mTarget);
-                    launchActivityItemContext._set_mInfo(activityInfo);
-                    Slog.d(TAG, "rewrote LaunchActivityItem -> " + activityInfo.name);
+                    java.lang.reflect.Field fIntent = r.getClass().getDeclaredField("mIntent");
+                    fIntent.setAccessible(true);
+                    fIntent.set(r, stubRecord.mTarget);
+                    java.lang.reflect.Field fInfo = r.getClass().getDeclaredField("mInfo");
+                    fInfo.setAccessible(true);
+                    fInfo.set(r, activityInfo);
+                    android.util.Log.e(TAG, "Direct reflection rewrote LaunchActivityItem -> " + activityInfo.name);
                 } catch (Throwable t) {
-                    Slog.w(TAG, "rewrite LaunchActivityItem failed", t);
+                    android.util.Log.e(TAG, "Direct reflection LaunchActivityItem rewrite failed", t);
                 }
-                if (BuildCompat.isS()) {
+
+                // Android 12+ (Android S): ActivityThread reads ActivityClientRecord from mLaunchingActivities / mActivities
+                Object mainThread = BlackBoxCore.mainThread();
+                if (mainThread != null && token != null) {
                     try {
-                        Object record = BRActivityThread.get(BlackBoxCore.mainThread()).getLaunchingActivity(token);
+                        java.lang.reflect.Method getLaunchingActivityMethod = mainThread.getClass().getDeclaredMethod("getLaunchingActivity", IBinder.class);
+                        getLaunchingActivityMethod.setAccessible(true);
+                        Object record = getLaunchingActivityMethod.invoke(mainThread, token);
                         if (record != null) {
-                            ActivityThreadActivityClientRecordContext clientRecordContext =
-                                    BRActivityThreadActivityClientRecord.get(record);
-                            clientRecordContext._set_intent(stubRecord.mTarget);
-                            clientRecordContext._set_activityInfo(activityInfo);
-                            clientRecordContext._set_packageInfo(
-                                    BActivityThread.currentActivityThread().getPackageInfo());
+                            java.lang.reflect.Field fIntent = record.getClass().getDeclaredField("intent");
+                            fIntent.setAccessible(true);
+                            fIntent.set(record, stubRecord.mTarget);
+                            java.lang.reflect.Field fInfo = record.getClass().getDeclaredField("activityInfo");
+                            fInfo.setAccessible(true);
+                            fInfo.set(record, activityInfo);
+                            java.lang.reflect.Field fPackageInfo = record.getClass().getDeclaredField("packageInfo");
+                            fPackageInfo.setAccessible(true);
+                            fPackageInfo.set(record, BActivityThread.currentActivityThread().getPackageInfo());
+                            android.util.Log.e(TAG, "Direct reflection rewrote getLaunchingActivity -> " + activityInfo.name);
                         }
                     } catch (Throwable t) {
-                        Slog.w(TAG, "rewrite getLaunchingActivity failed", t);
+                        android.util.Log.w(TAG, "Direct reflection rewrite getLaunchingActivity failed: " + t.getMessage());
                     }
-                    checkActivityClient();
+                    try {
+                        java.lang.reflect.Field fActivities = mainThread.getClass().getDeclaredField("mActivities");
+                        fActivities.setAccessible(true);
+                        java.util.Map mActivities = (java.util.Map) fActivities.get(mainThread);
+                        if (mActivities != null) {
+                            Object record = mActivities.get(token);
+                            if (record != null) {
+                                java.lang.reflect.Field fIntent = record.getClass().getDeclaredField("intent");
+                                fIntent.setAccessible(true);
+                                fIntent.set(record, stubRecord.mTarget);
+                                java.lang.reflect.Field fInfo = record.getClass().getDeclaredField("activityInfo");
+                                fInfo.setAccessible(true);
+                                fInfo.set(record, activityInfo);
+                                java.lang.reflect.Field fPackageInfo = record.getClass().getDeclaredField("packageInfo");
+                                fPackageInfo.setAccessible(true);
+                                fPackageInfo.set(record, BActivityThread.currentActivityThread().getPackageInfo());
+                                android.util.Log.e(TAG, "Direct reflection rewrote mActivities -> " + activityInfo.name);
+                            }
+                        }
+                    } catch (Throwable t) {
+                        android.util.Log.w(TAG, "Direct reflection rewrite mActivities failed: " + t.getMessage());
+                    }
                 }
             } else {
                 ActivityThreadActivityClientRecordContext clientRecordContext = BRActivityThreadActivityClientRecord.get(r);

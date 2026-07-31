@@ -1,11 +1,12 @@
 import time
 import aiosqlite
+import hmac
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
 from database import get_db
 from core.auth import create_token, verify_token
 from core.sign import verify_client_sign
-from config import SERVER_SECRET, ADMIN_API_KEY
+from config import CLIENT_SIGN_SECRET, ADMIN_API_KEY
 
 router = APIRouter(prefix="/api/license", tags=["license"])
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/license", tags=["license"])
 class ActivateRequest(BaseModel):
     card_key:  str
     device_id: str
-    sign:      str   # MD5(card_key + device_id + SERVER_SECRET).upper()
+    sign:      str   # MD5(card_key + device_id + CLIENT_SIGN_SECRET).upper()
 
 
 class LicenseResponse(BaseModel):
@@ -34,7 +35,7 @@ class UnbindRequest(BaseModel):
 @router.post("/activate", response_model=LicenseResponse)
 async def activate(req: ActivateRequest, db: aiosqlite.Connection = Depends(get_db)):
     # 1. 验签
-    verify_client_sign(req.card_key, req.device_id, req.sign, SERVER_SECRET)
+    verify_client_sign(req.card_key, req.device_id, req.sign, CLIENT_SIGN_SECRET)
 
     # 2. 查卡密
     async with db.execute("SELECT * FROM cards WHERE card_key=?", (req.card_key,)) as cur:
@@ -122,17 +123,22 @@ async def verify(
 
     # 再查库确认未解绑
     async with db.execute(
-        "SELECT is_active, expire_at FROM activations WHERE card_key=?",
+        "SELECT device_id, is_active, expire_at FROM activations WHERE card_key=?",
         (payload["card_key"],)
     ) as cur:
         row = await cur.fetchone()
 
-    if not row or not row["is_active"]:
+    if (not row or not row["is_active"]
+            or row["device_id"] != payload["device_id"]):
         return LicenseResponse(code=401, msg="授权已失效", data={"valid": False})
 
+    refreshed_token = create_token(
+        payload["card_key"], payload["device_id"], row["expire_at"]
+    )
     return LicenseResponse(code=200, msg="授权有效", data={
         "valid":     True,
-        "expire_at": row["expire_at"]
+        "expire_at": row["expire_at"],
+        "token":     refreshed_token,
     })
 
 
@@ -140,7 +146,7 @@ async def verify(
 
 @router.post("/unbind", response_model=LicenseResponse)
 async def unbind(req: UnbindRequest, db: aiosqlite.Connection = Depends(get_db)):
-    if req.admin_api_key != ADMIN_API_KEY:
+    if not hmac.compare_digest(req.admin_api_key, ADMIN_API_KEY):
         raise HTTPException(status_code=403, detail="无权限")
     await db.execute(
         "DELETE FROM activations WHERE card_key=?", (req.card_key,)

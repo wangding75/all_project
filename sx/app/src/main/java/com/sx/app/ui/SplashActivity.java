@@ -22,20 +22,20 @@ public class SplashActivity extends AppCompatActivity {
                 if (isFinishing() || isDestroyed()) {
                     return;
                 }
-                Intent intent;
-                if (LicenseManager.isActivated(SplashActivity.this)) {
-                    intent = new Intent(SplashActivity.this, MainActivity.class);
-                    startActivity(intent);
-                    finish();
-                    // 进入主界面后，后台静默刷新 token 有效期
-                    LicenseManager.refreshTokenAsync(SplashActivity.this);
-                } else {
-                    intent = new Intent(SplashActivity.this, LicenseActivity.class);
-                    startActivity(intent);
-                    finish();
-                }
+                LicenseManager.checkActivationAsync(
+                        SplashActivity.this, SplashActivity.this::openNextScreen);
             }
         }, 2000);
+    }
+
+    private void openNextScreen(boolean activated) {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        Intent intent = new Intent(
+                this, activated ? MainActivity.class : LicenseActivity.class);
+        startActivity(intent);
+        finish();
     }
 
     @Override

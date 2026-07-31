@@ -44,15 +44,27 @@ uvicorn main:app --reload --port 8000
 ## 签名规则（客户端调激活接口时）
 
 ```
-sign = MD5(card_key + device_id + SERVER_SECRET).upper()
+sign = MD5(card_key + device_id + CLIENT_SIGN_SECRET).upper()
 ```
+
+`CLIENT_SIGN_SECRET` 只保护激活请求。授权 Token 使用服务端 RSA 私钥签名，
+Android 客户端仅内置对应公钥，因此客户端不能自行伪造 Token。
 
 ## 环境变量说明
 
 | 变量 | 说明 |
 |------|------|
-| SERVER_SECRET | 服务端核心密钥，用于 Token 签发和客户端签名校验 |
+| CLIENT_SIGN_SECRET | 客户端激活请求密钥；需与 Android `license.app_secret` 一致 |
+| TOKEN_PRIVATE_KEY_PEM | RSA PKCS#8 私钥，仅保存在服务端 |
 | CARDNET_WEBHOOK_SECRET | 三方卡网 Webhook 鉴权密钥 |
 | ADMIN_API_KEY | 管理员接口密钥 |
 | DATABASE_URL | SQLite 数据库文件路径 |
 | PORT | 监听端口，默认 8000 |
+| ALLOW_LEGACY_TOKEN_MIGRATION | 是否临时接受旧 HMAC Token，生产默认关闭 |
+| LEGACY_TOKEN_SECRET | 仅用于旧 Token 迁移，不得与客户端密钥相同 |
+
+生产环境还需把 RSA 公钥 DER 的 Base64 值写入 Android
+`local.properties` 的 `license.token_public_key`。管理员状态查询优先通过
+`X-Admin-Api-Key` 请求头传递密钥，旧查询参数暂时保留兼容。
+可复制仓库根目录的 `local.properties.example` 作为配置模板；Release
+服务地址必须使用 HTTPS，HTTP 仅由 Debug 构建允许。

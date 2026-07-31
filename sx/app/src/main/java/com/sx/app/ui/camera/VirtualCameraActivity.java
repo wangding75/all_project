@@ -109,31 +109,33 @@ public class VirtualCameraActivity extends AppCompatActivity {
 
     private String copyMediaToInternal(android.net.Uri uri) {
         try {
-            java.io.InputStream is = getContentResolver().openInputStream(uri);
-            if (is == null) return null;
-
             String extension = mRbVideo.isChecked() ? ".mp4" : ".jpg";
             java.io.File dir = getExternalFilesDir("camera");
             if (dir == null) {
-                dir = getExternalCacheDir();
+                java.io.File externalCache = getExternalCacheDir();
+                if (externalCache != null) {
+                    dir = new java.io.File(externalCache, "camera");
+                }
             }
             if (dir == null) {
                 dir = new java.io.File(getFilesDir(), "camera");
             }
-            if (!dir.exists()) {
-                dir.mkdirs();
+            if (!dir.exists() && !dir.mkdirs()) {
+                return null;
             }
             java.io.File dest = new java.io.File(dir, "temp_camera_source" + extension);
-            java.io.FileOutputStream os = new java.io.FileOutputStream(dest);
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = is.read(buffer)) != -1) {
-                os.write(buffer, 0, read);
+            try (java.io.InputStream is = getContentResolver().openInputStream(uri);
+                 java.io.FileOutputStream os = new java.io.FileOutputStream(dest)) {
+                if (is == null) {
+                    return null;
+                }
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = is.read(buffer)) != -1) {
+                    os.write(buffer, 0, read);
+                }
+                os.flush();
             }
-            is.close();
-            os.flush();
-            os.close();
-            dest.setReadable(true, false);
             return dest.getAbsolutePath();
         } catch (Exception e) {
             e.printStackTrace();

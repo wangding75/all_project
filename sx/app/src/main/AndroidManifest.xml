@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <permission
+        android:name="${applicationId}.permission.INTERNAL_CONFIG"
+        android:protectionLevel="signature" />
+
     <!-- Location -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -17,6 +21,9 @@
 
     <!-- Camera / media -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
@@ -150,7 +157,8 @@
         <provider
             android:name=".data.ConfigProvider"
             android:authorities="${applicationId}.config.provider"
-            android:exported="true" />
+            android:exported="true"
+            android:permission="${applicationId}.permission.INTERNAL_CONFIG" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

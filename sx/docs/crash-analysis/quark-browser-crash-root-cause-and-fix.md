@@ -44,9 +44,9 @@
 
 ### 4.1 C++ Native 快速路径重定向与 JNI 引用清理
 - **修改文件**：
-  - [IO.cpp](file:///d:/github/all_project/sx/blackbox/Bcore/src/main/cpp/IO.cpp)
-  - [UnixFileSystemHook.cpp](file:///d:/github/all_project/sx/blackbox/Bcore/src/main/cpp/Hook/UnixFileSystemHook.cpp)
-  - [RuntimeHook.cpp](file:///d:/github/all_project/sx/blackbox/Bcore/src/main/cpp/Hook/RuntimeHook.cpp)
+  - [IO.cpp](../../blackbox/Bcore/src/main/cpp/IO.cpp)
+  - [UnixFileSystemHook.cpp](../../blackbox/Bcore/src/main/cpp/Hook/UnixFileSystemHook.cpp)
+  - [RuntimeHook.cpp](../../blackbox/Bcore/src/main/cpp/Hook/RuntimeHook.cpp)
 
 ```cpp
 // 1. IO.cpp: 优先使用 C++ 原生 std::string 匹配进行纯 Native 路径重定向，避免频繁回调 Java
@@ -74,7 +74,7 @@ HOOK_JNI(jstring, canonicalize0, JNIEnv *env, jobject obj, jstring path) {
 ```
 
 ### 4.2 保护 ArtMethod 原始标志位
-- **修改文件**：[JniHook.cpp](file:///d:/github/all_project/sx/blackbox/Bcore/src/main/cpp/JniHook/JniHook.cpp)
+- **修改文件**：[JniHook.cpp](../../blackbox/Bcore/src/main/cpp/JniHook/JniHook.cpp)
 
 ```cpp
 // 移除 ClearFastNativeFlag 与 AddAccessFlag(kAccFastNative) 篡改
@@ -90,7 +90,7 @@ bool CheckFlags(void *artMethod) {
 ```
 
 ### 4.3 净化 WebView 目录后缀
-- **修改文件**：[BActivityThread.java](file:///d:/github/all_project/sx/blackbox/Bcore/src/main/java/top/niunaijun/blackbox/app/BActivityThread.java)
+- **修改文件**：[BActivityThread.java](../../blackbox/Bcore/src/main/java/top/niunaijun/blackbox/app/BActivityThread.java)
 
 ```java
 // 将 processName 中的冒号 ':' 替换为下划线 '_'

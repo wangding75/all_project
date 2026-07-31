@@ -13,6 +13,7 @@ import com.sx.app.sandbox.spoof.hook.BluetoothHook;
 import com.sx.app.sandbox.spoof.hook.CameraHook;
 import com.sx.app.sandbox.spoof.hook.CellHook;
 import com.sx.app.sandbox.spoof.hook.DeviceHook;
+import com.sx.app.sandbox.spoof.hook.DingTalkHook;
 import com.sx.app.sandbox.spoof.hook.LocationHook;
 import com.sx.app.sandbox.spoof.hook.NetworkHook;
 
@@ -34,17 +35,23 @@ public class SpoofRuntime {
                 // Apply hot refresh for hooks that hold mutable static config.
                 // Device BUILD fields may still require process restart.
                 try {
-                    String targetPkg = (pkg == null || pkg.isEmpty()) ? sPackageName : pkg;
-                    int targetUser = uid;
-                    LocationConfig loc = repo.resolveLocation(ctx, targetPkg, targetUser);
-                    CameraConfig cam = repo.resolveCamera(ctx, targetPkg, targetUser);
+                    boolean globalUpdate = pkg == null || pkg.isEmpty();
+                    if (!globalUpdate
+                            && (!pkg.equals(sPackageName) || uid != sUserId)) {
+                        Log.d(TAG, "Ignoring config update for another instance: "
+                                + pkg + ":" + uid);
+                        return;
+                    }
+                    LocationConfig loc = repo.resolveLocation(ctx, sPackageName, sUserId);
+                    CameraConfig cam = repo.resolveCamera(ctx, sPackageName, sUserId);
                     if (loc != null) {
                         LocationHook.updateConfig(loc);
                     }
                     if (cam != null) {
                         CameraHook.updateConfig(cam);
                     }
-                    Log.d(TAG, "Hot-refreshed location/camera config for " + targetPkg + ":" + targetUser);
+                    Log.d(TAG, "Hot-refreshed location/camera config for "
+                            + sPackageName + ":" + sUserId);
                 } catch (Throwable t) {
                     Log.w(TAG, "Hot refresh failed", t);
                 }
@@ -79,24 +86,8 @@ public class SpoofRuntime {
                 BluetoothHook.install(cl, btProfile);
             }
 
-            if ("com.alibaba.android.rimet".equals(packageName)) {
-                try {
-                    de.robv.android.xposed.XposedHelpers.findAndHookMethod(android.view.View.class, "setLayerType", int.class, android.graphics.Paint.class, new de.robv.android.xposed.XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) {
-                            param.args[0] = android.view.View.LAYER_TYPE_SOFTWARE;
-                        }
-                    });
-                    de.robv.android.xposed.XposedHelpers.findAndHookMethod(android.app.Activity.class, "onCreate", android.os.Bundle.class, new de.robv.android.xposed.XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            try {
-                                android.app.Activity activity = (android.app.Activity) param.thisObject;
-                                activity.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
-                            } catch (Throwable ignored) {}
-                        }
-                    });
-                } catch (Throwable ignored) {}
+            if (DingTalkHook.PACKAGE.equals(packageName)) {
+                DingTalkHook.install(cl, packageName);
             }
 
         } catch (Throwable e) {

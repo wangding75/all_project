@@ -15,7 +15,11 @@ import requests
 from app.config import get_settings
 
 _MAX_SOURCE_BYTES = 8 * 1024 * 1024
-_ALLOWED_HOST_SUFFIXES = (".fqnovelpic.com",)
+_ALLOWED_HOST_SUFFIXES = (
+    ".fqnovelpic.com",
+    ".byteimg.com",
+    ".bytedance.com",
+)
 _cover_urls: dict[str, str] = {}
 _cover_lock = threading.Lock()
 

@@ -287,9 +287,9 @@ public class ActivityStack {
         ActivityRecord record = newActivityRecord(intent, activityInfo, resultTo, userId);
         Intent shadow = startActivityProcess(userId, intent, activityInfo, record);
 
-        shadow.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-        shadow.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);
         shadow.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        shadow.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+        shadow.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
         shadow.addFlags(launchMode);
 
         BlackBoxCore.getContext().startActivity(shadow);
@@ -520,11 +520,13 @@ public class ActivityStack {
             ActivityRecord activityRecordByToken = findActivityRecordByToken(userId, token);
             if (activityRecordByToken != null) {
                 ActivityRecord resultTo = findActivityRecordByToken(userId, activityRecordByToken.resultTo);
-                if (resultTo != null) {
+                if (resultTo != null && resultTo.info != null) {
                     return resultTo.info.packageName;
                 }
+                // Launcher-style external start: null caller (system home), never host package.
+                return null;
             }
-            return BlackBoxCore.getHostPkg();
+            return null;
         }
     }
 
@@ -538,7 +540,7 @@ public class ActivityStack {
                     return resultTo.component;
                 }
             }
-            return new ComponentName(BlackBoxCore.getHostPkg(), ProxyActivity.P0.class.getName());
+            return null;
         }
     }
 
