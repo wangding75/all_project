@@ -12,6 +12,7 @@ data/jobs/*
 !data/jobs/.gitkeep
 data/outputs/*
 !data/outputs/.gitkeep
+data/cache/
 data/e2e_downloads/
 data/*.db
 data/app.db
@@ -41,6 +42,8 @@ System.Management.Automation.Internal.Host.InternalHost/
 # ==========================================
 /*
 !/data/
+data/config/
+data/cache/
 !/docs/
 !/client/
 !/scripts/
