@@ -272,8 +272,10 @@
     settingUsernameVal: document.getElementById("settingUsernameVal"),
     settingVipExpireVal: document.getElementById("settingVipExpireVal"),
     settingQuotaVal: document.getElementById("settingQuotaVal"),
+    settingDeviceIdentityStatus: document.getElementById("settingDeviceIdentityStatus"),
     settingBtnAuthModal: document.getElementById("settingBtnAuthModal"),
     settingBtnLogout: document.getElementById("settingBtnLogout"),
+    btnResetDeviceIdentity: document.getElementById("btnResetDeviceIdentity"),
     settingApiBase: document.getElementById("settingApiBase"),
     settingApiKey: document.getElementById("settingApiKey"),
     settingOutputDir: document.getElementById("settingOutputDir"),
@@ -489,6 +491,92 @@
     return fileId.split("/").map(encodeURIComponent).join("/");
   }
 
+  // This is intentionally the same six-endpoint scope as server/app/license_guard.py.
+  // Only the desktop bridge can sign these calls; a normal browser has no key.
+  function isProtectedEndpoint(endpoint, method = "GET") {
+    let path = endpoint;
+    try {
+      path = new URL(endpoint, state.apiBase).pathname;
+    } catch (_) {}
+    const verb = String(method || "GET").toUpperCase();
+    if (
+      verb === "POST" &&
+      ["/v1/jobs", "/v1/jobs/batch", "/v1/jobs/queue/bulk/retry"].includes(path)
+    ) {
+      return true;
+    }
+    if (verb === "POST" && /^\/v1\/jobs\/[^/]+\/retry$/.test(path)) return true;
+    if (verb === "PUT" && path === "/v1/automation/hongguo-new") return true;
+    return verb === "POST" && path === "/v1/automation/hongguo-new/scan";
+  }
+
+  const licenseReasonMessages = {
+    DESKTOP_DEVICE_IDENTITY_REQUIRED: "此操作必须在正式桌面客户端中完成，普通浏览器没有设备私钥。",
+    DEVICE_IDENTITY_INVALID: "设备身份损坏或无法验证。请在设置中执行“重置设备身份”，然后重新激活。",
+    DEVICE_IDENTITY_STORAGE_UNAVAILABLE: "无法访问当前 Windows 用户的安全设备存储。",
+    DEVICE_PROOF_REQUIRED: "设备身份需要重新建立/重新激活。",
+    DEVICE_PROOF_INVALID: "设备身份验证失败，请重新激活。",
+    DEVICE_PROOF_EXPIRED: "设备证明已过期，请重试。",
+    DEVICE_PROOF_REPLAYED: "设备证明已被使用，请重试。",
+    DEVICE_NOT_ACTIVATED: "当前设备尚未激活，请先兑换激活码。",
+    LICENSE_EXPIRED: "License 已过期。",
+    LICENSE_REVOKED: "License 已撤销，商业操作已停止。",
+    DEVICE_REVOKED: "设备已撤销，商业操作已停止。",
+    DEVICE_LIMIT_REACHED: "已达到 License 的设备数量上限。",
+    INVALID_KEY: "激活码无效。",
+    LICENSE_SERVICE_UNAVAILABLE: "License Service 暂时不可用，请稍后重试。",
+    LICENSE_SERVICE_TIMEOUT: "License Service 暂时不可用，请稍后重试。",
+  };
+
+  function licenseReasonMessage(reason) {
+    const key = String(reason || "");
+    return licenseReasonMessages[key] || key || "请求失败，请稍后重试。";
+  }
+
+  function apiError(reason, status = 0) {
+    const normalized = String(reason || "REQUEST_FAILED");
+    const error = new Error(licenseReasonMessage(normalized));
+    error.reason = normalized;
+    error.status = status;
+    error.userMessage = licenseReasonMessage(error.reason);
+    return error;
+  }
+
+  function isDesktopBridge() {
+    return !!(
+      window.pywebview &&
+      window.pywebview.api &&
+      typeof window.pywebview.api.api_request === "function"
+    );
+  }
+
+  function handleProtectedFailure(error, prefix = "请求失败") {
+    const reason = String((error && error.reason) || "");
+    const known = [
+      "DESKTOP_DEVICE_IDENTITY_REQUIRED",
+      "DEVICE_IDENTITY_INVALID",
+      "DEVICE_IDENTITY_STORAGE_UNAVAILABLE",
+      "DEVICE_PROOF_REQUIRED",
+      "DEVICE_PROOF_INVALID",
+      "DEVICE_PROOF_EXPIRED",
+      "DEVICE_PROOF_REPLAYED",
+      "DEVICE_NOT_ACTIVATED",
+      "LICENSE_EXPIRED",
+      "LICENSE_REVOKED",
+      "DEVICE_REVOKED",
+      "DEVICE_LIMIT_REACHED",
+      "LICENSE_SERVICE_UNAVAILABLE",
+      "LICENSE_SERVICE_TIMEOUT",
+    ];
+    if (!known.includes(reason)) return false;
+    const needsActivation = reason === "DEVICE_NOT_ACTIVATED";
+    toast(`${prefix}：${licenseReasonMessage(reason)}`, needsActivation ? "warning" : "error", 5500);
+    if (needsActivation && state.accessToken && elements.modalRedeemKey) {
+      elements.modalRedeemKey.classList.add("active");
+    }
+    return true;
+  }
+
   // 通用 REST Fetch 辅助函数 (E2 统一鉴权: Bearer token 优先; 无 token 时用 X-API-Key)
   // options.timeoutMs: 超时毫秒，默认 30000；搜索等可单独加长/缩短
   async function apiFetch(endpoint, options = {}) {
@@ -496,6 +584,28 @@
     const url = `${baseUrl}${endpoint}`;
     const timeoutMs = options.timeoutMs != null ? options.timeoutMs : 30000;
     const { timeoutMs: _tm, ...fetchOpts } = options;
+    const method = String(fetchOpts.method || "GET").toUpperCase();
+
+    if (isProtectedEndpoint(endpoint, method)) {
+      if (!isDesktopBridge()) {
+        throw apiError("DESKTOP_DEVICE_IDENTITY_REQUIRED");
+      }
+      let rawBody = fetchOpts.body;
+      if (rawBody === undefined || rawBody === null) rawBody = "";
+      if (typeof rawBody !== "string") rawBody = JSON.stringify(rawBody);
+      const bridgeResult = await window.pywebview.api.api_request(
+        method,
+        endpoint,
+        rawBody,
+        state.accessToken || "",
+        state.apiKey || ""
+      );
+      if (!bridgeResult || bridgeResult.ok !== true) {
+        const reason = (bridgeResult && (bridgeResult.reason || bridgeResult.detail)) || "REQUEST_FAILED";
+        throw apiError(reason, (bridgeResult && bridgeResult.status) || 0);
+      }
+      return bridgeResult.data;
+    }
 
     const headers = {
       "Content-Type": "application/json",
@@ -512,7 +622,7 @@
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response;
     try {
-      response = await fetch(url, { ...fetchOpts, headers, signal: controller.signal });
+      response = await fetch(url, { ...fetchOpts, method, headers, signal: controller.signal });
     } catch (err) {
       if (err && err.name === "AbortError") {
         throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）。番茄书名搜索需服务端签名环境，可改用书籍数字 ID。`);
@@ -534,7 +644,8 @@
         updateAuthUI();
         toast("登录凭证已失效或过期，请重新登录", "warning");
       }
-      throw new Error(typeof errorDetail === "string" ? errorDetail : JSON.stringify(errorDetail));
+      const reason = typeof errorDetail === "string" ? errorDetail : JSON.stringify(errorDetail);
+      throw apiError(reason, response.status);
     }
     return response.json();
   }
@@ -1220,6 +1331,7 @@
       );
       if (created) switchPage("page-jobs");
     } catch (error) {
+      if (handleProtectedFailure(error, "批量加入队列失败")) return;
       toast(`批量加入队列失败：${error.message}`, "error", 5000);
     } finally {
       updateBatchSelection();
@@ -2153,6 +2265,7 @@
       if (res.job_id) state.watchedJobSuccess[res.job_id] = false;
       switchPage("page-jobs");
     } catch (e) {
+      if (handleProtectedFailure(e, "任务创建失败")) return;
       const msg = e.message || "";
       if (msg.includes("VIP") || msg.includes("403")) {
         toast(`VIP 不足：${msg}`, "warning", 4000);
@@ -2278,6 +2391,10 @@
       state.jobsSelected.clear();
       await refreshJobsPage();
     } catch (error) {
+      if (handleProtectedFailure(error, "批量操作失败")) {
+        updateJobsBulkSelection();
+        return;
+      }
       toast(`批量操作失败：${error.message}`, "error", 5000);
       updateJobsBulkSelection();
     }
@@ -2396,6 +2513,7 @@
             toast("任务已重新加入队列", "success");
             refreshJobsPage();
           } catch (error) {
+            if (handleProtectedFailure(error, "重试失败")) return;
             toast(`重试失败：${error.message}`, "error");
           }
         });
@@ -2581,6 +2699,15 @@
           elements.settingApiBase.readOnly = true;
         }
       }
+      if (elements.settingDeviceIdentityStatus) {
+        const status = runtime && runtime.device_identity_status;
+        elements.settingDeviceIdentityStatus.textContent = status === "READY"
+          ? `已就绪（${runtime.device_id || "设备已建立"}）`
+          : `不可用：${status || "DEVICE_IDENTITY_INVALID"}`;
+        elements.settingDeviceIdentityStatus.style.color = status === "READY"
+          ? "var(--color-success)"
+          : "var(--color-error)";
+      }
     }
     const result = await window.pywebview.api.get_download_directory();
     if (result && result.success && result.path) {
@@ -2726,6 +2853,7 @@
         );
       }
     } catch (error) {
+      if (handleProtectedFailure(error, "红果上新识别失败")) return;
       toast(`红果上新识别失败：${error.message}`, "error", 5000);
     } finally {
       elements.btnScanHgNewNow.disabled = false;
@@ -3176,6 +3304,7 @@
             await refreshJobsPage();
           }
         } catch (error) {
+          if (handleProtectedFailure(error, "加入下载队列失败")) return;
           toast(`加入下载队列失败：${error.message}`, "error", 5000);
         } finally {
           elements.btnHomeAddQueue.disabled = false;
@@ -3373,6 +3502,7 @@
           await saveHongguoMonitor();
           toast("设置与红果上新策略已保存", "success");
         } catch (error) {
+          if (handleProtectedFailure(error, "本机设置已保存，但上新策略保存失败")) return;
           toast(`本机设置已保存，但上新策略保存失败：${error.message}`, "warning", 5000);
         }
         checkServerHealth();
@@ -3385,6 +3515,28 @@
         localStorage.removeItem("apiKey");
         if (elements.settingApiKey) elements.settingApiKey.value = state.apiKey;
         toast(state.apiKey ? "已恢复本机开发 Key" : "已清除运维 API Key", "info");
+      });
+    }
+
+    if (elements.btnResetDeviceIdentity) {
+      elements.btnResetDeviceIdentity.addEventListener("click", async () => {
+        if (!(window.pywebview && window.pywebview.api && window.pywebview.api.reset_device_identity)) {
+          toast(licenseReasonMessage("DESKTOP_DEVICE_IDENTITY_REQUIRED"), "error", 5000);
+          return;
+        }
+        if (!confirm("重置后 License Service 会视为新设备，需要重新激活，并可能占用新的设备槽位。确定继续吗？")) {
+          return;
+        }
+        const result = await window.pywebview.api.reset_device_identity();
+        if (!result || !result.success) {
+          toast(licenseReasonMessage((result && result.reason) || "DEVICE_IDENTITY_INVALID"), "error", 5000);
+          return;
+        }
+        if (elements.settingDeviceIdentityStatus) {
+          elements.settingDeviceIdentityStatus.textContent = `已重置（${result.device_id || "新设备"}）`;
+          elements.settingDeviceIdentityStatus.style.color = "var(--color-warning)";
+        }
+        toast("设备身份已重置，请重新激活。", "warning", 6000);
       });
     }
 
@@ -3510,22 +3662,33 @@
         if (elements.redeemErrorMessage) elements.redeemErrorMessage.style.display = "none";
 
         try {
-          const res = await apiFetch("/v1/auth/redeem", {
-            method: "POST",
-            body: JSON.stringify({ card_code: key }),
-          });
+          if (!(window.pywebview && window.pywebview.api && window.pywebview.api.redeem_license)) {
+            throw apiError("DESKTOP_DEVICE_IDENTITY_REQUIRED");
+          }
+          const bridgeResult = await window.pywebview.api.redeem_license(key, state.accessToken || "");
+          if (!bridgeResult || bridgeResult.ok !== true) {
+            const reason = (bridgeResult && (bridgeResult.reason || bridgeResult.detail)) || "REQUEST_FAILED";
+            throw apiError(reason, (bridgeResult && bridgeResult.status) || 0);
+          }
+          const res = bridgeResult.data;
 
           // 硬约束: success === true 才能关弹窗并刷新 me
           if (res && res.success === true) {
             elements.modalRedeemKey.classList.remove("active");
             elements.inputCardKey.value = "";
             await fetchMe();
-            toast(res.message || "卡密兑换成功", "success", 4000);
+            const expiry = res.license_expires_at || res.vip_expires_at;
+            const planInfo = res.max_devices ? ` · 设备上限 ${res.max_devices}` : "";
+            toast(
+              `${res.message || "激活成功"}${expiry ? ` · 到期 ${formatDate(expiry)}` : ""}${planInfo}`,
+              "success",
+              5000
+            );
           } else {
-            showRedeemError(res.message || "卡密兑换失败，请核对卡密后重试！");
+            showRedeemError(licenseReasonMessage((res && res.reason) || "INVALID_KEY"));
           }
         } catch (e) {
-          showRedeemError(`卡密兑换失败: ${e.message}`);
+          showRedeemError(e && e.userMessage ? e.userMessage : `卡密兑换失败: ${licenseReasonMessage(e && (e.reason || e.message))}`);
         } finally {
           elements.btnModalSubmit.disabled = false;
         }

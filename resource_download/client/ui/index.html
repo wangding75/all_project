@@ -467,6 +467,14 @@ https://v.example.com/share/xxxx"></textarea>
               <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);" id="settingQuotaVal">—</span>
               <span class="form-hint">额度由服务端按 VIP 策略计算；登录后可见今日已用 / 上限。</span>
             </div>
+            <div class="form-group">
+              <label class="form-label">桌面设备身份</label>
+              <div class="form-row-inline" style="align-items: center; gap: 10px;">
+                <span class="form-hint" id="settingDeviceIdentityStatus">浏览器模式不可用</span>
+                <button class="btn-secondary" id="btnResetDeviceIdentity" type="button" style="padding: 6px 14px; font-size: 12px;">重置设备身份</button>
+              </div>
+              <span class="form-hint">重置后 License Service 会视为新设备，需要重新激活，并可能占用新的设备槽位。</span>
+            </div>
           </div>
 
           <!-- 1. 路径与清晰度 -->

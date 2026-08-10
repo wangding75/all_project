@@ -36,6 +36,15 @@ def check_dependencies():
     except ImportError:
         print("[ERR] 缺少依赖: 打包需要 'pywebview'。请先运行: pip install pywebview")
         sys.exit(1)
+    try:
+        import cryptography  # noqa: F401
+        import license_service_client  # noqa: F401
+    except ImportError:
+        print(
+            "[ERR] 缺少固定 LS-DEVICE-V3 Python helper 或 cryptography。"
+            "请先安装 requirements-dev.txt 中的 rc3 wheel。"
+        )
+        sys.exit(1)
 
 
 def run_build():
@@ -89,7 +98,11 @@ def run_build():
         f"--specpath={temp_dir}",
         f"--add-data={ui_dir}{os.pathsep}ui",
         "--collect-all=webview",          # 收集 pywebview GUI 的完整依赖
+        "--collect-submodules=license_service_client",
         "--hidden-import=anyio._backends._asyncio",
+        "--hidden-import=license_service_client.device",
+        "--hidden-import=license_service_client.signing",
+        "--hidden-import=cryptography.hazmat.primitives.asymmetric.ed25519",
         "--exclude-module=tkinter",
         "--exclude-module=matplotlib",
         "--exclude-module=IPython",

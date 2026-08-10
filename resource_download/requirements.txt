@@ -14,3 +14,4 @@ imageio-ffmpeg>=0.6.0
 fonttools>=4.49.0
 brotli>=1.1.0
 ./vendor/license_service_client-1.0.0rc3-py3-none-any.whl
+cryptography>=46,<47

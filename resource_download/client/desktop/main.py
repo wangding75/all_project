@@ -43,6 +43,10 @@ else:
     REPO_ROOT = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(REPO_ROOT / "server"))
 
+from client.desktop.device_identity import DeviceIdentityError, DeviceIdentityManager
+from client.desktop.device_proof import DeviceProofService
+from client.desktop.http_client import DesktopHttpClient, DesktopHttpError, is_protected_endpoint
+
 # 客户端模式：thin（默认）| embedded（本机嵌服务，仅开发）
 CLIENT_MODE = os.environ.get("CLIENT_MODE", "thin").strip().lower()
 if CLIENT_MODE not in {"thin", "embedded"}:
@@ -107,6 +111,9 @@ class WindowApi:
         local_app_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".resource-downloader"))
         self._preferences_path = local_app_data / "ResourceDownloader" / "client.json"
         self._updates_dir = local_app_data / "ResourceDownloader" / "updates"
+        self._identity_manager = DeviceIdentityManager()
+        self._proof_service = DeviceProofService(self._identity_manager)
+        self._http_client = DesktopHttpClient(self.api_base, self._proof_service, max_retries=1)
         self._install_id = ""
         try:
             if self._preferences_path.is_file():
@@ -158,13 +165,120 @@ class WindowApi:
         return {"success": True, "path": str(self._download_dir)}
 
     def get_runtime_info(self) -> dict[str, object]:
+        identity_status: dict[str, object]
+        try:
+            identity = self.initialize_device_identity()
+            identity_status = {
+                "device_identity_status": "READY",
+                "device_id": identity["device_id"],
+                "device_key_algorithm": identity["device_key_algorithm"],
+            }
+        except DeviceIdentityError as exc:
+            identity_status = {"device_identity_status": exc.code, "device_id": ""}
         return {
             "success": True,
             "api_base": self.api_base,
             "download_directory": str(self._download_dir),
             "client_version": CLIENT_VERSION,
             "install_id": self._install_id,
+            **identity_status,
         }
+
+    def initialize_device_identity(self) -> dict[str, str]:
+        """First run creates one DPAPI-protected identity; corruption never regenerates it."""
+        identity = self._proof_service.identity()
+        return {
+            "device_id": identity.device_id,
+            "device_key_algorithm": identity.key_algorithm,
+            "device_identity_status": "READY",
+        }
+
+    def reset_device_identity(self) -> dict[str, object]:
+        """Explicitly replace the identity; UI must show the new-device warning first."""
+        try:
+            identity = self._identity_manager.reset()
+            return {
+                "success": True,
+                "device_identity_status": "READY",
+                "device_id": identity.device_id,
+                "device_key_algorithm": identity.key_algorithm,
+                "warning": "设备重置后 License Service 会视为新设备，需要重新激活，并可能占用新的设备槽位。",
+            }
+        except DeviceIdentityError as exc:
+            return {"success": False, "reason": exc.code, "message": exc.code}
+
+    @staticmethod
+    def _auth_headers(access_token: str = "", api_key: str = "") -> dict[str, str]:
+        if access_token:
+            return {"access_token": access_token}
+        if api_key:
+            return {"api_key": api_key}
+        return {}
+
+    def api_request(
+        self,
+        method: str,
+        request_target: str,
+        body: str = "",
+        access_token: str = "",
+        api_key: str = "",
+    ) -> dict[str, object]:
+        """Native bridge for UI API calls; protected endpoints are signed centrally."""
+        try:
+            if not isinstance(body, str):
+                raise ValueError("desktop API body must be serialized JSON text")
+            protected = is_protected_endpoint(method, request_target)
+            if protected:
+                self.initialize_device_identity()
+            result = self._http_client.request_json(
+                method,
+                request_target,
+                body,
+                **self._auth_headers(access_token, api_key),
+                protected=protected,
+            )
+            return {"ok": True, "data": result}
+        except DeviceIdentityError as exc:
+            return {"ok": False, "status": 0, "detail": exc.code, "reason": exc.code}
+        except DesktopHttpError as exc:
+            return {"ok": False, "status": exc.status_code, "detail": exc.reason, "reason": exc.reason}
+        except (TypeError, ValueError) as exc:
+            return {"ok": False, "status": 0, "detail": str(exc), "reason": "CLIENT_REQUEST_INVALID"}
+
+    def redeem_license(self, card_code: str, access_token: str = "") -> dict[str, object]:
+        """Create the Activation Proof and its body in one native, non-browser path."""
+        if not isinstance(card_code, str) or not card_code.strip():
+            return {"ok": False, "status": 400, "detail": "INVALID_KEY", "reason": "INVALID_KEY"}
+        if not access_token:
+            return {"ok": False, "status": 401, "detail": "AUTH_REQUIRED", "reason": "AUTH_REQUIRED"}
+
+        def body_factory() -> bytes:
+            identity = self._proof_service.identity()
+            proof = self._proof_service.activation_proof(card_code)
+            payload = {
+                "card_code": card_code.strip(),
+                "device_id": identity.device_id,
+                "device_key_algorithm": identity.key_algorithm,
+                "device_public_key": identity.public_key,
+                "proof": proof,
+            }
+            # Serialize once per attempt and send these exact bytes.  A retry calls
+            # the factory again, creating a fresh Activation Proof as required.
+            return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+        try:
+            result = self._http_client.request_json(
+                "POST",
+                "/v1/auth/redeem",
+                body_factory,
+                access_token=access_token,
+                protected=False,
+            )
+            return {"ok": True, "data": result}
+        except DeviceIdentityError as exc:
+            return {"ok": False, "status": 0, "detail": exc.code, "reason": exc.code}
+        except DesktopHttpError as exc:
+            return {"ok": False, "status": exc.status_code, "detail": exc.reason, "reason": exc.reason}
 
     def choose_download_directory(self, remember: bool = True) -> dict[str, object]:
         if not self._window:
@@ -415,6 +529,13 @@ def main() -> None:
     ui_url = f"{api_base.rstrip('/')}/ui/"
     print(f"[WINDOW] PyWebView → {ui_url}")
     api = WindowApi(api_base)
+    try:
+        identity_status = api.initialize_device_identity()
+        log.info("桌面设备身份已就绪 device_id=%s", identity_status["device_id"])
+    except DeviceIdentityError as exc:
+        # The UI remains available so the user can explicitly reset a damaged
+        # identity; never print the private key or the encrypted payload.
+        log.error("桌面设备身份不可用 reason=%s", exc.code)
     window = webview.create_window(
         title="资源下载客户端",
         url=ui_url,

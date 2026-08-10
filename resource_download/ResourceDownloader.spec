@@ -6,7 +6,12 @@ from PyInstaller.utils.hooks import collect_all
 root_dir = Path(SPECPATH).resolve()
 datas = [(str(root_dir / 'client' / 'ui'), 'ui')]
 binaries = []
-hiddenimports = ['anyio._backends._asyncio']
+hiddenimports = [
+    'anyio._backends._asyncio',
+    'license_service_client.device',
+    'license_service_client.signing',
+    'cryptography.hazmat.primitives.asymmetric.ed25519',
+]
 tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 

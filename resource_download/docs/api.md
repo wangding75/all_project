@@ -4,6 +4,49 @@ Base URL: `http://127.0.0.1:8000`
 
 > 契约以本文件 + 运行中的 OpenAPI（`/docs`）为准。
 
+## RD Desktop Client cutover：Device Proof V3
+
+正式 Desktop Client 使用 License Service `LS-DEVICE-V3`，通过 RD Server
+完成完整链路：`Desktop Client → RD Server → License Service`。客户端不直接
+调用 License Service，也不持有 RD Service Credential 或 License Service
+Credential。`API_BASE` 只指向 RD Server；客户端没有 `LICENSE_SERVICE_BASE_URL`。
+
+首次启动生成的 `ED25519` private/public key 由当前 Windows 用户 DPAPI 持久化，
+`device_id = dev_ + SHA256(canonical_public_key_bytes)`。重启必须复用同一
+identity；损坏时 fail-closed 为 `DEVICE_IDENTITY_INVALID`，不能静默换设备。
+用户确认执行 Reset 后会生成新设备身份，License Service 会要求重新激活且可能
+占用新的 device slot。
+
+### Activation
+
+`POST /v1/auth/redeem` 仍是 RD 对外激活入口。Desktop Client native bridge
+发送 `card_code`、`device_id`、`device_key_algorithm`、`device_public_key` 和
+Activation Proof；Proof 使用正式 canonical bytes，`audience=rd`，每次使用新的
+timestamp/nonce。客户端不会调用 License Service `/v1/activate`。
+
+### License-Protected request scope
+
+以下请求由 Desktop Client 的统一 native HTTP 层自动添加五个
+`X-Device-*` headers，并用最终发送的 raw body bytes 计算 hash：
+
+```text
+POST /v1/jobs
+POST /v1/jobs/batch
+POST /v1/jobs/queue/bulk/retry
+POST /v1/jobs/{job_id}/retry
+PUT  /v1/automation/hongguo-new
+POST /v1/automation/hongguo-new/scan
+```
+
+签名覆盖 `METHOD`、最终 `PATH + QUERY`、`SHA256(raw body)`、`audience=rd`、
+时间戳和 fresh nonce。Retry 会重新签名。登录、注册、搜索、详情、普通 Job
+查询、files 和 health 不因本轮变成受保护请求。Automation 的 verified device
+由 RD Server 从 Proof 得到；客户端不在 body 手填授权 device id。
+
+普通浏览器没有设备私钥。浏览器触发 redeem 或受保护操作时必须 fail-closed，
+返回/提示 `DESKTOP_DEVICE_IDENTITY_REQUIRED`，不得把 private key 放入
+`localStorage`、`sessionStorage` 或 JavaScript source。
+
 ---
 
 ## 认证与身份鉴权（D-1）
