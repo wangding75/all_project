@@ -1,6 +1,6 @@
 # RD License Service Integration Report
 
-## Final status
+## T13 status
 
 **PASS**
 
@@ -81,9 +81,49 @@ The persisted context contains only `license_device_id`; a client JSON
 
 ## Client cutover
 
-The server-side integration is complete. The actual RD Client remains outside
-this task and therefore stays:
+The T14 client-side Device Proof V3 cutover and EXE build are complete. T15
+real Desktop acceptance is tracked separately below and remains blocked only
+on the missing real discovery item for the background scheduler.
 
 ```text
-CLIENT CUTOVER PENDING
+CLIENT CUTOVER CODE COMPLETE
 ```
+
+## T15 Desktop final real E2E (2026-08-11)
+
+The T14 `dist/ResourceDownloader.exe` was exercised through its real
+PyWebView native bridge against the local RD Server, License Service, and
+PostgreSQL tenant. No client source or License Service source was changed.
+
+| Scenario | Result |
+|---|---|
+| License Service / PostgreSQL readiness | PASS |
+| RD service / `RD_E2E_DAY` plan | READY |
+| Fresh Desktop activation | PASS |
+| DPAPI identity persistence / restart | PASS; same redacted device fingerprint |
+| Protected `POST /v1/jobs` | PASS |
+| Automation save with verified device binding | PASS; `license_context_status=READY` |
+| Replay / body / query / signature tamper | DENIED |
+| Service down after cache expiry | FAIL-CLOSED; HTTP 503 |
+| Service recovery with a new proof | PASS |
+| Desktop revoke after cache expiry | DENIED; HTTP 403 `LICENSE_REVOKED` |
+| Desktop UI/native error mapping | PASS; stable reasons, no traceback observed |
+| Secret scan | SAFE |
+
+T15 regression evidence: `server/tests` **126 passed**, client tests **10
+passed**, **136 total**; `scripts/quality_gate.py` **PASS**.
+
+The background scheduler could not be completed honestly in this shell. The
+real Hongguo discovery provider returned zero items on every active scan
+(`last_detected_count=0`, `total_enqueued_count=0`), so the scheduler had no
+item to pass to `/v1/entitlements/check`. The persisted automation policy was
+verified as device-bound, but no `LICENSE_REVOKED` background entitlement
+decision was observed. This leaves the T15 final Desktop E2E status:
+
+```text
+BLOCKED: real Hongguo discovery item unavailable; background entitlement path not exercised
+```
+
+The earlier T13 server-side background test remains recorded above as a
+separate historical result; it is not substituted for this T15 Desktop
+acceptance.
