@@ -67,11 +67,13 @@ def _proof_headers(
     device_id: str,
     target: str,
     raw_body: bytes,
+    *,
+    method: str = "POST",
 ) -> dict[str, str]:
     proof = request_proof(
         device_private,
         audience="rd",
-        method="POST",
+        method=method,
         request_target=target,
         body_sha256=hashlib.sha256(raw_body).hexdigest(),
     )
@@ -250,6 +252,23 @@ def _rebind_prepared_license(license_id: str, device_public_key: str) -> None:
     )
 
 
+def _set_device_identity_status(device_public_key: str, status: str) -> None:
+    if status not in {"ACTIVE", "REVOKED"}:
+        _fail("invalid device identity fixture status")
+    if "'" in device_public_key:
+        _fail("device public key contains an unsafe SQL character")
+    device_identity_id = _tenant_sql(
+        "select id from device_identities "
+        f"where public_key='{device_public_key}' limit 1;"
+    )
+    if not device_identity_id:
+        _fail("temporary device identity is missing")
+    _tenant_sql(
+        f"update device_identities set status='{status}' "
+        f"where id='{device_identity_id}';"
+    )
+
+
 def _prepare_local_legacy_fields(user_id: int) -> str:
     data_dir = os.environ.get("DATA_DIR", "").strip()
     if not data_dir:
@@ -283,6 +302,103 @@ def _assert_legacy_card_unused(card_code: str, database: Path) -> None:
         row = connection.execute("select is_used from card_keys where code=?", (card_code,)).fetchone()
     if row != (0,):
         _fail("legacy CardKey was consumed by the new activation path")
+
+
+def _automation_request(
+    session: requests.Session,
+    base_url: str,
+    auth_headers: dict[str, str],
+    target: str,
+    device_id: str,
+    device_private: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    method: str = "POST",
+) -> requests.Response:
+    raw = _json_bytes(payload) if payload is not None else b""
+    proof_headers = _proof_headers(
+        device_private,
+        device_id,
+        target,
+        raw,
+        method=method,
+    )
+    headers = {"Content-Type": "application/json", **auth_headers, **proof_headers}
+    request = getattr(session, method.lower())
+    return request(f"{base_url}{target}", data=raw, headers=headers, timeout=30)
+
+
+def _automation_file(user_id: int) -> Path:
+    data_dir = os.environ.get("DATA_DIR", "").strip()
+    if not data_dir:
+        _fail("DATA_DIR is required for background automation E2E")
+    return Path(data_dir) / "automation" / "hongguo_monitors.json"
+
+
+def _mutate_automation_fixture(user_id: int, **updates: Any) -> None:
+    """Local fixture preparation; the following scan remains RD HTTP + real service."""
+    path = _automation_file(user_id)
+    if not path.is_file():
+        _fail("background automation fixture was not persisted")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    policy = payload.get(f"user:{user_id}")
+    if not isinstance(policy, dict):
+        _fail("background automation policy is missing")
+    policy.update(updates)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _wait_background_status(
+    session: requests.Session,
+    base_url: str,
+    auth_headers: dict[str, str],
+    *,
+    expected_error: str | None = None,
+    timeout: float = 45,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        response = session.get(
+            f"{base_url}/v1/automation/hongguo-new",
+            headers=auth_headers,
+            timeout=15,
+        )
+        if response.status_code == 200:
+            last = response.json()
+            if expected_error is None:
+                if last.get("last_scan_at"):
+                    return last
+            elif expected_error in {
+                str(last.get("last_error") or ""),
+                *[str(log.get("message") or "") for log in last.get("logs") or []],
+            }:
+                return last
+        time.sleep(2)
+    _fail(f"background status did not reach expected state: {expected_error or 'scan'}")
+    return last
+
+
+def _restart_rd_for_fixture() -> None:
+    restart_script = os.environ.get("RD_RESTART_SCRIPT", "").strip()
+    if not restart_script:
+        _fail("RD_RESTART_SCRIPT is required for legacy automation fixture E2E")
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", restart_script],
+        timeout=90,
+        check=False,
+    )
+    if result.returncode != 0:
+        _fail("RD fixture restart failed")
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        try:
+            if requests.get(f"{os.environ['RD_BASE_URL'].rstrip('/')}/health", timeout=5).status_code == 200:
+                return
+        except requests.RequestException:
+            pass
+        time.sleep(2)
+    _fail("RD did not recover after fixture restart")
 
 
 def main() -> None:
@@ -520,6 +636,128 @@ def main() -> None:
     _expect_status(recovered_response, 200, "SERVICE_RECOVERED")
     _pass("CACHE")
 
+    # T13 background automation: the PUT and scan are real RD HTTP requests.
+    # The local JSON edits below only make an existing real discovery item a
+    # deterministic fixture; entitlement authorization still traverses the
+    # RD service credential -> License Service HTTP -> PostgreSQL path.
+    revoked_id = os.environ.get("RD_REVOKED_LICENSE_ID", "").strip()
+    expired_id = os.environ.get("RD_EXPIRED_LICENSE_ID", "").strip()
+    if not revoked_id or not expired_id:
+        _fail("RD_REVOKED_LICENSE_ID and RD_EXPIRED_LICENSE_ID are required")
+    automation_config = {
+        "enabled": False,
+        "auto_enqueue": True,
+        "interval_seconds": 30,
+        "scan_limit": 1,
+        "max_auto_enqueue_per_scan": 1,
+        "quality": "1080p",
+    }
+    automation_put = _automation_request(
+        session,
+        base_url,
+        auth_headers,
+        "/v1/automation/hongguo-new",
+        device_id,
+        device_private,
+        automation_config,
+        method="PUT",
+    )
+    if automation_put.status_code != 200:
+        _fail(
+            "BACKGROUND_ACTIVE automation save failed: "
+            f"HTTP {automation_put.status_code} detail={automation_put.text}"
+        )
+    if automation_put.json().get("license_context_status") != "READY":
+        _fail("BACKGROUND_ACTIVE did not report READY license context")
+    _pass("BACKGROUND_DEVICE_BINDING")
+
+    baseline = _automation_request(
+        session,
+        base_url,
+        auth_headers,
+        "/v1/automation/hongguo-new/scan",
+        device_id,
+        device_private,
+    )
+    if baseline.status_code != 200:
+        _fail("BACKGROUND_ACTIVE baseline scan failed")
+    before_background_jobs = int(baseline.json().get("total_enqueued_count") or 0)
+    automation_config["scan_limit"] = 10
+    active_config = _automation_request(
+        session,
+        base_url,
+        auth_headers,
+        "/v1/automation/hongguo-new",
+        device_id,
+        device_private,
+        automation_config,
+        method="PUT",
+    )
+    if active_config.status_code != 200:
+        _fail("BACKGROUND_ACTIVE scan-limit update failed")
+    active_scan = _automation_request(
+        session,
+        base_url,
+        auth_headers,
+        "/v1/automation/hongguo-new/scan",
+        device_id,
+        device_private,
+    )
+    if active_scan.status_code != 200:
+        _fail("BACKGROUND_ACTIVE scan failed")
+    active_status = active_scan.json()
+    if int(active_status.get("total_enqueued_count") or 0) <= before_background_jobs:
+        _fail("BACKGROUND_ACTIVE did not create a Job")
+    background_total = int(active_status.get("total_enqueued_count") or 0)
+    _pass("BACKGROUND_ACTIVE")
+
+    # Legacy policy fixture is checked while the device is still ACTIVE so the
+    # foreground scan guard can pass; the background executor must still deny
+    # the missing saved context after RD reloads the persisted JSON.
+    _mutate_automation_fixture(
+        user_id,
+        enabled=False,
+        license_device_id=None,
+        baseline_initialized=True,
+        known_ids=[],
+        last_scan_at="",
+        last_error="",
+    )
+    _restart_rd_for_fixture()
+    legacy_scan = _automation_request(
+        session,
+        base_url,
+        auth_headers,
+        "/v1/automation/hongguo-new/scan",
+        device_id,
+        device_private,
+    )
+    if legacy_scan.status_code != 200:
+        _fail("LEGACY background scan request failed")
+    legacy_status = legacy_scan.json()
+    if legacy_status.get("license_context_status") != "REAUTH_REQUIRED":
+        _fail("LEGACY automation did not require reauthorization")
+    if legacy_status.get("last_error") != "BACKGROUND_LICENSE_CONTEXT_REQUIRED":
+        _fail("LEGACY automation did not fail closed")
+    if int(legacy_status.get("total_enqueued_count") or 0) != background_total:
+        _fail("LEGACY automation created a Job")
+    _pass("BACKGROUND_LEGACY_REAUTH_REQUIRED")
+
+    # Re-authorize the same persisted policy through the normal Device-Proof
+    # path before testing scheduler denial/recovery states.
+    restore_put = _automation_request(
+        session,
+        base_url,
+        auth_headers,
+        "/v1/automation/hongguo-new",
+        device_id,
+        device_private,
+        automation_config,
+        method="PUT",
+    )
+    if restore_put.status_code != 200:
+        _fail("background policy restore after legacy fixture failed")
+
     quota_limit = int(os.environ.get("RD_E2E_QUOTA_LIMIT", "50"))
     with sqlite3.connect(database) as connection:
         day = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -534,10 +772,86 @@ def main() -> None:
     )
     _expect_status(quota_response, 429, "QUOTA")
 
-    revoked_id = os.environ.get("RD_REVOKED_LICENSE_ID", "").strip()
-    expired_id = os.environ.get("RD_EXPIRED_LICENSE_ID", "").strip()
-    if not revoked_id or not expired_id:
-        _fail("prepared revoked/expired License IDs are required")
+    # Enable the periodic worker so revoked/expired/service-down checks do not
+    # depend on a live client Device Proof while the License Service is down.
+    automation_config["scan_limit"] = 50
+    automation_config["enabled"] = True
+    enabled_put = _automation_request(
+        session,
+        base_url,
+        auth_headers,
+        "/v1/automation/hongguo-new",
+        device_id,
+        device_private,
+        automation_config,
+        method="PUT",
+    )
+    if enabled_put.status_code != 200:
+        _fail("background scheduler enable failed")
+
+    time.sleep(ttl + 1)
+    _rebind_prepared_license(revoked_id, device_public)
+    revoked_background = _wait_background_status(
+        session,
+        base_url,
+        auth_headers,
+        expected_error="LICENSE_REVOKED",
+    )
+    if int(revoked_background.get("total_enqueued_count") or 0) != background_total:
+        _fail("BACKGROUND_REVOKED created a Job")
+    _pass("BACKGROUND_REVOKED")
+
+    _rebind_prepared_license(expired_id, device_public)
+    expired_background = _wait_background_status(
+        session,
+        base_url,
+        auth_headers,
+        expected_error="LICENSE_EXPIRED",
+    )
+    if int(expired_background.get("total_enqueued_count") or 0) != background_total:
+        _fail("BACKGROUND_EXPIRED created a Job")
+    _pass("BACKGROUND_EXPIRED")
+
+    _set_device_identity_status(device_public, "REVOKED")
+    device_revoked_background = _wait_background_status(
+        session,
+        base_url,
+        auth_headers,
+        expected_error="DEVICE_REVOKED",
+    )
+    if int(device_revoked_background.get("total_enqueued_count") or 0) != background_total:
+        _fail("BACKGROUND_DEVICE_REVOKED created a Job")
+    _pass("BACKGROUND_DEVICE_REVOKED")
+    _set_device_identity_status(device_public, "ACTIVE")
+
+    _compose_command("stop")
+    try:
+        service_down_background = _wait_background_status(
+            session,
+            base_url,
+            auth_headers,
+            expected_error="UNKNOWN",
+            timeout=45,
+        )
+        if int(service_down_background.get("total_enqueued_count") or 0) != background_total:
+            _fail("BACKGROUND_SERVICE_DOWN created a Job")
+    finally:
+        _compose_command("start")
+        _wait_license_ready(license_base_url)
+    _pass("BACKGROUND_SERVICE_DOWN")
+
+    time.sleep(35)
+    recovered_background = session.get(
+        f"{base_url}/v1/automation/hongguo-new",
+        headers=auth_headers,
+        timeout=15,
+    )
+    if recovered_background.status_code != 200:
+        _fail("BACKGROUND_SERVICE_RECOVERED status request failed")
+    if recovered_background.json().get("last_error") == "UNKNOWN":
+        _fail("BACKGROUND_SERVICE_RECOVERED remained fail-closed after recovery")
+    _pass("BACKGROUND_SERVICE_RECOVERED")
+
     time.sleep(ttl + 1)
     _rebind_prepared_license(revoked_id, device_public)
     revoked_response, _, _ = _job_request(

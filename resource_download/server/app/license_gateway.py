@@ -224,6 +224,53 @@ class LicenseGateway:
             request_id=request_id,
         )
 
+    def check_device_entitlement(
+        self,
+        device_id: str,
+        *,
+        request_id: str = "",
+    ) -> dict[str, Any]:
+        """Check a saved device through the rc3 background entitlement plane."""
+        started = time.perf_counter()
+        if self.client is None:
+            return self._record_result(
+                device_id=device_id,
+                result=self._unknown("LICENSE_SERVICE_UNAVAILABLE"),
+                started=started,
+                request_id=request_id,
+            )
+        try:
+            result = dict(self.client.check_device_entitlement(device_id) or {})
+        except httpx.TimeoutException:
+            result = self._unknown("LICENSE_SERVICE_TIMEOUT")
+        except httpx.RequestError:
+            result = self._unknown("LICENSE_SERVICE_UNAVAILABLE")
+        except httpx.HTTPStatusError:
+            result = self._unknown("LICENSE_SERVICE_REJECTED")
+        except Exception as exc:  # malformed SDK/config response is uncertainty
+            logger.error(
+                "Background entitlement check failed: error_type=%s",
+                type(exc).__name__,
+            )
+            result = self._unknown("LICENSE_SERVICE_INVALID_RESPONSE")
+
+        decision = str(result.get("decision") or "UNKNOWN").upper()
+        if decision not in {"ACTIVE", "INACTIVE", "UNKNOWN"}:
+            result = self._unknown("LICENSE_SERVICE_INVALID_RESPONSE")
+        else:
+            result["decision"] = decision
+            result.setdefault("activated", decision == "ACTIVE")
+            result.setdefault(
+                "source",
+                "remote" if decision != "UNKNOWN" else "fail_closed",
+            )
+        return self._record_result(
+            device_id=device_id,
+            result=result,
+            started=started,
+            request_id=request_id,
+        )
+
     def health(self) -> dict[str, Any]:
         return {
             "license_service_configured": self.configured,

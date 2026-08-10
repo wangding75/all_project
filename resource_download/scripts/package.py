@@ -18,8 +18,8 @@ DOWNLOAD_URL = f"https://github.com/frida/frida/releases/download/{FRIDA_VERSION
 
 OUT_XZ = SETUP_DIR / FRIDA_FILE
 OUT_BIN = SETUP_DIR / "sys_hlpd"  # Renamed for anti-detection
-LICENSE_SDK_WHEEL = ROOT / "vendor" / "license_service_client-1.0.0rc2-py3-none-any.whl"
-LICENSE_SDK_SHA256 = "21FB18CB36A040AEDDF4C946112346BD4F94FDA950BAAAA3A45277C05385E138"
+LICENSE_SDK_WHEEL = ROOT / "vendor" / "license_service_client-1.0.0rc3-py3-none-any.whl"
+LICENSE_SDK_SHA256 = "30EC6E2FFA86627A7F1E6DD2E9AE7F2A07FE44161495AFD864D9090CBBF43A53"
 
 
 def check_license_sdk_wheel() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PlatformName(str, Enum):
@@ -368,6 +368,8 @@ class QueueBulkResponse(BaseModel):
 
 
 class HongguoMonitorConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = False
     auto_enqueue: bool = False
     interval_seconds: int = Field(default=60, ge=30, le=86400)
@@ -392,6 +394,7 @@ class HongguoMonitorLog(BaseModel):
 
 
 class HongguoMonitorStatus(HongguoMonitorConfig):
+    license_context_status: Literal["READY", "REAUTH_REQUIRED"] = "REAUTH_REQUIRED"
     baseline_initialized: bool = False
     known_count: int = 0
     last_scan_at: str = ""

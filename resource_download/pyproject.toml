@@ -41,9 +41,9 @@ dev = [
 ]
 
 [tool.resource_downloader.license_service]
-wheel = "vendor/license_service_client-1.0.0rc2-py3-none-any.whl"
-sha256 = "21FB18CB36A040AEDDF4C946112346BD4F94FDA950BAAAA3A45277C05385E138"
-contract_commit = "0f8e87a9fcb729e84aeb1f21d155d60f74e11546"
+wheel = "vendor/license_service_client-1.0.0rc3-py3-none-any.whl"
+sha256 = "30EC6E2FFA86627A7F1E6DD2E9AE7F2A07FE44161495AFD864D9090CBBF43A53"
+contract_commit = "046dc8e2f621bfa434e8cc4ba88920b431207487"
 
 [tool.ruff]
 line-length = 120

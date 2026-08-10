@@ -11,8 +11,8 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR / "server"))
-LICENSE_SDK_WHEEL = ROOT_DIR / "vendor" / "license_service_client-1.0.0rc2-py3-none-any.whl"
-LICENSE_SDK_SHA256 = "21FB18CB36A040AEDDF4C946112346BD4F94FDA950BAAAA3A45277C05385E138"
+LICENSE_SDK_WHEEL = ROOT_DIR / "vendor" / "license_service_client-1.0.0rc3-py3-none-any.whl"
+LICENSE_SDK_SHA256 = "30EC6E2FFA86627A7F1E6DD2E9AE7F2A07FE44161495AFD864D9090CBBF43A53"
 
 
 def run_phase(name: str, fn):
@@ -76,7 +76,7 @@ def check_dependency_layering():
     )
     assert "license_service_client" in prod_content, "生产依赖缺少固定 License Service SDK"
     pyproject = (ROOT_DIR / "pyproject.toml").read_text(encoding="utf-8")
-    assert "license_service_client-1.0.0rc2-py3-none-any.whl" in pyproject
+    assert "license_service_client-1.0.0rc3-py3-none-any.whl" in pyproject
     assert LICENSE_SDK_SHA256 in pyproject
 
 

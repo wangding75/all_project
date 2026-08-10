@@ -116,8 +116,35 @@ def test_hongguo_monitor_baselines_then_enqueues_only_new_items(
         monkeypatch.setattr(monitor_module, "get_platform", lambda _name: platform)
         monkeypatch.setattr(manager_module, "get_platform", lambda _name: platform)
         manager = JobManager(settings)
-        service = HongguoMonitorService(settings, manager)
-        identity = Identity(kind="api_key", is_ops=True)
+        class _ActiveGateway:
+            def check_device_entitlement(self, _device_id):
+                return {
+                    "decision": "ACTIVE",
+                    "reason": "ACTIVE",
+                    "activated": True,
+                }
+
+        import app.db as db_module
+        import app.quota as quota_module
+
+        class _Db:
+            def query(self, *_args):
+                return self
+
+            def filter(self, *_args):
+                return self
+
+            def first(self):
+                return type("UserRow", (), {"is_active": True})()
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(db_module, "SessionLocal", lambda: _Db())
+        monkeypatch.setattr(quota_module, "check_job_quota", lambda *_args: None)
+        monkeypatch.setattr(quota_module, "increment_job_quota", lambda *_args: None)
+        service = HongguoMonitorService(settings, manager, _ActiveGateway())
+        identity = Identity(kind="user", user_id=1)
         await service.configure(
             identity,
             HongguoMonitorConfig(
@@ -127,6 +154,7 @@ def test_hongguo_monitor_baselines_then_enqueues_only_new_items(
                 exclude_keywords=["忽略"],
                 max_auto_enqueue_per_scan=1,
             ),
+            verified_device_id="dev_" + "1" * 64,
         )
 
         baseline = await service.scan_now(identity)

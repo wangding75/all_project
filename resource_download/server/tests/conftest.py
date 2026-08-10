@@ -53,6 +53,13 @@ class FakeLicenseGateway:
         }
         self.requests: list[dict] = []
         self.activations: list[dict] = []
+        self.entitlement_requests: list[str] = []
+        self.entitlement_result = {
+            "activated": True,
+            "reason": "ACTIVE",
+            "decision": "ACTIVE",
+            "source": "remote",
+        }
 
     def authorize_request(self, **kwargs):
         self.requests.append(kwargs)
@@ -61,6 +68,10 @@ class FakeLicenseGateway:
     def activate(self, payload, **_kwargs):
         self.activations.append(payload)
         return dict(self.activate_result)
+
+    def check_device_entitlement(self, device_id, **_kwargs):
+        self.entitlement_requests.append(device_id)
+        return dict(self.entitlement_result)
 
     def health(self):
         return {

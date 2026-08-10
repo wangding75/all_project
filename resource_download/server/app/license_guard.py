@@ -100,6 +100,10 @@ async def require_active_device_license(
     reason = str(result.get("reason") or "")
     request.state.license_result = result
     if decision == "ACTIVE":
+        # Only a Device-Proof-validated identity may be persisted as an
+        # automation binding.  The body is never used for this value.
+        request.state.verified_device_id = device_id
+        request.state.verified_device_key_algorithm = key_algorithm
         return identity
     if decision == "INACTIVE":
         if reason == "INVALID_DEVICE_PROOF":

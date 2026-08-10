@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from typing import Any
 from app.auth import Identity
 from app.config import Settings, get_settings
 from app.jobs import JobManager, get_job_manager
+from app.license_gateway import LicenseGateway, get_license_gateway
 from app.models import (
     DiscoverItem,
     HongguoMonitorConfig,
@@ -37,14 +39,39 @@ def _identity_key(identity: Identity) -> str:
     return "ops"
 
 
+BACKGROUND_LICENSE_PROTECTED_PATHS = frozenset(
+    {
+        "/v1/automation/hongguo-new",
+        "/v1/automation/hongguo-new/scan",
+    }
+)
+BACKGROUND_LICENSE_PROTECTED_EXECUTORS = frozenset(
+    {
+        "HongguoMonitorService._run_loop",
+        "HongguoMonitorService._scan_key",
+        "HongguoMonitorService._enqueue_item",
+    }
+)
+_DEVICE_ID_PATTERN = re.compile(r"^dev_[0-9a-f]{64}$")
+
+
+class BackgroundLicenseDenied(RuntimeError):
+    def __init__(self, decision: str, reason: str) -> None:
+        self.decision = decision
+        self.reason = reason
+        super().__init__(reason)
+
+
 class HongguoMonitorService:
     def __init__(
         self,
         settings: Settings | None = None,
         manager: JobManager | None = None,
+        license_gateway: LicenseGateway | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.manager = manager or get_job_manager()
+        self.license_gateway = license_gateway
         self.path = self.settings.data_dir / "automation" / "hongguo_monitors.json"
         self._policies: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
@@ -86,6 +113,7 @@ class HongguoMonitorService:
             **config.model_dump(),
             "owner_kind": "user" if identity.kind == "user" else "ops",
             "owner_user_id": identity.user_id if identity.kind == "user" else None,
+            "license_device_id": None,
             "baseline_initialized": False,
             "known_ids": [],
             "last_scan_at": "",
@@ -130,6 +158,10 @@ class HongguoMonitorService:
             ).isoformat()
         return HongguoMonitorStatus(
             **config_values,
+            license_context_status=(
+                "READY" if str(policy.get("license_device_id") or "").strip()
+                else "REAUTH_REQUIRED"
+            ),
             baseline_initialized=bool(policy.get("baseline_initialized")),
             known_count=len(policy.get("known_ids") or []),
             last_scan_at=str(policy.get("last_scan_at") or ""),
@@ -215,7 +247,19 @@ class HongguoMonitorService:
         self,
         identity: Identity,
         config: HongguoMonitorConfig,
+        *,
+        verified_device_id: str,
     ) -> HongguoMonitorStatus:
+        if identity.kind != "user" or identity.is_ops:
+            raise BackgroundLicenseDenied(
+                "INACTIVE",
+                "BACKGROUND_LICENSE_CONTEXT_REQUIRED",
+            )
+        if not _DEVICE_ID_PATTERN.fullmatch(str(verified_device_id or "")):
+            raise BackgroundLicenseDenied(
+                "INACTIVE",
+                "BACKGROUND_LICENSE_CONTEXT_REQUIRED",
+            )
         key = _identity_key(identity)
         async with self._lock:
             policy = self._policies.setdefault(key, self._default_policy(identity))
@@ -229,8 +273,12 @@ class HongguoMonitorService:
                     )
                 )[:20]
             policy.update(values)
+            # Persist only the identity that the Device Proof guard accepted.
+            # A client-supplied JSON field is never read for this value.
+            policy["license_device_id"] = str(verified_device_id)
             policy["owner_kind"] = "user" if identity.kind == "user" else "ops"
             policy["owner_user_id"] = identity.user_id if identity.kind == "user" else None
+            policy["last_error"] = ""
             await asyncio.to_thread(self._persist)
             result = self._status(policy)
         if config.enabled:
@@ -264,6 +312,12 @@ class HongguoMonitorService:
                 self._policies[key] = policy
             snapshot = dict(policy)
             snapshot["known_ids"] = list(policy.get("known_ids") or [])
+            legacy_context_required = bool(
+                snapshot.get("auto_enqueue")
+                and not _DEVICE_ID_PATTERN.fullmatch(
+                    str(snapshot.get("license_device_id") or "").strip()
+                )
+            )
 
         now = _utc_now()
         try:
@@ -286,10 +340,18 @@ class HongguoMonitorService:
             failed_ids: set[str] = set()
             if snapshot.get("auto_enqueue"):
                 enqueue_limit = int(snapshot.get("max_auto_enqueue_per_scan") or 20)
-                for item in detected[:enqueue_limit]:
+                selected_items = detected[:enqueue_limit]
+                # Items beyond this scan's enqueue budget have not been
+                # processed. Keep them eligible for the next cycle instead
+                # of silently losing future commercial work.
+                failed_ids.update(str(item.id) for item in detected[enqueue_limit:])
+                for item in selected_items:
                     try:
-                        if await self._enqueue_item(snapshot, item):
+                        if await self._enqueue_item(snapshot, item, policy_key=key):
                             enqueued += 1
+                    except BackgroundLicenseDenied as exc:
+                        item_errors.append(exc.reason)
+                        failed_ids.add(str(item.id))
                     except Exception as exc:  # noqa: BLE001
                         item_errors.append(f"{item.title}: {exc}")
                         failed_ids.add(str(item.id))
@@ -301,7 +363,11 @@ class HongguoMonitorService:
                 policy["known_ids"] = list(known)[-1000:]
                 policy["last_scan_at"] = now
                 policy["last_success_at"] = now
-                policy["last_error"] = "；".join(item_errors[:3])
+                policy["last_error"] = (
+                    "BACKGROUND_LICENSE_CONTEXT_REQUIRED"
+                    if legacy_context_required and not item_errors
+                    else "；".join(item_errors[:3])
+                )
                 policy["last_detected_count"] = len(detected)
                 policy["total_detected_count"] = int(
                     policy.get("total_detected_count") or 0
@@ -312,6 +378,18 @@ class HongguoMonitorService:
                 policy["recent_items"] = [
                     item.model_dump(mode="json") for item in detected[:20]
                 ]
+                if legacy_context_required:
+                    self._append_log(
+                        policy,
+                        "BACKGROUND_LICENSE_CONTEXT_REQUIRED",
+                        level="warning",
+                    )
+                elif item_errors:
+                    self._append_log(
+                        policy,
+                        ";".join(item_errors[:3]),
+                        level="warning",
+                    )
                 if not baseline_initialized:
                     self._append_log(
                         policy,
@@ -353,7 +431,32 @@ class HongguoMonitorService:
         self,
         policy: dict[str, Any],
         item: DiscoverItem,
+        *,
+        policy_key: str,
     ) -> bool:
+        del policy_key  # reserved for future per-policy audit correlation
+        license_device_id = str(policy.get("license_device_id") or "").strip()
+        if not _DEVICE_ID_PATTERN.fullmatch(license_device_id):
+            raise BackgroundLicenseDenied(
+                "INACTIVE",
+                "BACKGROUND_LICENSE_CONTEXT_REQUIRED",
+            )
+
+        gateway = self.license_gateway or get_license_gateway()
+        entitlement = await asyncio.to_thread(
+            gateway.check_device_entitlement,
+            license_device_id,
+        )
+        decision = str(entitlement.get("decision") or "UNKNOWN").upper()
+        reason = str(entitlement.get("reason") or "LICENSE_SERVICE_UNAVAILABLE")
+        if decision != "ACTIVE":
+            # Keep the automation enabled.  The next scheduler cycle will
+            # perform a fresh entitlement check.
+            raise BackgroundLicenseDenied(
+                decision,
+                reason if decision != "UNKNOWN" else "UNKNOWN",
+            )
+
         owner_kind = str(policy.get("owner_kind") or "ops")
         owner_user_id = policy.get("owner_user_id")
         identity = Identity(
@@ -442,8 +545,12 @@ class HongguoMonitorService:
 _service: HongguoMonitorService | None = None
 
 
-def get_hongguo_monitor_service() -> HongguoMonitorService:
+def get_hongguo_monitor_service(
+    license_gateway: LicenseGateway | None = None,
+) -> HongguoMonitorService:
     global _service
     if _service is None:
-        _service = HongguoMonitorService()
+        _service = HongguoMonitorService(license_gateway=license_gateway)
+    elif license_gateway is not None:
+        _service.license_gateway = license_gateway
     return _service

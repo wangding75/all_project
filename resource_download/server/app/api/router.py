@@ -7,7 +7,7 @@ import subprocess
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 from app import __version__
@@ -15,6 +15,7 @@ from app.auth import Identity, require_identity
 from app.config import get_settings
 from app.jobs import get_job_manager
 from app.license_guard import require_active_device_license
+from app.license_gateway import LicenseGateway, get_license_gateway
 from app.models import (
     BatchJobCreateRequest,
     BatchJobCreateResponse,
@@ -859,14 +860,34 @@ async def get_hongguo_new_monitor(
     response_model=HongguoMonitorStatus,
 )
 async def configure_hongguo_new_monitor(
+    request: Request,
     body: HongguoMonitorConfig,
     identity: Identity = Depends(require_active_device_license),
+    gateway: LicenseGateway = Depends(get_license_gateway),
 ) -> HongguoMonitorStatus:
+    if identity.kind != "user" or identity.is_ops:
+        raise HTTPException(
+            status_code=403,
+            detail="BACKGROUND_LICENSE_CONTEXT_REQUIRED",
+        )
     if body.quality != "1080p":
         raise HTTPException(status_code=400, detail="红果自动下载当前仅支持可播放的 1080p")
     from app.automation import get_hongguo_monitor_service
 
-    return await get_hongguo_monitor_service().configure(identity, body)
+    verified_device_id = str(getattr(request.state, "verified_device_id", "") or "")
+    if not verified_device_id:
+        raise HTTPException(
+            status_code=403,
+            detail="BACKGROUND_LICENSE_CONTEXT_REQUIRED",
+        )
+    try:
+        return await get_hongguo_monitor_service(gateway).configure(
+            identity,
+            body,
+            verified_device_id=verified_device_id,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @api_router.post(
@@ -875,10 +896,11 @@ async def configure_hongguo_new_monitor(
 )
 async def scan_hongguo_new_now(
     identity: Identity = Depends(require_active_device_license),
+    gateway: LicenseGateway = Depends(get_license_gateway),
 ) -> HongguoMonitorStatus:
     from app.automation import get_hongguo_monitor_service
 
-    return await get_hongguo_monitor_service().scan_now(identity)
+    return await get_hongguo_monitor_service(gateway).scan_now(identity)
 
 
 @api_router.get("/v1/files", response_model=FileListResponse)

@@ -2,110 +2,88 @@
 
 ## Final status
 
-**BLOCKED**
+**PASS**
 
-The real RD HTTP E2E ran against the local License Service and PostgreSQL
-tenant. The remaining blockers are frozen-contract/background-context issues,
-not an unavailable environment or a Mock-only test.
+T13 closes the RD-side background authorization path with the rc3 Server SDK.
+The ordinary client path remains Device Proof V3 plus `/v1/check`; scheduled
+jobs use only the saved, previously verified `device_id` and the service-auth
+`/v1/entitlements/check` path.
 
-## Environment and boundaries
+## Baseline and boundaries
 
-- RD commit under test: `28bbef8`
-- RD HTTP: dynamic local loopback port `8767`
-- License Service HTTP: `http://127.0.0.1:18081`
-- License Service health identity: `1.0.0-rc2`
-- License Service tenant: `rd`
-- Plan: `RD_E2E_DAY`
-- SDK: `license_service_client-1.0.0rc2`
+- License Service Contract Commit: `046dc8e2f621bfa434e8cc4ba88920b431207487`
+- License Service HTTP: `http://127.0.0.1:18081` (environment supplied)
+- SDK: `license_service_client-1.0.0rc3`
+- SDK SHA-256: `30EC6E2FFA86627A7F1E6DD2E9AE7F2A07FE44161495AFD864D9090CBBF43A53`
 - License Service source: unchanged
 - SX source: unchanged
-- No License Service secret, Device private key, complete signature, or DB
-  credential is recorded in this report.
+- No License DB access exists in RD application runtime.
+- No Device private key, proof signature, or client nonce is persisted by RD.
 
-RD reads the License Service base URL, Service Credential, `audience`, timeout,
-TLS settings, and cache TTL from environment-backed `server/app/config.py`.
-There is no `127.0.0.1:18081` fixed host in production Python source.
+## Real HTTP E2E
 
-## Real HTTP E2E result
+`scripts/license_e2e.py` ran against RD HTTP, License Service HTTP, and the
+real PostgreSQL tenant. Fixture SQL was limited to attaching the temporary
+test public key to prepared revoked/expired records and preparing the device
+revocation case; all authorization and job assertions traversed the real RD
+HTTP -> License Service HTTP path.
 
-The existing `scripts/license_e2e.py` was extended as the single runner. It
-uses RD HTTP for registration/login, redeem, protected jobs, proof validation,
-quota, and all business assertions. PostgreSQL was used only to attach the
-runner's temporary public key to the already-prepared expired/revoked fixture;
-the authorization decisions still came through RD HTTP -> License Service
-HTTP.
+| Scenario | Result |
+|---|---|
+| ACTIVE | PASS |
+| NOT_ACTIVATED | PASS |
+| EXPIRED | PASS |
+| REVOKED | PASS (`LICENSE_REVOKED`) |
+| INVALID_PROOF | PASS |
+| REPLAY | PASS |
+| BODY_BINDING | PASS |
+| QUERY_BINDING | PASS |
+| SERVICE_DOWN | PASS |
+| SERVICE_RECOVERED | PASS |
+| TENANT_ISOLATION | PASS |
+| API_KEY_BYPASS | DENIED |
+| VIP_BYPASS | DENIED |
+| CARDKEY_BYPASS | DENIED |
+| QUOTA | PASS |
+| CACHE | PASS |
 
-| Scenario | Result | Evidence |
-|---|---|---|
-| RD Server HTTP | PASS | `/health` returned 200 |
-| License Service HTTP | PASS | `/health/live` and `/health/ready` returned 200 |
-| Activation | PASS | RD `/v1/auth/redeem` -> License Service activation |
-| ACTIVE | PASS | Device Proof V3 protected `POST /v1/jobs` allowed |
-| NOT_ACTIVATED | PASS | `403 DEVICE_NOT_ACTIVATED` |
-| EXPIRED | PASS | Prepared expired License denied by real `/v1/check` |
-| REVOKED | FAIL | HTTP 403, but `/v1/check` returned `DEVICE_NOT_ACTIVATED`; T11 requires `LICENSE_REVOKED` |
-| INVALID_PROOF | PASS | Modified signature and wrong device key denied |
-| REPLAY | PASS | Reused timestamp/nonce/signature denied as `DEVICE_PROOF_REPLAYED` |
-| BODY_BINDING | PASS | Modified raw POST body denied |
-| QUERY_BINDING | PASS | Proof for query A denied when sent with query B |
-| SERVICE_DOWN | PASS | After cache TTL, License Service stop produced HTTP 503 |
-| SERVICE_RECOVERED | PASS | Official container start, healthy, new nonce, ACTIVE request allowed |
-| TENANT_ISOLATION | PASS | `service_id`/`tenant_id` request parameters did not switch RD tenant |
-| API_KEY_BYPASS | DENIED | API Key plus unactivated Device Proof was denied |
-| VIP_BYPASS | DENIED | Future `vip_expires_at` did not authorize the Device |
-| CARDKEY_BYPASS | DENIED | Unused legacy CardKey remained unused and did not activate the Device |
-| QUOTA | PASS | License ACTIVE still reached the existing RD quota denial |
-| CACHE | PASS | Remote ACTIVE, fresh-proof cache hit, TTL expiry remote recheck |
-| BACKGROUND_AUTOMATION | BLOCKED | `BACKGROUND_LICENSE_CONTEXT_REQUIRED` |
+## Background automation
 
-The strict runner passed every scenario through quota and stopped at the
-REVOKED assertion. A preceding complete real HTTP run also passed EXPIRED and
-all service/cache scenarios.
+| Case | Result |
+|---|---|
+| Verified device binding | PASS |
+| ACTIVE entitlement creates Job | PASS |
+| `LICENSE_REVOKED` | DENIED; no Job |
+| `LICENSE_EXPIRED` | DENIED; no Job |
+| `DEVICE_REVOKED` | DENIED; no Job |
+| `DEVICE_NOT_ACTIVATED` | DENIED; no Job |
+| Service down / `UNKNOWN` | DENIED; no Job; automation remains enabled |
+| Service recovery | PASS; next cycle rechecks normally |
+| Legacy `license_device_id = NULL` | `REAUTH_REQUIRED`; fail-closed |
+| Entitlement failure and quota | PASS; entitlement is checked before quota/job creation |
 
-## Contract blocker: revoked check reason
+Every protected scheduler and enqueue entry point is covered by
+`BACKGROUND_LICENSE_PROTECTED_PATHS` / `BACKGROUND_LICENSE_PROTECTED_EXECUTORS`.
+The persisted context contains only `license_device_id`; a client JSON
+`device_id`, API Key, VIP expiry, or CardKey cannot create or replace it.
 
-The License Service `check_device` implementation filters for
-`License.status == ACTIVE` before evaluating the binding. A revoked License
-therefore produces no row and returns `DEVICE_NOT_ACTIVATED`. The public check
-contract does not define `LICENSE_REVOKED` as a `/v1/check` result. RD must not
-invent or reinterpret that frozen service decision. This requires a
-License Service contract/source decision before T11 can be PASS.
+## Regression and production review
 
-## Background automation blocker
-
-The call chain in `server/app/automation/hongguo_monitor.py` is:
-
-```text
-_enqueue_item
-  -> synthesize Identity from saved policy
-  -> check_job_quota
-  -> JobManager.create_job
-```
-
-The scheduled path has no Device Proof or safely expressible device License
-context. It must not become a new bypass. The correct result for this current
-model is `BLOCKED BACKGROUND_LICENSE_CONTEXT_REQUIRED`; resolving it requires a
-decision about the background business authorization model.
-
-## Security and regression checks
-
-- Secrets: **SAFE**. Handoff variables were loaded only in local processes and
-  checked as PRESENT/NOT PRESENT; no secret was written to source, report, or
-  logs.
-- RD/License logs: **SAFE**. RD log/data files and License Service container
-  logs were scanned for private keys, master keys, DB passwords, DSNs, and
-  complete proof-signature logging; no sensitive-pattern hit was found.
-- `python -m pytest server/tests`: **PASS**, 111 passed
+- `python -m pytest server/tests`: **126 passed**
 - `python scripts/quality_gate.py`: **PASS**
-- `SX` diff: **EMPTY**
+- rc2 runtime/vendor dependency: **removed**
+- Ordinary client Device Proof requirement: **preserved**
+- Background service-auth entitlement: **enforced**
+- Revoke/expire/device-revoke/unknown: **fail-closed**
+- Secrets: **SAFE**
+- SX diff: **EMPTY**
 - License Service source diff: **EMPTY**
 
 ## Client cutover
 
-The server-side real-proof path is implemented and tested. The runner remains
-the temporary proof-generating client, so the existing transitional state is:
+The server-side integration is complete. The actual RD Client remains outside
+this task and therefore stays:
 
 ```text
-SERVER INTEGRATION PASS
 CLIENT CUTOVER PENDING
 ```
