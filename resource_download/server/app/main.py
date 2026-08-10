@@ -53,6 +53,25 @@ async def lifespan(_app: FastAPI):
     from app.security_boot import assert_production_secrets
     assert_production_secrets(settings)
 
+    # License SDK is an application-lifetime dependency.  Routers obtain this
+    # gateway through DI; they never construct a client per request.
+    from app.license_gateway import initialize_license_gateway
+
+    license_gateway = initialize_license_gateway(settings)
+    _app.state.license_gateway = license_gateway
+    if not license_gateway.configured:
+        logging.warning(
+            "License Service 未配置或配置无效；受保护业务将 fail-closed: error_code=%s",
+            license_gateway.config_error or "UNKNOWN",
+        )
+        from app.security_boot import is_loopback_host
+
+        if not is_loopback_host(settings.host):
+            raise RuntimeError(
+                "🚫 [T06 生产安全阻断] License Service SDK 配置无效，"
+                "生产服务拒绝启动；请检查 RD Service Credential 与 TLS 配置。"
+            )
+
     manager = get_job_manager()
     await manager.load_jobs()
     from app.automation import get_hongguo_monitor_service
@@ -101,6 +120,9 @@ async def lifespan(_app: FastAPI):
     logging.info("服务端收到退出信号，开始执行优雅关机流程...")
     await monitor.stop()
     await manager.shutdown()
+    from app.license_gateway import close_license_gateway
+
+    close_license_gateway()
 
 
 app = FastAPI(

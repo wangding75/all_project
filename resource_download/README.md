@@ -11,13 +11,18 @@
 
 | 侧 | 目录 | 职责 |
 |----|------|------|
-| **服务端** | `server/` | 中转 API、卡密 VIP、任务、番茄/红果适配 |
+| **服务端** | `server/` | 中转 API、RD 用户/JWT、RD Quota、任务与平台适配 |
 | **客户端** | `client/` | 登录/激活、连服务端下载；以后排行榜/热榜/上新 |
 | **禁止进客户端** | `platforms` / Frida / `vendor` | 履约只在服务端 |
 
 ```text
-client (瘦)  --HTTPS API-->  server (中转 + 适配 + 设备/签名)
+client (瘦)  --HTTPS + User/JWT + Device Proof V3-->  RD server
+                                                   |
+                                                   +-- LicenseServerClient --> License Service (rd Tenant)
 ```
+
+RD SQLite 只保存 RD 用户、任务和配额数据。License、Device、Binding、Plan
+与 Activation 由统一 License Service 负责；RD 不直连 License PostgreSQL。
 
 ## 文档怎么读
 
@@ -32,6 +37,7 @@ client (瘦)  --HTTPS API-->  server (中转 + 适配 + 设备/签名)
 | [`docs/deployment.md`](./docs/deployment.md) | 生产部署 |
 | [`docs/release.md`](./docs/release.md) | 打包说明 |
 | [`docs/release_gate.md`](./docs/release_gate.md) | 发版门禁 |
+| [`LICENSE_SERVICE_INTEGRATION_REPORT.md`](./LICENSE_SERVICE_INTEGRATION_REPORT.md) | T06 License Service 接入报告 |
 
 ## 目录
 
@@ -61,8 +67,12 @@ python run.py
 ```
 
 默认：`http://127.0.0.1:8000`，开发 Key：`X-API-Key: dev-key-change-me`。
+API Key 仍是 RD 身份/运维凭证，但不能绕过 `POST /v1/jobs` 的 Device License。
 
-生产请配置强随机 `api_key` / `jwt_secret`，见 `docs/production.env.example`。
+生产请配置强随机 `api_key` / `jwt_secret` 以及 `LICENSE_SERVICE_*` RD Service
+Credential，见 `docs/production.env.example`。固定的
+`vendor/license_service_client-1.0.0rc2-py3-none-any.whl` 会随 requirements
+安装，禁止使用相邻 License Service 源码 editable install。
 
 ### 2. 瘦客户端
 
@@ -70,6 +80,16 @@ python run.py
 # 桌面壳（连已启动的服务端）
 $env:API_BASE = "http://127.0.0.1:8000"
 python client/desktop/main.py
+```
+
+旧客户端尚未发送 Device Proof V3 时，`/v1/auth/redeem` 和
+`POST /v1/jobs` 会返回稳定的 `DEVICE_PROOF_REQUIRED`；服务端不会增加 legacy
+授权旁路。真实 HTTP 服务端接入测试使用：
+
+```powershell
+$env:RD_BASE_URL = "https://rd.example.internal"
+$env:RD_LICENSE_KEY = "<one-time test license key>"
+python scripts/license_e2e.py
 ```
 
 或浏览器：`http://127.0.0.1:8000/ui/`
@@ -95,7 +115,8 @@ python scripts/build_exe.py --noconsole
 $env:API_BASE = "http://127.0.0.1:8000"
 $env:API_KEY  = "dev-key-change-me"
 python scripts/smoke_health.py
-python scripts/e2e_hongguo.py --search "剧名" --range 1-1
+# e2e_fanqie.py / e2e_hongguo.py 的旧 API-Key-only Job 创建已明确阻断
+python scripts/license_e2e.py
 ```
 
 更多见 [`scripts/README.md`](./scripts/README.md)。番茄/红果设备与 Frida 属**服务端运维**，见平台 setup 文档。

@@ -2,25 +2,20 @@
 
 > **版本**: `v1.0` (Stage E4)  
 > **适用对象**: 客服、系统管理员与运维人员  
-> **安全警示**: 请勿将真实卡密、数据库备份文件及生产 `API_KEY` / `JWT_SECRET` 提交至代码仓库！
+> **安全警示**: License Service private key、完整 License Key、真实卡密、数据库备份文件及生产 `API_KEY` / `JWT_SECRET` 均不得提交至代码仓库！
 
 ---
 
-## 一、卡密管理 (发卡与作废)
+## 一、历史 CardKey 维护边界
 
-### 1. 批量生成与分发卡密
+### 1. 新生产 License
 
-在服务器或运维环境下，通过 `scripts/gen_card_keys.py` 脚本批量生成指定有效天数和批次的卡密：
+新生产 License/License Key 属于统一 License Service 管理面。RD 不复制管理面，
+不得用本地脚本生成或把 `card_keys` 表当作当前授权事实源。请使用 License
+Service 正式运维流程 provisioning/rotate RD Service Credential。
 
-```powershell
-# 开启服务路径环境
-$env:PYTHONPATH="server"
-
-# 生成 30 天 VIP 卡密 50 张，批次为 B20260723
-python scripts/gen_card_keys.py --days 30 --count 50 --batch B20260723
-```
-
-生成的卡密将自动写入 SQLite 数据库 (`app.db`)。复制控制台输出的卡密列表并录入销售/卡密平台即可。
+`scripts/gen_card_keys.py` 默认输出 `LEGACY_LOCAL_CARD_KEYS_DISABLED` 并以非零
+状态退出。只有明确的历史迁移任务才允许追加 `--legacy-migration-only`。
 
 ### 2. 批量作废非法/未核销卡密 (黑产/作弊处理)
 
@@ -43,7 +38,8 @@ X-API-Key: <YOUR_OPS_API_KEY>
 }
 ```
 
-*注意：已被用户兑换的卡密不会受批次作废影响；未兑换的卡密在作废后用户再次尝试兑换将提示 "卡密已作废或不存在"。*
+*注意：该接口只影响 RD 历史 `card_keys` 表，不会 revoke、invalidate 或修改
+License Service 中的任何 License。*
 
 ---
 
@@ -85,7 +81,8 @@ python scripts/ops_admin.py unban-user --username bad_user_01
 
 ## 三、客服查询与排查
 
-当用户反馈 "VIP 未生效"、"无法创建任务" 时，客服人员可通过 CLI 或接口查询用户明细与今日配额：
+当用户反馈 "License 未生效"、"无法创建任务" 时，先核对 License Service
+中的 Device/License 状态，再通过 CLI 或接口查询 RD 用户与今日配额：
 
 ```powershell
 # 查询指定用户明细
@@ -102,8 +99,8 @@ python scripts/ops_admin.py list-users --skip 0 --limit 20
 用户名:         client_user_01
 账号启用状态:   启用
 注册时间:       2026-07-20 10:00:00
-VIP 到期时间:   2026-08-20 10:00:00
-VIP 状态:       VIP 会员
+ Legacy VIP 到期显示: 2026-08-20 10:00:00 (仅兼容展示)
+ License 状态:     以 License Service Device check 为准
 今日创建任务数: 5
 ```
 
@@ -114,8 +111,9 @@ VIP 状态:       VIP 会员
 | 故障现象 | 排查步骤 | 处置措施 |
 | :--- | :--- | :--- |
 | **全员收到 401 报错** | 检查服务端 `.env` 中 `AUTH_MODE` | 若为 `jwt_only` 或 `dual`，确认 `JWT_SECRET` 是否改变导致全员 token 失效 |
-| **单用户提示 403 VIP 需要兑换** | 查询 `inspect-user` | 检查 `vip_expires_at` 是否已过期，指导用户重新兑换新卡密 |
-| **单用户提示 429 配额用尽** | 检查今日任务创建数 | VIP 默认每日有额度限制 (如 50 次/天)，可于次日 UTC 0:00 自动重置 |
+| **单用户提示 403 `LICENSE_EXPIRED` / `DEVICE_NOT_ACTIVATED`** | 检查 Device Proof 与 License Service 状态 | 不使用 `vip_expires_at` 或本地 CardKey 绕过；按 License Service 管理流程处理 |
+| **单用户提示 503 `LICENSE_SERVICE_UNAVAILABLE`** | 检查 `/v1/admin/health` 的 License 配置/可达状态与服务日志 | 修复 RD Service Credential/TLS/License Service 网络，保持 fail-closed |
+| **单用户提示 429 配额用尽** | 检查 RD 今日任务创建数 | Quota 仍归 RD 所有，于次日 UTC 0:00 自动重置 |
 | **密钥泄漏风控** | 立即修改 `.env` 中的 `API_KEY` 与 `JWT_SECRET` | 重启 `server/app/main.py`；由于 `JWT_SECRET` 修改，全员旧 token 将安全失效并需重新登录 |
 
 ---
@@ -148,4 +146,3 @@ python scripts/backup_db.py restore --file data/backups/app_backup_20260723_1600
 ```
 
 *注意：在还原数据库前，建议先停止 `main.py` 服务进程，还原完成后再重新启动服务。*
-

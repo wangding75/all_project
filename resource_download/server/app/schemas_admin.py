@@ -45,7 +45,10 @@ class UserDetailResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    vip_expires_at: datetime | None
+    vip_expires_at: datetime | None = Field(
+        default=None,
+        description="DEPRECATED legacy display field; not License authorization",
+    )
     is_vip: bool
     job_count_today: int = 0
 
@@ -59,7 +62,10 @@ class UserListItem(BaseModel):
     username: str
     is_active: bool
     created_at: datetime
-    vip_expires_at: datetime | None
+    vip_expires_at: datetime | None = Field(
+        default=None,
+        description="DEPRECATED legacy display field; not License authorization",
+    )
     is_vip: bool
 
     model_config = ConfigDict(from_attributes=True)
@@ -81,6 +87,9 @@ class AdminHealthResponse(BaseModel):
     disk_free_bytes: int = 0
     active_jobs: int = 0
     sign_pool_summary: dict[str, Any] = Field(default_factory=dict)
+    license_service_configured: bool = False
+    license_service_reachable: bool = False
+    license_cache_ttl_seconds: int = 0
 
 
 class AdminMetricsResponse(BaseModel):
@@ -91,4 +100,3 @@ class AdminMetricsResponse(BaseModel):
     jobs_success_count: int = 0
     jobs_failed_count: int = 0
     platform_stats: dict[str, dict[str, int]] = Field(default_factory=dict)
-

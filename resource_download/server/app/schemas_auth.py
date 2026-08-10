@@ -36,7 +36,10 @@ class UserRegisterResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    vip_expires_at: datetime | None
+    vip_expires_at: datetime | None = Field(
+        default=None,
+        description="DEPRECATED legacy display field; not a License authorization fact",
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,7 +57,10 @@ class UserLoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
-    vip_expires_at: datetime | None
+    vip_expires_at: datetime | None = Field(
+        default=None,
+        description="DEPRECATED legacy display field; not a License authorization fact",
+    )
 
 
 class UserMeResponse(BaseModel):
@@ -65,7 +71,10 @@ class UserMeResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    vip_expires_at: datetime | None
+    vip_expires_at: datetime | None = Field(
+        default=None,
+        description="DEPRECATED legacy display field; not a License authorization fact",
+    )
     # 额度展示（设置页）
     is_vip: bool = False
     jobs_today: int = 0

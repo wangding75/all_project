@@ -93,7 +93,7 @@ def create_vip_user(client: TestClient, db, username: str, password: str = "pass
     return login_res.json()["access_token"]
 
 
-def test_user_job_isolation(client: TestClient, db_session):
+def test_user_job_isolation(client: TestClient, db_session, device_headers):
     """用户 A 创建的 Job，用户 B token 获取或取消均报 404 (IDOR 防御)。"""
     settings = get_settings()
     settings.auth_mode = "dual"
@@ -105,7 +105,7 @@ def test_user_job_isolation(client: TestClient, db_session):
     create_res = client.post(
         "/v1/jobs",
         json={"platform": "hongguo", "id": "12345", "range": "1-1"},
-        headers={"Authorization": f"Bearer {token_a}"},
+        headers={"Authorization": f"Bearer {token_a}", **device_headers},
     )
     assert create_res.status_code == 200
     job_id_a = create_res.json()["job_id"]
@@ -124,7 +124,7 @@ def test_user_job_isolation(client: TestClient, db_session):
     assert cancel_b.status_code == 404
 
 
-def test_user_list_and_summary_isolation(client: TestClient, db_session):
+def test_user_list_and_summary_isolation(client: TestClient, db_session, device_headers):
     """列表与 summary 对用户 B 不暴露 A 的任务。"""
     settings = get_settings()
     settings.auth_mode = "dual"
@@ -136,7 +136,7 @@ def test_user_list_and_summary_isolation(client: TestClient, db_session):
     client.post(
         "/v1/jobs",
         json={"platform": "hongguo", "id": "66666", "range": "1-1"},
-        headers={"Authorization": f"Bearer {token_a}"},
+        headers={"Authorization": f"Bearer {token_a}", **device_headers},
     )
 
     # A 列出 Job
@@ -222,7 +222,7 @@ def test_file_isolation_idor(client: TestClient, db_session):
     assert dl_a.content == b"dummy video data"
 
 
-def test_ops_key_sees_all_in_dual_mode(client: TestClient, db_session):
+def test_ops_key_sees_all_in_dual_mode(client: TestClient, db_session, device_headers):
     """ops API Key 在 dual 模式下可以查看/下载全量任务与文件。"""
     settings = get_settings()
     settings.auth_mode = "dual"
@@ -231,7 +231,7 @@ def test_ops_key_sees_all_in_dual_mode(client: TestClient, db_session):
     create_res = client.post(
         "/v1/jobs",
         json={"platform": "hongguo", "id": "99999", "range": "1-1"},
-        headers={"Authorization": f"Bearer {token_a}"},
+        headers={"Authorization": f"Bearer {token_a}", **device_headers},
     )
     job_id_a = create_res.json()["job_id"]
 

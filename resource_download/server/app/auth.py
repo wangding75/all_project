@@ -31,8 +31,6 @@ def _unauthorized(detail: str) -> HTTPException:
         detail=detail,
         headers={"WWW-Authenticate": "Bearer"},
     )
-
-
 def _match_api_key(x_api_key: str | None) -> Identity | None:
     settings = get_settings()
     if x_api_key and x_api_key == settings.api_key:
@@ -185,26 +183,4 @@ async def require_ops(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="需要运维管理员权限 (ops API Key)",
     )
-
-
-
-async def require_vip(
-    identity: Identity = Depends(require_identity),
-    db: Session = Depends(get_db),
-) -> Identity:
-    """校验是否是 VIP 或者是 ops API Key 身份。"""
-    if identity.is_ops or identity.kind == "api_key":
-        return identity
-
-    if identity.kind == "user" and identity.user_id is not None:
-        user = db.query(User).filter(User.id == identity.user_id).first()
-        if user and user.is_active:
-            from datetime import datetime, timezone
-            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-            if user.vip_expires_at and user.vip_expires_at > now_utc:
-                return identity
-
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="需要 VIP，请兑换卡密",
-    )
+# End of authentication dependencies.

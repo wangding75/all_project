@@ -164,14 +164,33 @@ def test_invalidate_card_key_batch(client: TestClient, db_session):
     assert inv_resp.status_code == 200
     assert inv_resp.json()["invalidated_count"] == 2
 
-    # 尝试兑换已作废的卡密 -> 失败 400 (card_code)
-    r1 = client.post("/v1/auth/redeem", headers=user_headers, json={"card_code": "CARD-BATCH1-01"})
-    assert r1.status_code == 400
-
-    # 尝试兑换未作废的批次卡密 -> 成功 200
-    r3 = client.post("/v1/auth/redeem", headers=user_headers, json={"card_code": "CARD-GOOD-01"})
+    # Redeem 已经是 License Service activation proxy；本地 CardKey 作废只
+    # 影响历史 RD 表，不得阻断或完成新的 Device License 激活。
+    activation = {
+        "device_id": "dev_" + "1" * 64,
+        "device_key_algorithm": "ED25519",
+        "device_public_key": "dGVzdC1wdWJsaWMta2V5",
+        "proof": {
+            "timestamp": 1760000000,
+            "nonce": "activation-proof-nonce-1234",
+            "signature": "activation-proof-signature",
+        },
+    }
+    r1 = client.post(
+        "/v1/auth/redeem",
+        headers=user_headers,
+        json={"card_code": "CARD-BATCH1-01", **activation},
+    )
+    assert r1.status_code == 200
+    r3 = client.post(
+        "/v1/auth/redeem",
+        headers=user_headers,
+        json={"card_code": "CARD-GOOD-01", **activation},
+    )
     assert r3.status_code == 200
     assert r3.json()["success"] is True
+    db_session.expire_all()
+    assert db_session.query(CardKey).filter(CardKey.code == "CARD-GOOD-01").one().is_used is False
 
 
 def test_admin_list_users(client: TestClient, db_session):

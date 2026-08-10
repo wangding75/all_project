@@ -23,7 +23,7 @@ Base URL: `http://127.0.0.1:8000`
 
 | AUTH_MODE | 有效凭证 | 说明 |
 |-----------|----------|------|
-| **dev** | `X-API-Key: <API_KEY>` | 与历史一致；脚本 e2e **零改**；忽略 Bearer Token |
+| **dev** | `X-API-Key: <API_KEY>` | RD 开发/运维身份；不能绕过 Device License；忽略 Bearer Token |
 | **dual** | `X-API-Key` **或** `Authorization: Bearer <token>` | Key 匹配 → 运维身份 `is_ops=true`；Bearer → 用户身份 `is_ops=false` 并校验数据库状态 |
 | **jwt_only** | 仅 `Authorization: Bearer <token>` | 仅验证 Bearer JWT；忽略 API Key |
 
@@ -39,8 +39,50 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 身份语义（服务端内部）：
 
-- `kind=api_key`，`is_ops=true`：运维/本机 Key，VIP 门闸可放行
+- `kind=api_key`，`is_ops=true`：运维/本机 Key，仍必须提供 Device Proof 才能访问 License-Protected 业务
 - `kind=user`：已登录用户，填充 `user_id` / `username`
+
+### 统一 License Service 配置
+
+RD 使用固定版本 `license-service-client==1.0.0rc2` wheel，Service code 与
+Device Proof audience 固定为 `rd`。生产必须配置：
+
+| 变量 | 说明 |
+|------|------|
+| `LICENSE_SERVICE_BASE_URL` | License Service base URL，不含 `/v1` |
+| `LICENSE_SERVICE_KEY_ID` | RD Service Credential 的 key id |
+| `LICENSE_SERVICE_PRIVATE_KEY` | RD Service private key，仅部署 Secret 注入，不进 Git/日志/客户端 |
+| `LICENSE_SERVICE_AUDIENCE` | 固定 `rd` |
+| `LICENSE_CACHE_TTL_SECONDS` | `0..300`，默认 `30`；单 worker 使用 `MemoryReplayStore` |
+| `LICENSE_SERVICE_TIMEOUT` | SDK HTTP timeout，默认 `3.0` 秒 |
+
+### Device Proof V3 transport
+
+受保护请求必须同时携带以下 RD headers，并绑定当前真实 HTTP method、path +
+query 与 raw body SHA-256：
+
+```http
+X-Device-Id: dev_<64 lowercase hex>
+X-Device-Key-Algorithm: ED25519
+X-Device-Proof-Timestamp: <unix seconds>
+X-Device-Proof-Nonce: <fresh nonce>
+X-Device-Proof-Signature: <base64url-no-padding>
+```
+
+`device_id` 不是凭证；客户端必须使用真实 Device private key 生成
+`LS-DEVICE-V3` proof。缺少字段返回 `403 DEVICE_PROOF_REQUIRED`。
+
+当前实际迁移的 License-Protected endpoint（保持现有 `require_vip` 范围）：
+
+- `POST /v1/jobs`
+- `POST /v1/jobs/batch`
+- `POST /v1/jobs/queue/bulk/retry`
+- `POST /v1/jobs/{job_id}/retry`
+- `PUT /v1/automation/hongguo-new`
+- `POST /v1/automation/hongguo-new/scan`
+
+search/detail、Job list/status/files、register/login、health 与 admin 不因本轮
+接入被新增 License Guard；它们保留原有身份、owner 或运维边界。
 
 ### 频率限制与每日配额（D-4）
 
@@ -48,7 +90,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 - **全站 IP 限流**：按客户端 IP 限制，默认最大 `60` 次每分钟。超过限制返回 **429 Too Many Requests**，携带提示 `{"detail": "请求过于频繁"}`。探活接口 `/health` 及 `/` 豁免限流。
 - **注册/登录限流**：针对 `/v1/auth/register` 与 `/v1/auth/login` 进行更严格的速率限制，默认最大 `10` 次每分钟。超过限制返回 **429 Too Many Requests**。
-- **VIP 每日任务配额**：非 ops 的普通 VIP 用户每日可建任务数（`POST /v1/jobs`）受 `VIP_JOBS_PER_DAY`（默认 `50`）限制，超过日配额将返回 **429 Too Many Requests**，返回细节为 `{"detail": "今日下载配额已用尽"}`。
+- **RD 每日任务配额**：只有 License decision 为 `ACTIVE` 后，RD 才执行普通用户每日任务数（`POST /v1/jobs`）的 `VIP_JOBS_PER_DAY`（默认 `50`）限制，超过日配额返回 **429 Too Many Requests**。Quota 不迁移到 License Service。
 - **管理员 (ops / X-API-Key) 豁免**：使用有效 API Key 发起的请求完全不受每日配额计数及配额限制的影响。
 
 ### 多租户资源隔离与防探测（E1）
@@ -209,6 +251,10 @@ ByteVC2 编码，只用于诊断，不作为通用播放器可播放下载。
 
 ## POST /v1/jobs
 
+放行条件为：RD User/JWT 身份、Device License `ACTIVE`、RD Quota 通过。License
+状态 `INACTIVE` 返回 **403**，License Service 不可用/超时/非 2xx 返回 **503**；
+任何情况下都不会回退到 `vip_expires_at`、CardKey 或 API Key bypass。
+
 ```json
 {
   "platform": "hongguo",
@@ -264,7 +310,7 @@ POST /v1/jobs/{job_id}/retry
 {"job_ids": ["job-2", "job-1"]}
 ```
 
-失败或已取消任务可通过 `retry` 重新进入队列，并再次接受 VIP 与每日配额校验。
+失败或已取消任务可通过 `retry` 重新进入队列，并再次接受 Device License 与 RD 每日配额校验。
 
 ---
 
@@ -373,13 +419,23 @@ POST /v1/automation/hongguo-new/scan
 
 依赖用户身份鉴权（`Authorization: Bearer <token>`）。
 
-兑换卡密以延长用户的 VIP 有效期。
+保留旧 path 的 Activation Proxy。`card_code` 只是兼容字段名，会作为
+`license_key` 转发到 License Service；RD 不查询/消费本地 CardKey，也不写入
+`User.vip_expires_at`。
 
 ### 请求体
 
 ```json
 {
-  "card_code": "RD-DECBE35422D12CB7DE18B834"
+  "card_code": "LIC-...",
+  "device_id": "dev_<64 lowercase hex>",
+  "device_key_algorithm": "ED25519",
+  "device_public_key": "<base64url-no-padding>",
+  "proof": {
+    "timestamp": 0,
+    "nonce": "<fresh nonce>",
+    "signature": "<base64url-no-padding>"
+  }
 }
 ```
 
@@ -388,13 +444,20 @@ POST /v1/automation/hongguo-new/scan
 ```json
 {
   "success": true,
-  "message": "卡密兑换成功",
-  "vip_expires_at": "2026-08-20T18:14:56.123456"
+  "message": "ACTIVATED",
+  "reason": "ACTIVATED",
+  "license_expires_at": "2099-01-01T00:00:00+00:00",
+  "max_devices": 2,
+  "active_devices": 1,
+  "vip_expires_at": "2099-01-01T00:00:00+00:00"
 }
 ```
 
 - 仅使用 `X-API-Key` 访问时返回 **403 Forbidden**（请使用用户登录后兑换）。
-- 卡密序列号不存在或已被使用返回 **400 Bad Request**（"卡密不存在" 或 "卡密已被使用"）。
+- Device Proof 缺失返回 **403 `DEVICE_PROOF_REQUIRED`**。
+- License Service 业务拒绝返回 **403**，不可用/超时/非 2xx 返回 **503**。
+- `vip_expires_at` 是 deprecated display alias，不再是授权事实；License truth 以
+  License Service 返回为准。
 - 凭证失效或过期返回 **401 Unauthorized**。
 
 ---

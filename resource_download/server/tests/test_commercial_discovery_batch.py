@@ -140,6 +140,7 @@ def test_discover_forwards_real_filters_and_applies_episode_threshold(
 def test_batch_jobs_create_each_item_and_return_batch_result(
     commercial_client,
     monkeypatch,
+    device_headers,
 ):
     manager = _BatchManager()
     monkeypatch.setattr(router_module, "get_job_manager", lambda: manager)
@@ -151,7 +152,7 @@ def test_batch_jobs_create_each_item_and_return_batch_result(
 
     response = commercial_client.post(
         "/v1/jobs/batch",
-        headers={"X-API-Key": "commercial-test-key"},
+        headers={"X-API-Key": "commercial-test-key", **device_headers},
         json={
             "items": [
                 {"platform": "hongguo", "id": "hg-1", "range": "all"},
@@ -171,10 +172,10 @@ def test_batch_jobs_create_each_item_and_return_batch_result(
     assert manager.created[1]["range_spec"] == "1-10"
 
 
-def test_batch_jobs_validate_non_empty_items(commercial_client):
+def test_batch_jobs_validate_non_empty_items(commercial_client, device_headers):
     response = commercial_client.post(
         "/v1/jobs/batch",
-        headers={"X-API-Key": "commercial-test-key"},
+        headers={"X-API-Key": "commercial-test-key", **device_headers},
         json={"items": []},
     )
     assert response.status_code == 422

@@ -5,6 +5,7 @@ from __future__ import annotations
 import lzma
 import os
 import urllib.request
+import hashlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,16 @@ DOWNLOAD_URL = f"https://github.com/frida/frida/releases/download/{FRIDA_VERSION
 
 OUT_XZ = SETUP_DIR / FRIDA_FILE
 OUT_BIN = SETUP_DIR / "sys_hlpd"  # Renamed for anti-detection
+LICENSE_SDK_WHEEL = ROOT / "vendor" / "license_service_client-1.0.0rc2-py3-none-any.whl"
+LICENSE_SDK_SHA256 = "21FB18CB36A040AEDDF4C946112346BD4F94FDA950BAAAA3A45277C05385E138"
+
+
+def check_license_sdk_wheel() -> None:
+    if not LICENSE_SDK_WHEEL.is_file():
+        raise RuntimeError(f"缺少固定 License Service SDK Wheel: {LICENSE_SDK_WHEEL}")
+    actual = hashlib.sha256(LICENSE_SDK_WHEEL.read_bytes()).hexdigest().upper()
+    if actual != LICENSE_SDK_SHA256:
+        raise RuntimeError(f"License SDK SHA-256 mismatch: expected {LICENSE_SDK_SHA256}, got {actual}")
 
 
 def download_frida() -> None:
@@ -59,6 +70,7 @@ def download_frida() -> None:
 def main() -> None:
     print("=== Start Packaging / CI-CD Build Task ===")
     try:
+        check_license_sdk_wheel()
         download_frida()
         print("=== Packaging Task Finished Successfully ===")
     except Exception as e:

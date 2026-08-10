@@ -71,51 +71,11 @@ def main() -> None:
         )
 
         print("== create job ==")
-        r = c.post(
-            "/v1/jobs",
-            json={
-                "platform": "hongguo",
-                "id": series_id,
-                "range": args.range_spec,
-                "options": {"quality": args.quality, "concurrency": 1},
-            },
+        die(
+            "BLOCKED: this legacy E2E client only has X-API-Key and cannot create a "
+            "License-Protected job; use scripts/license_e2e.py with Device Proof V3.",
+            code=2,
         )
-        if r.status_code != 200:
-            die(f"create job failed: {r.status_code} {r.text}")
-        job = r.json()
-        job_id = job["job_id"]
-        print(f"job_id={job_id}")
-
-        print("== poll ==")
-        deadline = time.time() + args.timeout
-        while time.time() < deadline:
-            r = c.get(f"/v1/jobs/{job_id}")
-            if r.status_code != 200:
-                die(f"get job failed: {r.status_code} {r.text}")
-            job = r.json()
-            print(
-                f"  status={job.get('status')} progress={job.get('progress')} "
-                f"msg={job.get('message')} err={job.get('error')}"
-            )
-            if job.get("status") in {"success", "failed", "cancelled"}:
-                break
-            time.sleep(args.poll)
-        else:
-            die("job timeout")
-
-        if job.get("status") != "success":
-            die(f"job not success:\n{pretty(job)}")
-
-        print("== download files ==")
-        for f in job.get("files") or []:
-            file_id = f["file_id"]
-            name = f.get("name") or Path(file_id).name
-            r = c.get(f"/v1/files/{file_id}")
-            if r.status_code != 200:
-                die(f"file failed: {file_id} {r.status_code}")
-            dest = out_dir / name
-            dest.write_bytes(r.content)
-            print(f"  saved {dest} ({len(r.content)} bytes)")
 
     print("OK")
 

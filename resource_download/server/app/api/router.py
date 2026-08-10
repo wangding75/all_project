@@ -11,9 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app import __version__
-from app.auth import Identity, require_identity, require_vip
+from app.auth import Identity, require_identity
 from app.config import get_settings
 from app.jobs import get_job_manager
+from app.license_guard import require_active_device_license
 from app.models import (
     BatchJobCreateRequest,
     BatchJobCreateResponse,
@@ -560,7 +561,7 @@ async def detail(
 @api_router.post("/v1/jobs", response_model=JobResponse)
 async def create_job(
     body: JobCreateRequest,
-    identity: Identity = Depends(require_vip),
+    identity: Identity = Depends(require_active_device_license),
     db: Session = Depends(get_db),
 ) -> JobResponse:
     try:
@@ -598,7 +599,7 @@ async def create_job(
 @api_router.post("/v1/jobs/batch", response_model=BatchJobCreateResponse)
 async def create_jobs_batch(
     body: BatchJobCreateRequest,
-    identity: Identity = Depends(require_vip),
+    identity: Identity = Depends(require_active_device_license),
     db: Session = Depends(get_db),
 ) -> BatchJobCreateResponse:
     """批量创建任务；逐项返回 created/skipped/errors，不因单项失败回滚整批。"""
@@ -772,7 +773,7 @@ async def bulk_queue_action(
 @api_router.post("/v1/jobs/queue/bulk/retry", response_model=QueueBulkResponse)
 async def bulk_retry_jobs(
     body: QueueBulkRequest,
-    identity: Identity = Depends(require_vip),
+    identity: Identity = Depends(require_active_device_license),
     db: Session = Depends(get_db),
 ) -> QueueBulkResponse:
     from app.quota import check_job_quota, increment_job_quota
@@ -812,7 +813,7 @@ async def get_job(
 @api_router.post("/v1/jobs/{job_id}/retry", response_model=JobResponse)
 async def retry_job(
     job_id: str,
-    identity: Identity = Depends(require_vip),
+    identity: Identity = Depends(require_active_device_license),
     db: Session = Depends(get_db),
 ) -> JobResponse:
     from app.quota import check_job_quota, increment_job_quota
@@ -859,7 +860,7 @@ async def get_hongguo_new_monitor(
 )
 async def configure_hongguo_new_monitor(
     body: HongguoMonitorConfig,
-    identity: Identity = Depends(require_vip),
+    identity: Identity = Depends(require_active_device_license),
 ) -> HongguoMonitorStatus:
     if body.quality != "1080p":
         raise HTTPException(status_code=400, detail="红果自动下载当前仅支持可播放的 1080p")
@@ -873,7 +874,7 @@ async def configure_hongguo_new_monitor(
     response_model=HongguoMonitorStatus,
 )
 async def scan_hongguo_new_now(
-    identity: Identity = Depends(require_vip),
+    identity: Identity = Depends(require_active_device_license),
 ) -> HongguoMonitorStatus:
     from app.automation import get_hongguo_monitor_service
 

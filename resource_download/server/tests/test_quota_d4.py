@@ -11,7 +11,6 @@ from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.db import Base, get_db
 from app.config import get_settings
-from app.models_orm import CardKey
 
 # 配置内存 SQLite 数据库用于测试
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -77,8 +76,8 @@ def reset_settings():
 
 # --- 测试用例 ---
 
-def test_quota_limit_for_vip(client, db_session):
-    # 1. VIP，VIP_JOBS_PER_DAY=2，两次 jobs -> status not in (403, 429)
+def test_quota_limit_after_license_active(client, db_session, device_headers):
+    # License ACTIVE 后仍由 RD 自己执行每日配额。
     # 2. 同上第三次 jobs -> 429，文案含配额/用尽
     get_settings().auth_mode = "dual"
     get_settings().vip_jobs_per_day = 2
@@ -94,24 +93,14 @@ def test_quota_limit_for_vip(client, db_session):
     )
     token = login_resp.json()["access_token"]
 
-    # 给用户充值成 VIP
-    card = CardKey(code="RD-VIPCARD", duration_days=30, is_used=False)
-    db_session.add(card)
-    db_session.commit()
-    redeem_resp = client.post(
-        "/v1/auth/redeem",
-        json={"card_code": "RD-VIPCARD"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert redeem_resp.status_code == 200
-
     jobs_body = {"platform": "fanqie", "id": "12345", "range": "1-1"}
+    headers = {"Authorization": f"Bearer {token}", **device_headers}
 
     # 第一次建任务 -> 成功
     resp1 = client.post(
         "/v1/jobs",
         json=jobs_body,
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
     )
     assert resp1.status_code not in (403, 429)
 
@@ -119,7 +108,7 @@ def test_quota_limit_for_vip(client, db_session):
     resp2 = client.post(
         "/v1/jobs",
         json=jobs_body,
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
     )
     assert resp2.status_code not in (403, 429)
 
@@ -127,13 +116,13 @@ def test_quota_limit_for_vip(client, db_session):
     resp3 = client.post(
         "/v1/jobs",
         json=jobs_body,
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
     )
     assert resp3.status_code == 429
     assert "今日下载配额已用尽" in resp3.json()["detail"]
 
 
-def test_quota_bypass_for_ops(client):
+def test_quota_bypass_for_ops(client, device_headers):
     # 3. VIP_JOBS_PER_DAY=1，多次 Key jobs -> 不因配额 429
     get_settings().auth_mode = "dual"
     get_settings().api_key = "test-api-key"
@@ -146,7 +135,7 @@ def test_quota_bypass_for_ops(client):
         resp = client.post(
             "/v1/jobs",
             json=jobs_body,
-            headers={"X-API-Key": "test-api-key"},
+        headers={"X-API-Key": "test-api-key", **device_headers},
         )
         assert resp.status_code != 429
 

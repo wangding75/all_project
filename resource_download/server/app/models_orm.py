@@ -16,6 +16,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(64), unique=True, nullable=False, index=True)
     hashed_password = Column(String(256), nullable=False)
+    # Legacy/display compatibility only. New activation never writes this;
+    # License Service is the production authorization truth.
     vip_expires_at = Column(DateTime, nullable=True, index=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(
@@ -32,7 +34,7 @@ class User(Base):
 
 
 class CardKey(Base):
-    """卡密表模型。"""
+    """Legacy local CardKey data; not a current License Service truth source."""
 
     __tablename__ = "card_keys"
 

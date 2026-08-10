@@ -53,58 +53,11 @@ def main() -> None:
         print(f"title={detail.get('title')} id={detail.get('id')} segments={len(detail.get('segments') or [])}")
 
         print("== create job ==")
-        r = c.post(
-            "/v1/jobs",
-            json={
-                "platform": "fanqie",
-                "id": sample_id,
-                "range": args.range_spec,
-                "options": {},
-            },
+        die(
+            "BLOCKED: this legacy E2E client only has X-API-Key and cannot create a "
+            "License-Protected job; use scripts/license_e2e.py with Device Proof V3.",
+            code=2,
         )
-        if r.status_code != 200:
-            die(f"create job failed: {r.status_code} {r.text}")
-        job = r.json()
-        job_id = job["job_id"]
-        print(f"job_id={job_id}")
-
-        print("== poll ==")
-        deadline = time.time() + args.timeout
-        while time.time() < deadline:
-            r = c.get(f"/v1/jobs/{job_id}")
-            if r.status_code != 200:
-                die(f"get job failed: {r.status_code} {r.text}")
-            job = r.json()
-            status = job.get("status")
-            print(f"  status={status} progress={job.get('progress')} msg={job.get('message')}")
-            if status in {"success", "failed", "cancelled"}:
-                break
-            time.sleep(args.poll)
-        else:
-            die("job timeout")
-
-        if job.get("status") != "success":
-            die(f"job not success:\n{pretty(job)}")
-
-        files = job.get("files") or []
-        if not files:
-            die("job success but no files")
-
-        if args.skip_download:
-            print(pretty(job))
-            print("OK (skip download)")
-            return
-
-        print("== download files ==")
-        for f in files:
-            file_id = f["file_id"]
-            name = f.get("name") or Path(file_id).name
-            r = c.get(f"/v1/files/{file_id}")
-            if r.status_code != 200:
-                die(f"download failed: {file_id} {r.status_code} {r.text}")
-            dest = out_dir / name
-            dest.write_bytes(r.content)
-            print(f"  saved {dest} ({len(r.content)} bytes)")
 
     print("OK")
 

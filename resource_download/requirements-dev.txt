@@ -4,3 +4,4 @@ pytest-asyncio>=0.23.0
 ruff>=0.2.0
 pyinstaller>=6.0.0
 pywebview>=4.0.0
+./vendor/license_service_client-1.0.0rc2-py3-none-any.whl

@@ -59,12 +59,16 @@ def test_default_api_key_non_loopback_rejected():
 
 
 def test_dual_mode_strong_secrets_public_host_allowed():
-    """AUTH_MODE=dual，配合强 JWT 与强 API Key，且 HOST=0.0.0.0 时校验通过。"""
+    """生产外网配置必须同时提供 RD License Service Credential。"""
     settings = Settings(
         auth_mode="dual",
         jwt_secret="super-strong-jwt-secret-key-32bytes!",
         api_key="strong-api-key-99999999",
         host="0.0.0.0",
+        license_service_base_url="https://license.internal.example",
+        license_service_key_id="rd-key-1",
+        license_service_private_key="c2VydmljZS1wcml2YXRlLWtleQ",
+        license_service_audience="rd",
     )
     # 不应抛出任何异常
     assert_production_secrets(settings)

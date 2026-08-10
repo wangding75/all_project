@@ -60,6 +60,39 @@ def assert_production_secrets(settings: Settings) -> None:
             "⚠️ [E3 开发警告] 当前使用的是默认开发 API Key ('dev-key-change-me')！在正式生产环境或对外提供服务时请通过 .env 覆盖。"
         )
 
+    # License-Protected business must fail closed in production.  Local
+    # loopback development may start without credentials, but its protected
+    # routes still return a stable 503 rather than silently disabling the gate.
+    license_production = not is_loopback_host(host)
+    if license_production:
+        missing = [
+            name
+            for name, value in (
+                ("LICENSE_SERVICE_BASE_URL", settings.license_service_base_url),
+                ("LICENSE_SERVICE_KEY_ID", settings.license_service_key_id),
+                ("LICENSE_SERVICE_PRIVATE_KEY", settings.license_service_private_key),
+            )
+            if not str(value or "").strip()
+        ]
+        if missing:
+            raise RuntimeError(
+                "🚫 [T06 生产安全阻断] License Service 配置缺失："
+                + ", ".join(missing)
+                + "。受保护业务必须 fail-closed。"
+            )
+        if settings.license_service_audience != "rd":
+            raise RuntimeError(
+                "🚫 [T06 生产安全阻断] LICENSE_SERVICE_AUDIENCE 必须固定为 rd。"
+            )
+        if not settings.license_service_base_url.lower().startswith("https://"):
+            raise RuntimeError(
+                "🚫 [T06 生产安全阻断] 生产 License Service 必须使用 HTTPS。"
+            )
+        if not settings.license_service_verify:
+            raise RuntimeError(
+                "🚫 [T06 生产安全阻断] 生产 License Service 禁止关闭 TLS verify。"
+            )
+
     if settings.jwt_secret == DEFAULT_JWT_SECRET and mode == "dev":
         logging.warning(
             "⚠️ [E3 开发警告] 当前使用的是默认 JWT 密钥 ('change-me-jwt-secret')！在启用 dual/jwt_only 商业模式前请通过 .env 覆盖。"

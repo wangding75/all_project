@@ -16,8 +16,10 @@
 2. **轻量本地持久化**:
    - 数据库使用嵌入式 SQLite (`data/app.db`)，由 SQLAlchemy 统一映射。
    - 任务记录采用 `os.fsync` + `os.replace` 原子 JSON 写入（`data/jobs/*.json`）。
-3. **脱机与零外部消息队列**:
-   - 暂不引入 Redis、Celery、RabbitMQ 或 PostgreSQL，全部异步下载任务与请求限流在进程内处理。
+3. **License Service 外部依赖**:
+   - RD 不直连 License PostgreSQL；通过固定 wheel 中的 `LicenseServerClient`
+     访问 `rd` Tenant。RD 自己的用户、任务和 Quota 仍在 SQLite。
+   - 本轮 `WORKERS=1` 约束继续保留，因此授权缓存使用 SDK `MemoryReplayStore`。
 
 ---
 
@@ -32,7 +34,7 @@
   ```bash
   pip install -r requirements.txt
   ```
-  *(包含: fastapi, uvicorn, pydantic, pydantic-settings, sqlalchemy, httpx, pyjwt, fonttools, brotli)*
+   *(包含: fastapi, uvicorn, pydantic, pydantic-settings, sqlalchemy, httpx, pyjwt, fonttools, brotli 以及固定 License Service SDK wheel)*
 
 * **开发测试与打包依赖 (`requirements-dev.txt`)**:
   用于代码质量门禁、单元测试及 PyInstaller 编译打包：
@@ -113,6 +115,18 @@ AUTH_MODE=dual
 JWT_SECRET=PROD-SuperJWTSecretKey-32BytesMinimumLength!
 JWT_EXPIRE_MINUTES=10080
 
+# License Service（生产必填；从 Secret 注入，禁止提交私钥）
+LICENSE_SERVICE_BASE_URL=https://license.example.internal
+LICENSE_SERVICE_KEY_ID=<RD service_key_id>
+LICENSE_SERVICE_PRIVATE_KEY=<RD service_private_key>
+LICENSE_SERVICE_AUDIENCE=rd
+LICENSE_CACHE_TTL_SECONDS=30
+LICENSE_SERVICE_TIMEOUT=3.0
+LICENSE_SERVICE_VERIFY=true
+# LICENSE_SERVICE_CA_BUNDLE=/etc/rd/license-ca.pem
+# LICENSE_SERVICE_CLIENT_CERT=/etc/rd/license-client.crt
+# LICENSE_SERVICE_CLIENT_KEY=/etc/rd/license-client.key
+
 # 限流与每日配额
 RATE_LIMIT_PER_MINUTE=60
 RATE_LIMIT_AUTH_PER_MINUTE=10
@@ -148,7 +162,7 @@ ADB_DEVICE=127.0.0.1:16384
 
 * **深度运维健康度检查 (`GET /v1/admin/health`)**:
   *需求标头*: `X-API-Key: <PROD_API_KEY>`
-  包含 SQLite 连通性、剩余磁盘空间字节数 (`disk_free_human`)、活跃任务数及签名池 summary。
+  包含 SQLite 连通性、剩余磁盘空间字节数 (`disk_free_human`)、活跃任务数、签名池 summary，以及不泄露 Secret 的 `license_service_configured`、`license_service_reachable` 和缓存 TTL。
 
 * **运行指标导出 (`GET /v1/admin/metrics`)**:
   *需求标头*: `X-API-Key: <PROD_API_KEY>`
@@ -171,7 +185,7 @@ ADB_DEVICE=127.0.0.1:16384
 
 ### 5.3 运营命令行工具 (CLI)
 
-运维人员可通过 [scripts/ops_admin.py](file:///d:/github/all_project/resource_download/scripts/ops_admin.py) 快速管理用户与卡密：
+运维人员可通过 [scripts/ops_admin.py](file:///d:/github/all_project/resource_download/scripts/ops_admin.py) 管理 RD 用户与历史 CardKey 数据：
 
 ```powershell
 # 封禁恶意用户 (使其 JWT 立即失效)
@@ -180,9 +194,13 @@ python scripts/ops_admin.py ban-user 1001 --reason "频繁刷接口"
 # 解封用户
 python scripts/ops_admin.py unban-user 1001
 
-# 批量废除坏卡密批次
+# 批量维护历史 RD CardKey 批次（不影响 License Service，不是 License revoke）
 python scripts/ops_admin.py invalidate-batch BATCH-20260720
 ```
+
+`scripts/gen_card_keys.py` 默认返回 `LEGACY_LOCAL_CARD_KEYS_DISABLED`。只有历史
+迁移场景才允许显式添加 `--legacy-migration-only`；新的生产 License Key 必须由
+License Service 管理面生成。
 
 ---
 

@@ -1,4 +1,4 @@
-"""卡密兑换与 VIP 门闸的集成测试。"""
+"""RD authentication and License Service activation/guard contract tests."""
 
 from __future__ import annotations
 
@@ -11,11 +11,9 @@ from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.db import Base, get_db
 from app.config import get_settings
-from app.models_orm import CardKey
+from app.models_orm import CardKey, User
 
-# 配置内存 SQLite 数据库用于测试
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},
@@ -26,7 +24,6 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 @pytest.fixture(name="db_session")
 def fixture_db_session():
-    """每个测试前后创建和清理数据库表。"""
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
@@ -38,194 +35,235 @@ def fixture_db_session():
 
 @pytest.fixture(name="client")
 def fixture_client(db_session):
-    """FastAPI TestClient 夹具，覆盖 get_db 依赖。"""
     def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
+        yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
         yield c
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture(autouse=True)
 def reset_settings():
-    """每次测试前后重置 settings 状态和限流缓存。"""
     settings = get_settings()
     original_auth_mode = settings.auth_mode
     original_api_key = settings.api_key
-
-    from app.rate_limit import _rate_limit_lock, _rate_limit_cache
-    with _rate_limit_lock:
-        _rate_limit_cache.clear()
-
     yield
     settings.auth_mode = original_auth_mode
     settings.api_key = original_api_key
 
 
-# --- 测试用例矩阵 ---
+def _login(client: TestClient) -> str:
+    client.post("/v1/auth/register", json={"username": "user123", "password": "password123"})
+    return client.post(
+        "/v1/auth/login",
+        json={"username": "user123", "password": "password123"},
+    ).json()["access_token"]
+
+
+def _activation_body(card_code: str = "LIC-TEST") -> dict:
+    return {
+        "card_code": card_code,
+        "device_id": "dev_" + "1" * 64,
+        "device_key_algorithm": "ED25519",
+        "device_public_key": "dGVzdC1wdWJsaWMta2V5",
+        "proof": {
+            "timestamp": 1760000000,
+            "nonce": "activation-proof-nonce-1234",
+            "signature": "activation-proof-signature",
+        },
+    }
+
 
 def test_redeem_no_auth(client):
-    # 1. redeem 无凭证 -> 401
-    resp = client.post("/v1/auth/redeem", json={"card_code": "RD-SOMECODE"})
-    assert resp.status_code == 401
+    response = client.post("/v1/auth/redeem", json={"card_code": "LIC-TEST"})
+    assert response.status_code == 401
 
 
-def test_redeem_api_key(client):
-    # 2. redeem + X-API-Key -> 400 或 403，提示「请使用用户登录后兑换」
-    get_settings().auth_mode = "dual"
-    get_settings().api_key = "test-api-key"
-    resp = client.post(
+def test_redeem_api_key_is_not_a_user(client):
+    settings = get_settings()
+    settings.auth_mode = "dual"
+    settings.api_key = "test-api-key"
+    response = client.post(
         "/v1/auth/redeem",
-        json={"card_code": "RD-SOMECODE"},
         headers={"X-API-Key": "test-api-key"},
+        json=_activation_body(),
     )
-    assert resp.status_code in (400, 403)
-    assert "请使用用户登录后兑换" in resp.json()["detail"]
+    assert response.status_code == 403
+    assert response.json()["detail"] == "请使用用户登录后兑换"
 
 
-def test_redeem_success_and_duplicate(client, db_session):
-    # 3. dual 用户 JWT + 未用卡 -> 200，vip_expires_at 在未来
-    # 4. 同码再 redeem -> 400
-    get_settings().auth_mode = "dual"
+def test_redeem_missing_device_proof_is_stable(client):
+    settings = get_settings()
+    settings.auth_mode = "dual"
+    token = _login(client)
+    response = client.post(
+        "/v1/auth/redeem",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"card_code": "LIC-TEST"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "DEVICE_PROOF_REQUIRED"
 
-    # 在测试 DB 中生成一张未使用的卡密
-    card = CardKey(code="RD-TESTCARD123", duration_days=30, is_used=False)
+
+def test_redeem_uses_license_result_without_touching_legacy_tables(
+    client,
+    db_session,
+    license_gateway_for_tests,
+):
+    settings = get_settings()
+    settings.auth_mode = "dual"
+    card = CardKey(code="LIC-LEGACY-01", duration_days=30, is_used=False)
     db_session.add(card)
     db_session.commit()
+    token = _login(client)
 
-    # 注册并登录用户
-    client.post(
-        "/v1/auth/register",
-        json={"username": "user123", "password": "password123"},
-    )
-    login_resp = client.post(
-        "/v1/auth/login",
-        json={"username": "user123", "password": "password123"},
-    )
-    token = login_resp.json()["access_token"]
-
-    # 首次兑换 -> 成功 200
-    resp = client.post(
+    response = client.post(
         "/v1/auth/redeem",
-        json={"card_code": "RD-TESTCARD123"},
         headers={"Authorization": f"Bearer {token}"},
+        json=_activation_body("LIC-LEGACY-01"),
     )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["success"] is True
-    assert data["vip_expires_at"] != ""
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["reason"] == "ACTIVATED"
+    assert payload["license_expires_at"] == "2099-01-01T00:00:00+00:00"
+    assert payload["vip_expires_at"] == payload["license_expires_at"]
 
-    # 检查 /me 接口中用户的 vip_expires_at 已更新且非空
-    me_resp = client.get(
-        "/v1/auth/me",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert me_resp.status_code == 200
-    assert me_resp.json()["vip_expires_at"] is not None
-
-    # 重复兑换同张卡 -> 400 Card already used
-    resp2 = client.post(
-        "/v1/auth/redeem",
-        json={"card_code": "RD-TESTCARD123"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert resp2.status_code == 400
-    assert "卡密已被使用" in resp2.json()["detail"]
+    db_session.expire_all()
+    persisted_card = db_session.query(CardKey).filter(CardKey.code == "LIC-LEGACY-01").one()
+    user = db_session.query(User).filter(User.username == "user123").one()
+    assert persisted_card.is_used is False
+    assert user.vip_expires_at is None
+    assert len(license_gateway_for_tests.activations) == 1
 
 
-def test_redeem_nonexistent_card(client):
-    # 5. 不存在码 -> 400
-    get_settings().auth_mode = "dual"
+def test_jobs_require_active_device_license_even_with_legacy_vip_or_card(
+    client,
+    db_session,
+    device_headers,
+    license_gateway_for_tests,
+):
+    settings = get_settings()
+    settings.auth_mode = "dual"
+    settings.api_key = "test-api-key"
+    token = _login(client)
+    user = db_session.query(User).filter(User.username == "user123").one()
+    from datetime import datetime, timedelta, timezone
 
-    # 注册并登录用户
-    client.post(
-        "/v1/auth/register",
-        json={"username": "user123", "password": "password123"},
-    )
-    login_resp = client.post(
-        "/v1/auth/login",
-        json={"username": "user123", "password": "password123"},
-    )
-    token = login_resp.json()["access_token"]
-
-    resp = client.post(
-        "/v1/auth/redeem",
-        json={"card_code": "RD-NONEXISTENT"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert resp.status_code == 400
-    assert "卡密不存在" in resp.json()["detail"]
-
-
-def test_jobs_vip_gate(client, db_session):
-    # 6. dual 非 VIP 用户 POST /v1/jobs 合法最小 body -> 403
-    # 7. dual 先 redeem 成 VIP 再 POST /v1/jobs -> status != 403
-    # 8. dual 或 dev + 合法 X-API-Key POST /v1/jobs -> status != 403
-    get_settings().auth_mode = "dual"
-    get_settings().api_key = "test-api-key"
-
-    # 插入未使用卡密
-    card = CardKey(code="RD-TESTCARD123", duration_days=30, is_used=False)
-    db_session.add(card)
+    user.vip_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)
+    db_session.add(CardKey(code="LEGACY-CARD", duration_days=30, is_used=False))
     db_session.commit()
+    body = {"platform": "fanqie", "id": "12345", "range": "1-1"}
 
-    # 注册并登录用户
-    client.post(
-        "/v1/auth/register",
-        json={"username": "user123", "password": "password123"},
-    )
-    login_resp = client.post(
-        "/v1/auth/login",
-        json={"username": "user123", "password": "password123"},
-    )
-    token = login_resp.json()["access_token"]
-
-    # 最小 jobs 请求参数
-    jobs_body = {"platform": "fanqie", "id": "12345", "range": "1-1"}
-
-    # 6. dual 非 VIP 用户创建任务 -> 403
-    resp = client.post(
+    no_proof = client.post(
         "/v1/jobs",
-        json=jobs_body,
         headers={"Authorization": f"Bearer {token}"},
+        json=body,
     )
-    assert resp.status_code == 403
-    assert "需要 VIP，请兑换卡密" in resp.json()["detail"]
+    assert no_proof.status_code == 403
+    assert no_proof.json()["detail"] == "DEVICE_PROOF_REQUIRED"
 
-    # 7. 兑换卡密升级为 VIP
-    redeem_resp = client.post(
-        "/v1/auth/redeem",
-        json={"card_code": "RD-TESTCARD123"},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert redeem_resp.status_code == 200
-
-    # 再次创建任务 -> status != 403 (排除被 VIP 拦截，后端其它逻辑处理可能触发 502/429/400 等其它异常，但不是 403)
-    resp2 = client.post(
+    license_gateway_for_tests.check_result = {
+        "activated": False,
+        "reason": "LICENSE_EXPIRED",
+        "decision": "INACTIVE",
+        "source": "remote",
+    }
+    expired = client.post(
         "/v1/jobs",
-        json=jobs_body,
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", **device_headers},
+        json=body,
     )
-    assert resp2.status_code != 403
+    assert expired.status_code == 403
+    assert expired.json()["detail"] == "LICENSE_EXPIRED"
 
-    # 8. dual 模式下使用有效 X-API-Key 创建任务 -> 绕过 VIP 拦截， status != 403
-    resp3 = client.post(
+    license_gateway_for_tests.check_result = {
+        "activated": True,
+        "reason": "ACTIVE",
+        "decision": "ACTIVE",
+        "source": "remote",
+    }
+    allowed = client.post(
         "/v1/jobs",
-        json=jobs_body,
+        headers={"Authorization": f"Bearer {token}", **device_headers},
+        json=body,
+    )
+    assert allowed.status_code != 403
+
+    api_key_allowed = client.post(
+        "/v1/jobs",
+        headers={"X-API-Key": "test-api-key", **device_headers},
+        json=body,
+    )
+    assert api_key_allowed.status_code != 403
+
+    api_key_without_proof = client.post(
+        "/v1/jobs",
         headers={"X-API-Key": "test-api-key"},
+        json=body,
     )
-    assert resp3.status_code != 403
+    assert api_key_without_proof.status_code == 403
+    assert api_key_without_proof.json()["detail"] == "DEVICE_PROOF_REQUIRED"
 
-    # dev 模式下使用有效 X-API-Key 创建任务 -> 绕过 VIP 拦截， status != 403
-    get_settings().auth_mode = "dev"
-    resp4 = client.post(
-        "/v1/jobs",
-        json=jobs_body,
-        headers={"X-API-Key": "test-api-key"},
+
+def test_guard_binds_raw_body_and_query_to_license_check(
+    client,
+    device_headers,
+    license_gateway_for_tests,
+):
+    settings = get_settings()
+    settings.auth_mode = "dev"
+    settings.api_key = "test-api-key"
+    raw_body = b'{"platform":"fanqie","id":"raw-1","range":"1-1"}'
+    response = client.post(
+        "/v1/jobs?mode=full",
+        content=raw_body,
+        headers={
+            "X-API-Key": "test-api-key",
+            "Content-Type": "application/json",
+            **device_headers,
+        },
     )
-    assert resp4.status_code != 403
+    assert response.status_code != 403
+    check = license_gateway_for_tests.requests[-1]
+    assert check["raw_body"] == raw_body
+    assert check["request_target"] == "/v1/jobs?mode=full"
+
+
+def test_guard_maps_invalid_replay_audience_and_unknown_stably(
+    client,
+    device_headers,
+    license_gateway_for_tests,
+):
+    settings = get_settings()
+    settings.auth_mode = "dev"
+    settings.api_key = "test-api-key"
+    body = {"platform": "fanqie", "id": "stable-1", "range": "1-1"}
+    headers = {"X-API-Key": "test-api-key", **device_headers}
+
+    for reason in ("INVALID_DEVICE_PROOF", "DEVICE_PROOF_REPLAYED", "WRONG_AUDIENCE"):
+        license_gateway_for_tests.check_result = {
+            "activated": False,
+            "reason": reason,
+            "decision": "INACTIVE",
+            "source": "remote",
+        }
+        response = client.post("/v1/jobs", headers=headers, json=body)
+        assert response.status_code == 403
+        assert response.json()["detail"] in {
+            "DEVICE_PROOF_INVALID",
+            "DEVICE_PROOF_REPLAYED",
+            "LICENSE_REQUIRED",
+        }
+
+    license_gateway_for_tests.check_result = {
+        "activated": False,
+        "reason": "LICENSE_SERVICE_TIMEOUT",
+        "decision": "UNKNOWN",
+        "source": "fail_closed",
+    }
+    unavailable = client.post("/v1/jobs", headers=headers, json=body)
+    assert unavailable.status_code == 503
+    assert unavailable.json()["detail"] == "LICENSE_SERVICE_TIMEOUT"

@@ -12,6 +12,7 @@ from app.auth import Identity, require_ops
 from app.config import get_settings
 from app.db import get_db
 from app.jobs import get_job_manager
+from app.license_gateway import get_license_gateway
 from app.logger import metrics_tracker
 from app.models_orm import CardKey, UsageDaily, User
 from app.schemas_admin import (
@@ -62,7 +63,7 @@ def invalidate_card_key_batch(
     body: BatchInvalidateRequest,
     db: Session = Depends(get_db),
 ) -> BatchInvalidateResponse:
-    """按 batch_id 批量作废所有尚未使用的卡密。"""
+    """仅维护历史 RD CardKey 数据；不会 revoke License Service License。"""
     # 查找属于该批次且未被使用的卡密
     query = db.query(CardKey).filter(
         CardKey.batch_id == body.batch_id,
@@ -201,6 +202,7 @@ def admin_health(
             sign_pool_summary["error"] = str(e)
 
     overall_status = "ok" if db_status == "ok" else "degraded"
+    license_health = get_license_gateway().health()
 
     return AdminHealthResponse(
         status=overall_status,
@@ -209,6 +211,7 @@ def admin_health(
         disk_free_bytes=disk_free_bytes,
         active_jobs=active_jobs,
         sign_pool_summary=sign_pool_summary,
+        **license_health,
     )
 
 
@@ -220,4 +223,3 @@ def admin_metrics() -> AdminMetricsResponse:
     """获取进程内运行指标统计。"""
     summary = metrics_tracker.get_summary()
     return AdminMetricsResponse.model_validate(summary)
-

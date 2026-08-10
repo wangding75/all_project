@@ -106,8 +106,8 @@ def cmd_inspect_user(args) -> None:
         print(f"用户名:         {user.username}")
         print(f"账号启用状态:   {'启用' if user.is_active else '禁用 (Banned)'}")
         print(f"注册时间:       {user.created_at}")
-        print(f"VIP 到期时间:   {user.vip_expires_at or '未生效/非 VIP'}")
-        print(f"VIP 状态:       {'VIP 会员' if is_vip else '普通用户'}")
+        print(f"Legacy VIP 到期显示: {user.vip_expires_at or '无'}")
+        print(f"Legacy VIP 显示状态: {'有历史值' if is_vip else '无历史值'}（不参与 License 授权）")
         print(f"今日创建任务数: {job_count_today}")
     finally:
         db.close()
@@ -127,11 +127,11 @@ def cmd_list_users(args) -> None:
         now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
         print(f"=== 用户列表 (共 {total} 名用户，显示 {len(users)} 名) ===")
-        print(f"{'ID':<5} {'用户名':<18} {'状态':<8} {'VIP 状态':<12} {'VIP 到期时间':<24}")
+        print(f"{'ID':<5} {'用户名':<18} {'状态':<8} {'Legacy 显示':<12} {'Legacy 到期':<24}")
         print("-" * 70)
         for u in users:
             is_vip = bool(u.vip_expires_at and u.vip_expires_at > now_utc)
-            vip_str = "VIP" if is_vip else "普通"
+            vip_str = "legacy" if is_vip else "none"
             status_str = "正常" if u.is_active else "禁用"
             exp_str = str(u.vip_expires_at) if u.vip_expires_at else "无"
             print(f"{u.id:<5} {u.username:<18} {status_str:<8} {vip_str:<12} {exp_str:<24}")
@@ -156,12 +156,12 @@ def main() -> None:
     p_unban.set_defaults(func=cmd_unban_user)
 
     # invalidate-batch
-    p_inv = subparsers.add_parser("invalidate-batch", help="按批次作废未兑换卡密")
+    p_inv = subparsers.add_parser("invalidate-batch", help="维护历史 CardKey（不影响 License Service）")
     p_inv.add_argument("--batch-id", type=str, required=True, help="卡密批次 ID")
     p_inv.set_defaults(func=cmd_invalidate_batch)
 
     # inspect-user
-    p_insp = subparsers.add_parser("inspect-user", help="查询用户 VIP 状态与限流指标")
+    p_insp = subparsers.add_parser("inspect-user", help="查询 RD 用户、legacy 显示字段与限流指标")
     p_insp.add_argument("--user-id", type=int, help="用户 ID")
     p_insp.add_argument("--username", type=str, help="用户名")
     p_insp.set_defaults(func=cmd_inspect_user)

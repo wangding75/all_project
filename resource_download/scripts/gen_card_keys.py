@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""批量生成卡密并写入 SQLite 数据库。
+"""历史本地 CardKey 迁移工具（不生成新的生产 License）。
 
 运行说明：
 在仓库根目录下设置 PYTHONPATH=server 后运行：
 $env:PYTHONPATH="server"
-python scripts/gen_card_keys.py --days 30 --count 10 --batch B20260720
+python scripts/gen_card_keys.py --legacy-migration-only --days 30 --count 10 --batch B20260720
+
+新生产 License Key 必须由 License Service 管理面生成；本脚本默认禁用。
 """
 
 from __future__ import annotations
@@ -23,12 +25,25 @@ from app.models_orm import CardKey
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="批量生成卡密并写入 SQLite 数据库。")
+    parser = argparse.ArgumentParser(description="仅用于历史 RD CardKey 迁移数据的本地工具。")
+    parser.add_argument(
+        "--legacy-migration-only",
+        action="store_true",
+        help="明确确认只生成 legacy/migration 数据；不能用于新生产 License",
+    )
     parser.add_argument("--days", type=int, default=30, help="卡密可延期的 VIP 天数 (默认 30)")
     parser.add_argument("--count", type=int, default=10, help="要生成的卡密数量 (默认 10)")
     parser.add_argument("--batch", type=str, default=None, help="批次 ID (可选)")
 
     args = parser.parse_args()
+
+    if not args.legacy_migration_only:
+        print("LEGACY_LOCAL_CARD_KEYS_DISABLED", file=sys.stderr)
+        print(
+            "本地 CardKey 不能生成新的生产 License；如确需历史迁移，请显式使用 --legacy-migration-only。",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
     db = SessionLocal()
     try:

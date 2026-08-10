@@ -6,10 +6,13 @@ import os
 import sys
 import py_compile
 import subprocess
+import hashlib
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR / "server"))
+LICENSE_SDK_WHEEL = ROOT_DIR / "vendor" / "license_service_client-1.0.0rc2-py3-none-any.whl"
+LICENSE_SDK_SHA256 = "21FB18CB36A040AEDDF4C946112346BD4F94FDA950BAAAA3A45277C05385E138"
 
 
 def run_phase(name: str, fn):
@@ -65,6 +68,16 @@ def check_dependency_layering():
     for dependency in ("requests", "bcrypt"):
         assert dependency in prod_content, f"生产依赖缺少 {dependency}"
     assert "pywebview" in dev_content, "桌面构建依赖缺少 pywebview"
+    assert "license_service_client" in dev_content, "开发依赖缺少固定 License Service SDK"
+    assert LICENSE_SDK_WHEEL.is_file(), f"缺少固定 License SDK Wheel: {LICENSE_SDK_WHEEL}"
+    actual = hashlib.sha256(LICENSE_SDK_WHEEL.read_bytes()).hexdigest().upper()
+    assert actual == LICENSE_SDK_SHA256, (
+        f"License SDK Wheel SHA-256 不匹配: expected={LICENSE_SDK_SHA256}, actual={actual}"
+    )
+    assert "license_service_client" in prod_content, "生产依赖缺少固定 License Service SDK"
+    pyproject = (ROOT_DIR / "pyproject.toml").read_text(encoding="utf-8")
+    assert "license_service_client-1.0.0rc2-py3-none-any.whl" in pyproject
+    assert LICENSE_SDK_SHA256 in pyproject
 
 
 def run_pytest_suite():

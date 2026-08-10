@@ -267,14 +267,38 @@ class VersionResponse(BaseModel):
     release_notes: str = ""
 
 
+class DeviceProofRequest(BaseModel):
+    """LS-DEVICE-V3 proof fields transported by the RD API."""
+
+    timestamp: int | None = None
+    nonce: str | None = None
+    signature: str | None = None
+
+
 class RedeemRequest(BaseModel):
+    """Activation proxy request.
+
+    ``card_code`` is kept as the external compatibility name.  It is passed to
+    License Service as ``license_key`` and is never looked up in RD SQLite.
+    """
+
     card_code: str
+    device_id: str | None = None
+    device_key_algorithm: str | None = None
+    device_public_key: str | None = None
+    proof: DeviceProofRequest | None = None
 
 
 class RedeemResponse(BaseModel):
     success: bool = False
     message: str = ""
-    vip_expires_at: str = ""
+    reason: str = ""
+    license_expires_at: str | None = None
+    max_devices: int | None = None
+    active_devices: int | None = None
+    # Deprecated display alias. It is not an authorization fact and is never
+    # persisted back to User.vip_expires_at by the new activation flow.
+    vip_expires_at: str | None = None
 
 
 

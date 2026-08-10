@@ -377,22 +377,17 @@ class HongguoMonitorService:
         db = None
         try:
             if identity.kind == "user":
-                from datetime import datetime
-
                 from app.db import SessionLocal
                 from app.models_orm import User
                 from app.quota import check_job_quota, increment_job_quota
 
                 db = SessionLocal()
                 user = db.query(User).filter(User.id == identity.user_id).first()
-                now = datetime.now(timezone.utc).replace(tzinfo=None)
-                if (
-                    user is None
-                    or not user.is_active
-                    or user.vip_expires_at is None
-                    or user.vip_expires_at <= now
-                ):
-                    raise RuntimeError("VIP 已失效，自动入队已跳过")
+                if user is None or not user.is_active:
+                    raise RuntimeError("账号已停用，自动入队已跳过")
+                # The control endpoints are License-Protected.  Do not use the
+                # legacy User.vip_expires_at field as a second authorization
+                # truth for scheduled jobs; quota remains RD-owned here.
                 check_job_quota(identity, db)
 
             await self.manager.create_job(

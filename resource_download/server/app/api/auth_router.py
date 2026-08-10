@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import update
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,8 +16,9 @@ from app.auth import (
 )
 from app.config import get_settings
 from app.db import get_db
+from app.license_gateway import LicenseGateway, get_license_gateway
 from app.models import RedeemRequest, RedeemResponse
-from app.models_orm import User, CardKey
+from app.models_orm import User
 from app.schemas_auth import (
     UserLoginRequest,
     UserLoginResponse,
@@ -167,12 +167,16 @@ def me(
     response_model=RedeemResponse,
 )
 def redeem_card(
+    request: Request,
     body: RedeemRequest,
     identity: Identity = Depends(require_identity),
-    db: Session = Depends(get_db),
+    gateway: LicenseGateway = Depends(get_license_gateway),
 ) -> RedeemResponse:
-    """卡密兑换以延长 VIP 有效期（事务安全）。"""
-    # ops/api_key 兑换返回 400 或 403 明确非用户身份限制
+    """Activation proxy: authenticate the RD user, then delegate to License Service.
+
+    ``card_code`` is a compatibility field name only.  This endpoint does not
+    read/write ``CardKey`` and does not update ``User.vip_expires_at``.
+    """
     if identity.kind == "api_key" or identity.is_ops:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -186,71 +190,57 @@ def redeem_card(
             detail="卡密序列号不能为空",
         )
 
-    now_utc = datetime.now(timezone.utc)
-    # SQLite naive datetime matching
-    now_naive = now_utc.replace(tzinfo=None)
-
-    # 用 UPDATE ... WHERE code = ? AND is_used = 0 做原子性/行锁校验
-    stmt = (
-        update(CardKey)
-        .where(CardKey.code == card_code)
-        .where(CardKey.is_used == False)
-        .values(
-            is_used=True,
-            used_by_user_id=identity.user_id,
-            used_at=now_naive,
-        )
-    )
-
-    try:
-        result = db.execute(stmt)
-        if result.rowcount == 0:
-            # 校验到底是卡密不存在，还是卡密已被使用
-            card = db.query(CardKey).filter(CardKey.code == card_code).first()
-            if not card:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="卡密不存在",
-                )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="卡密已被使用",
-                )
-
-        # 获取刚标记使用的 card
-        card = db.query(CardKey).filter(CardKey.code == card_code).first()
-        # 获取用户
-        user = db.query(User).filter(User.id == identity.user_id).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="用户不存在",
-            )
-
-        # VIP 延期计算：base = max(now, user.vip_expires_at or now)
-        base_time = now_naive
-        if user.vip_expires_at and user.vip_expires_at > now_naive:
-            base_time = user.vip_expires_at
-
-        new_vip_expires_at = base_time + timedelta(days=card.duration_days)
-        user.vip_expires_at = new_vip_expires_at
-
-        db.commit()
-
-        # 对齐 RedeemResponse
-        return RedeemResponse(
-            success=True,
-            message="卡密兑换成功",
-            vip_expires_at=new_vip_expires_at.isoformat(),
-        )
-
-    except HTTPException:
-        db.rollback()
-        raise
-    except Exception as exc:
-        db.rollback()
+    proof = body.proof
+    if (
+        not body.device_id
+        or not body.device_key_algorithm
+        or not body.device_public_key
+        or proof is None
+        or proof.timestamp is None
+        or not proof.nonce
+        or not proof.signature
+    ):
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"卡密兑换失败: {exc}",
-        ) from exc
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="DEVICE_PROOF_REQUIRED",
+        )
+
+    result = gateway.activate(
+        {
+            "license_key": card_code,
+            "device_id": body.device_id,
+            "device_key_algorithm": body.device_key_algorithm,
+            "device_public_key": body.device_public_key,
+            "proof": {
+                "timestamp": proof.timestamp,
+                "nonce": proof.nonce,
+                "signature": proof.signature,
+            },
+        },
+        request_id=request.headers.get("X-Request-ID", ""),
+    )
+    decision = str(result.get("decision") or "UNKNOWN")
+    reason = str(result.get("reason") or "")
+    if decision == "UNKNOWN":
+        if reason not in {
+            "LICENSE_SERVICE_UNAVAILABLE",
+            "LICENSE_SERVICE_TIMEOUT",
+            "LICENSE_SERVICE_REJECTED",
+        }:
+            reason = "LICENSE_SERVICE_UNAVAILABLE"
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=reason)
+    if decision != "ACTIVE":
+        if reason == "INVALID_DEVICE_PROOF":
+            reason = "DEVICE_PROOF_INVALID"
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason or "LICENSE_REQUIRED")
+
+    expires_at = result.get("expires_at")
+    return RedeemResponse(
+        success=True,
+        message=reason or "ACTIVATED",
+        reason=reason or "ACTIVATED",
+        license_expires_at=str(expires_at) if expires_at is not None else None,
+        vip_expires_at=str(expires_at) if expires_at is not None else None,
+        max_devices=result.get("max_devices"),
+        active_devices=result.get("active_devices"),
+    )

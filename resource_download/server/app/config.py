@@ -64,6 +64,18 @@ class Settings(BaseSettings):
     max_concurrent_jobs: int = 5
     max_queued_jobs: int = 100
 
+    # License Service（RD 独立 Service Credential；私钥只从 Secret 注入）
+    license_service_base_url: str = ""
+    license_service_key_id: str = ""
+    license_service_private_key: str = ""
+    license_service_audience: str = "rd"
+    license_cache_ttl_seconds: int = 30
+    license_service_timeout: float = 3.0
+    license_service_verify: bool = True
+    license_service_ca_bundle: str = ""
+    license_service_client_cert: str = ""
+    license_service_client_key: str = ""
+
     # Windows 客户端发布清单。未配置下载地址时更新检查保持关闭。
     client_latest_version: str = ""
     client_minimum_version: str = ""

@@ -9,9 +9,24 @@ import sys
 import shutil
 import tempfile
 import subprocess
+import hashlib
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+LICENSE_SDK_WHEEL = ROOT_DIR / "vendor" / "license_service_client-1.0.0rc2-py3-none-any.whl"
+LICENSE_SDK_SHA256 = "21FB18CB36A040AEDDF4C946112346BD4F94FDA950BAAAA3A45277C05385E138"
+
+
+def check_license_sdk_wheel() -> None:
+    """Ensure the pinned server SDK is present before any release build."""
+    if not LICENSE_SDK_WHEEL.is_file():
+        raise RuntimeError(f"缺少固定 License Service SDK Wheel: {LICENSE_SDK_WHEEL}")
+    actual = hashlib.sha256(LICENSE_SDK_WHEEL.read_bytes()).hexdigest().upper()
+    if actual != LICENSE_SDK_SHA256:
+        raise RuntimeError(
+            "License Service SDK Wheel SHA-256 不匹配: "
+            f"expected={LICENSE_SDK_SHA256}, actual={actual}"
+        )
 
 
 def check_dependencies():
@@ -24,6 +39,7 @@ def check_dependencies():
 
 
 def run_build():
+    check_license_sdk_wheel()
     check_dependencies()
 
     # 导入权威版本源
