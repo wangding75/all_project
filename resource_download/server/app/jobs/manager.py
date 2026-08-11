@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.config import Settings, get_settings
+from app.errors import format_platform_error, sanitize_error_text
 from app.models import JobFile, JobResponse, JobStatus, PlatformName
+from app.options import sanitize_persisted_options, split_job_options, validate_range_spec
 from platforms.registry import get_platform
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,9 @@ class JobRecord:
     queue_position: int = 0
     archived: bool = False
     pause_scope: str = ""
+    # Per-job secrets (for example a Fanqie cookie) are intentionally kept in
+    # memory only and are never serialized to the job JSON file.
+    runtime_options: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def to_response(self) -> JobResponse:
         extra_dict: dict[str, Any] = {
@@ -67,6 +72,21 @@ class JobRecord:
             if title:
                 extra_dict["title"] = str(title)
 
+        outputs_root = get_settings().outputs_dir.resolve()
+        safe_files: list[JobFile] = []
+        for job_file in self.files:
+            if not job_file.path:
+                safe_files.append(job_file)
+                continue
+            try:
+                candidate = Path(job_file.path).resolve()
+                if candidate.is_relative_to(outputs_root):
+                    safe_files.append(job_file)
+                else:
+                    safe_files.append(job_file.model_copy(update={"path": None}))
+            except OSError:
+                safe_files.append(job_file.model_copy(update={"path": None}))
+
         return JobResponse(
             job_id=self.job_id,
             platform=self.platform,
@@ -75,7 +95,7 @@ class JobRecord:
             progress=self.progress,
             message=self.message,
             error=self.error,
-            files=list(self.files),
+            files=safe_files,
             extra=extra_dict,
         )
 
@@ -155,17 +175,33 @@ class JobManager:
                         data["error"] = "服务重启，任务已被中断"
                         data["message"] = "failed"
                     
-                    files = [JobFile(**f) for f in data.get("files", [])]
+                    outputs_root = self.settings.outputs_dir.resolve()
+                    files: list[JobFile] = []
+                    for raw_file in data.get("files", []):
+                        try:
+                            job_file = JobFile(**raw_file)
+                        except Exception:
+                            continue
+                        if job_file.path:
+                            try:
+                                stored_path = Path(job_file.path).resolve()
+                                if not stored_path.is_relative_to(outputs_root):
+                                    # Never rehydrate an arbitrary path from
+                                    # untrusted/persisted JSON.
+                                    job_file.path = None
+                            except OSError:
+                                job_file.path = None
+                        files.append(job_file)
                     record = JobRecord(
                         job_id=job_id,
                         platform=PlatformName(data["platform"]),
                         item_id=data["item_id"],
                         range_spec=data.get("range", "all"),
-                        options=data.get("options", {}),
+                        options=sanitize_persisted_options(data.get("options", {})),
                         status=status,
                         progress=float(data.get("progress", 0.0)),
                         message=data.get("message", ""),
-                        error=data.get("error"),
+                        error=sanitize_error_text(data.get("error")) if data.get("error") else None,
                         files=files,
                         created_at=data.get("created_at", _utc_now()),
                         updated_at=data.get("updated_at", _utc_now()),
@@ -188,12 +224,17 @@ class JobManager:
                     if was_active or not data.get("queue_position"):
                         self._persist(record)
                 except Exception as exc:  # noqa: BLE001
-                    logger.error("读取坏损任务 JSON 文件失败: %s, 错误: %s", file_path, exc)
+                    logger.error(
+                        "读取坏损任务 JSON 文件失败: %s, 错误: %s",
+                        file_path.name,
+                        sanitize_error_text(exc),
+                    )
                     try:
                         corrupted_path = file_path.with_name(file_path.name + ".corrupted")
                         os.replace(file_path, corrupted_path)
                     except Exception:  # noqa: BLE001
                         pass
+        self._evict_old_completed_jobs()
         self._ensure_dispatcher()
         self._queue_changed.set()
 
@@ -227,6 +268,8 @@ class JobManager:
         owner_kind: str | None = None,
         priority: bool = False,
     ) -> JobRecord:
+        persisted_options, runtime_options = split_job_options(platform, options)
+        range_spec = validate_range_spec(range_spec)
         # TestClient / embedded 模式可能在同一进程内完成一次 shutdown 后重新启动。
         if self._closing:
             self._closing = False
@@ -258,7 +301,8 @@ class JobManager:
                 platform=platform,
                 item_id=item_id,
                 range_spec=range_spec or "all",
-                options=options or {},
+                options=persisted_options,
+                runtime_options=runtime_options,
                 owner_user_id=owner_user_id,
                 owner_kind=owner_kind,
                 queue_position=queue_position,
@@ -328,24 +372,38 @@ class JobManager:
 
     def _evict_old_completed_jobs(self, max_history_jobs: int = 200) -> None:
         """当内存中的 Job 总数超出上限时，安全淘汰最旧的已结束任务。"""
-        if len(self._jobs) <= max_history_jobs:
-            return
-
+        max_history_jobs = max(1, int(getattr(self.settings, "max_history_jobs", max_history_jobs)))
         completed_jobs = [
-            j for j in self._jobs.values()
+            j
+            for j in self._jobs.values()
             if j.status in (JobStatus.success, JobStatus.failed, JobStatus.cancelled)
-            and not j.files
         ]
+        active_count = len(self._jobs) - len(completed_jobs)
+        terminal_limit = max(0, max_history_jobs - active_count)
+        if len(completed_jobs) <= terminal_limit:
+            return
         if not completed_jobs:
             return
 
         # 按 updated_at 升序排列（最旧的在前）
         completed_jobs.sort(key=lambda j: j.updated_at)
-        overlimit_count = len(self._jobs) - max_history_jobs
+        overlimit_count = len(completed_jobs) - terminal_limit
         for j in completed_jobs[:overlimit_count]:
             self._jobs.pop(j.job_id, None)
             try:
                 (self.settings.jobs_dir / f"{j.job_id}.json").unlink(missing_ok=True)
+            except OSError:
+                pass
+            # A terminal record and its output are one retention unit.  This
+            # prevents an otherwise unbounded outputs directory after the
+            # in-memory history has been evicted.
+            try:
+                import shutil
+
+                output_root = self.settings.outputs_dir.resolve()
+                job_dir = (output_root / j.job_id).resolve()
+                if job_dir.is_relative_to(output_root):
+                    shutil.rmtree(job_dir, ignore_errors=True)
             except OSError:
                 pass
 
@@ -743,8 +801,12 @@ class JobManager:
                     return job_dir
             for f in record.files:
                 if f.file_id == file_id_clean:
-                    path = Path(f.path) if f.path else None
-                    if path and path.exists():
+                    path = Path(f.path).resolve() if f.path else None
+                    if (
+                        path
+                        and path.exists()
+                        and path.is_relative_to(outputs_root)
+                    ):
                         return path
         # 路径安全校验：防止路径穿越攻击
         candidate = (outputs_root / file_id_clean).resolve()
@@ -782,7 +844,7 @@ class JobManager:
                 record.item_id,
                 out_dir,
                 range_spec=record.range_spec,
-                options=record.options,
+                options={**record.options, **record.runtime_options},
                 progress=on_progress,
             )
 
@@ -794,11 +856,15 @@ class JobManager:
             files: list[JobFile] = []
             for path in paths:
                 path = Path(path)
-                rel = f"{job_id}/{path.name}"
                 try:
-                    rel = str(path.relative_to(self.settings.outputs_dir)).replace("\\", "/")
-                except ValueError:
-                    rel = f"{job_id}/{path.name}"
+                    resolved_path = path.resolve(strict=True)
+                except (FileNotFoundError, OSError) as exc:
+                    raise RuntimeError("download adapter returned a missing output file") from exc
+                outputs_root = self.settings.outputs_dir.resolve()
+                if not resolved_path.is_file() or not resolved_path.is_relative_to(outputs_root):
+                    raise RuntimeError("download adapter returned a path outside outputs_dir")
+                path = resolved_path
+                rel = str(path.relative_to(outputs_root)).replace("\\", "/")
                 files.append(
                     JobFile(
                         file_id=rel,
@@ -838,7 +904,7 @@ class JobManager:
                 record = self._jobs.get(job_id)
                 if record and record.status not in (JobStatus.cancelling, JobStatus.cancelled):
                     record.status = JobStatus.failed
-                    record.error = str(exc)
+                    record.error = format_platform_error(exc)
                     record.message = "failed"
                     record.updated_at = _utc_now()
                     await self._persist_async(record)
@@ -857,17 +923,29 @@ class JobManager:
         tmp_path = self.settings.jobs_dir / f"{record.job_id}.json.tmp"
         with self._persist_lock:
             # 在互斥区内读取可变 JobRecord，避免较旧快照后写覆盖较新状态。
+            outputs_root = self.settings.outputs_dir.resolve()
+            persisted_files: list[dict[str, Any]] = []
+            for job_file in record.files:
+                file_data = job_file.model_dump()
+                if file_data.get("path"):
+                    try:
+                        stored_path = Path(str(file_data["path"])).resolve()
+                        if not stored_path.is_relative_to(outputs_root):
+                            file_data["path"] = None
+                    except OSError:
+                        file_data["path"] = None
+                persisted_files.append(file_data)
             payload = {
                 "job_id": record.job_id,
                 "platform": record.platform.value,
                 "item_id": record.item_id,
                 "range": record.range_spec,
-                "options": record.options,
+                "options": sanitize_persisted_options(record.options),
                 "status": record.status.value,
                 "progress": record.progress,
                 "message": record.message,
-                "error": record.error,
-                "files": [f.model_dump() for f in record.files],
+                "error": sanitize_error_text(record.error) if record.error else None,
+                "files": persisted_files,
                 "created_at": record.created_at,
                 "updated_at": record.updated_at,
                 "owner_user_id": record.owner_user_id,

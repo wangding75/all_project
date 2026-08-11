@@ -199,7 +199,9 @@ def admin_health(
             pool = get_sign_pool()
             sign_pool_summary.update(pool.summary())
         except Exception as e:
-            sign_pool_summary["error"] = str(e)
+            from app.errors import sanitize_error_text
+
+            sign_pool_summary["error"] = sanitize_error_text(e)
 
     overall_status = "ok" if db_status == "ok" else "degraded"
     license_health = get_license_gateway().health()

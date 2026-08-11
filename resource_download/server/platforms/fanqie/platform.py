@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import time
 from pathlib import Path
@@ -15,7 +16,10 @@ from platforms.fanqie import web_ssr
 
 
 def _parse_range(range_spec: str, total: int) -> set[int] | None:
-    """返回 1-based 章节序号集合；None 表示全部。"""
+    """Return a bounded set of 1-based chapter numbers; ``None`` means all."""
+    from app.options import validate_range_spec
+
+    range_spec = validate_range_spec(range_spec)
     raw = (range_spec or "all").strip().lower()
     if raw in {"", "all", "*"}:
         return None
@@ -33,6 +37,33 @@ def _parse_range(range_spec: str, total: int) -> set[int] | None:
         else:
             selected.add(int(part))
     return selected
+
+
+def _atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> None:
+    """Write a complete download artifact and make it durable before return."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        with tmp.open("w", encoding=encoding, newline="") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _atomic_write_bytes(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        with tmp.open("wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _normalize_book_id(item_id: str) -> str:
@@ -221,10 +252,15 @@ class FanqiePlatform(BasePlatform):
         options: dict[str, Any] | None = None,
         progress: ProgressCallback | None = None,
     ) -> list[Path]:
-        options = options or {}
+        from app.options import split_job_options
+
+        persisted_options, runtime_options = split_job_options(PlatformName.fanqie, options)
+        options = {**persisted_options, **runtime_options}
         cookie = options.get("cookie") or get_settings().fanqie_cookie or None
         delay = float(options.get("delay", get_settings().fanqie_delay))
-        mode = options.get("mode", "web")
+        mode = str(options.get("mode", "web")).strip().lower()
+        if mode not in {"web", "app"}:
+            raise ValueError("mode must be web or app")
         naming = options.get("naming") if isinstance(options.get("naming"), dict) else {}
         download_cover = bool(options.get("download_cover"))
         download_desc = bool(options.get("download_desc"))
@@ -238,14 +274,19 @@ class FanqiePlatform(BasePlatform):
             book_name, chapters, font_mapping, meta = web_ssr.get_book_page(book_id, cookie=cookie)
             selected = _parse_range(range_spec, len(chapters))
 
-            work_dir = output_dir / web_ssr.sanitize_filename(book_name)
+            safe_book_name = (web_ssr.sanitize_filename(book_name).strip(". ") or "book")[:120]
+            output_root = output_dir.resolve()
+            work_dir = (output_root / safe_book_name).resolve()
+            if not work_dir.is_relative_to(output_root):
+                raise RuntimeError("book name resolves outside output directory")
             work_dir.mkdir(parents=True, exist_ok=True)
 
             # 封面 / 简介（可选）
             if download_desc:
                 try:
                     desc_path = work_dir / "简介.txt"
-                    desc_path.write_text(
+                    _atomic_write_text(
+                        desc_path,
                         f"书名：{book_name}\n"
                         f"作者：{meta.get('author') or ''}\n"
                         f"分类：{meta.get('category') or ''}\n"
@@ -263,7 +304,7 @@ class FanqiePlatform(BasePlatform):
                     cover_bytes = web_ssr.fetch_bytes(cover_url, cookie=cookie)
                     if not cover_bytes:
                         raise RuntimeError("封面响应为空")
-                    (work_dir / "封面.jpg").write_bytes(cover_bytes)
+                    _atomic_write_bytes(work_dir / "封面.jpg", cover_bytes)
                 except Exception:
                     pass
 
@@ -328,7 +369,9 @@ class FanqiePlatform(BasePlatform):
                             done += 1
                         except Exception as e:
                             skipped += 1
-                            plain = f"（App解密下载失败: {e}）"
+                            from app.errors import format_platform_error
+
+                            plain = f"App chapter download failed: {format_platform_error(e)}"
                             parts.append(f"\n\n## {title}\n\n{plain}\n")
                     else:
                         title, content = web_ssr.download_chapter(
@@ -342,7 +385,7 @@ class FanqiePlatform(BasePlatform):
                     if plain:
                         fname = format_segment_filename(i, title, naming, ext=".txt")
                         ch_path = work_dir / fname
-                        ch_path.write_text(f"{title}\n\n{plain}\n", encoding="utf-8")
+                        _atomic_write_text(ch_path, f"{title}\n\n{plain}\n")
                         chapter_files.append(ch_path)
 
                     if i < total and delay > 0:
@@ -361,12 +404,12 @@ class FanqiePlatform(BasePlatform):
                     except Exception:
                         pass
 
-            out_path = work_dir / f"{web_ssr.sanitize_filename(book_name)}.md"
-            out_path.write_text("".join(parts), encoding="utf-8")
+            out_path = work_dir / f"{safe_book_name}.md"
+            _atomic_write_text(out_path, "".join(parts))
             if progress:
                 progress(100.0, f"完成 {done} 章" + (f"，跳过 {skipped}" if skipped else ""))
             # 优先返回分章文件，便于「打开目录/文件」
-            return chapter_files or [out_path]
+            return [out_path]
 
         try:
             return await asyncio.to_thread(_run)

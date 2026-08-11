@@ -40,6 +40,11 @@ def assert_production_secrets(settings: Settings) -> None:
     mode = (settings.auth_mode or "dev").lower()
     host = settings.host or "127.0.0.1"
 
+    if mode not in {"dev", "dual", "jwt_only"}:
+        raise RuntimeError(
+            f"AUTH_MODE must be one of dev, dual, jwt_only; got {settings.auth_mode!r}"
+        )
+
     # 1. 检查 JWT 默认密钥 (dual / jwt_only 强制)
     if mode in ("dual", "jwt_only") and settings.jwt_secret == DEFAULT_JWT_SECRET:
         raise RuntimeError(

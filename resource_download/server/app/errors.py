@@ -6,10 +6,31 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from app.sign_pool.errors import SignPoolError, SignPoolUnavailableError
 
 logger = logging.getLogger(__name__)
+
+
+_SECRET_QUERY = re.compile(
+    r"(?i)([?&](?:cookie|token|authorization|password|passwd|secret|signature|key|credential|proxy)=[^&#\s]+)"
+)
+_SECRET_ASSIGNMENT = re.compile(
+    r"(?i)(\b(?:cookie|token|authorization|password|passwd|secret|private[_-]?key|credential|proxy(?:[_-]?password|[_-]?token)?)\b\s*[:=]\s*)([^\s,;]+)"
+)
+_BEARER = re.compile(r"(?i)(\bbearer\s+)[A-Za-z0-9._~+/=-]+")
+_ABSOLUTE_PATH = re.compile(r"(?<![A-Za-z0-9_])(?:[A-Za-z]:[\\/]|/)(?:[^\s'\"<>]|\\ )+")
+
+
+def sanitize_error_text(value: object, *, max_length: int = 800) -> str:
+    """Make an exception safe for API responses, Job JSON and logs."""
+    text = str(value or "").replace("\x00", " ").strip()
+    text = _SECRET_QUERY.sub(lambda m: m.group(1).split("=", 1)[0] + "=<redacted>", text)
+    text = _BEARER.sub(r"\1<redacted>", text)
+    text = _SECRET_ASSIGNMENT.sub(r"\1<redacted>", text)
+    text = _ABSOLUTE_PATH.sub("<path>", text)
+    return text[:max_length] or "platform operation failed"
 
 
 def format_platform_error(exc: Exception) -> str:
@@ -19,7 +40,7 @@ def format_platform_error(exc: Exception) -> str:
     if isinstance(exc, SignPoolError):
         return "签名节点繁忙或不可用，请稍后重试"
 
-    exc_str = str(exc)
+    exc_str = sanitize_error_text(exc)
     exc_lower = exc_str.lower()
 
     # 1. 签名池 503 匹配
@@ -28,7 +49,7 @@ def format_platform_error(exc: Exception) -> str:
 
     # 2. Vendor / 红果配置缺失
     if "hongguovendorerror" in exc_lower or "missing vendor" in exc_lower or "hongguo_config" in exc_lower:
-        return f"红果 Vendor 组件未处于就绪状态: {exc_str}"
+        return f"红果 Vendor 组件未处于就绪状态: {sanitize_error_text(exc_str)}"
     if isinstance(exc, FileNotFoundError) and "hongguo_config" in exc_str.replace("\\", "/"):
         return (
             "缺少红果会话配置 data/config/hongguo_config.json。"
@@ -37,11 +58,11 @@ def format_platform_error(exc: Exception) -> str:
 
     # 3. 会话 / 鉴权 / Cookie 失效
     if any(k in exc_lower for k in ("cookie", "session", "unauthorized", "401", "403", "token")):
-        return f"平台会话或 Cookie 已失效，请检查配置与设备环境 ({exc_str})"
+        return f"平台会话或 Cookie 已失效，请检查配置与设备环境 ({sanitize_error_text(exc_str)})"
 
     # 4. 网络连接 / 超时
     if any(k in exc_lower for k in ("timeout", "connection", "connect", "timed out", "unreachable")):
-        return f"平台网络请求超时或网络连接失败 ({exc_str})"
+        return f"平台网络请求超时或网络连接失败 ({sanitize_error_text(exc_str)})"
 
     # 5. 已符合规范的前缀
     if any(exc_str.startswith(prefix) for prefix in ("签名节点", "平台", "红果", "番茄")):
@@ -56,4 +77,4 @@ def format_platform_error(exc: Exception) -> str:
         )
 
     # 7. 通用回退
-    return f"平台 API 访问失败: {exc_str}"
+    return f"平台 API 访问失败: {sanitize_error_text(exc_str)}"

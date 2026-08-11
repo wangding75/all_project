@@ -175,10 +175,8 @@ def vendor_ready() -> dict:
     root = vendor_root()
     cfg = config_path()
     return {
-        "vendor_path": str(root),
         "vendor_present": root.is_dir() and (root / "hongguo.py").is_file(),
         "config_present": cfg.is_file(),
-        "config_path": str(cfg),
         "unwrap_spade_present": (root / "frida" / "unwrap_spade.py").is_file(),
         "offline_dl_present": (root / "offline_dl.py").is_file(),
         "ok": root.is_dir() and (root / "hongguo.py").is_file() and cfg.is_file(),

@@ -418,7 +418,9 @@ class HongguoMonitorService:
             async with self._lock:
                 policy = self._policies[key]
                 policy["last_scan_at"] = now
-                policy["last_error"] = str(exc)
+                from app.errors import sanitize_error_text
+
+                policy["last_error"] = sanitize_error_text(exc)
                 self._append_log(
                     policy,
                     f"扫描失败：{exc}",
@@ -482,7 +484,7 @@ class HongguoMonitorService:
             if identity.kind == "user":
                 from app.db import SessionLocal
                 from app.models_orm import User
-                from app.quota import check_job_quota, increment_job_quota
+                from app.quota import check_job_quota, increment_job_quota, release_job_quota
 
                 db = SessionLocal()
                 user = db.query(User).filter(User.id == identity.user_id).first()
@@ -492,6 +494,7 @@ class HongguoMonitorService:
                 # legacy User.vip_expires_at field as a second authorization
                 # truth for scheduled jobs; quota remains RD-owned here.
                 check_job_quota(identity, db)
+                quota_reserved = True
 
             await self.manager.create_job(
                 platform=PlatformName.hongguo,
@@ -511,8 +514,13 @@ class HongguoMonitorService:
             )
             if identity.kind == "user" and db is not None:
                 increment_job_quota(identity, db)
+                quota_reserved = False
             return True
         finally:
+            if db is not None and locals().get("quota_reserved", False):
+                from app.quota import release_job_quota
+
+                release_job_quota(identity)
             if db is not None:
                 db.close()
 

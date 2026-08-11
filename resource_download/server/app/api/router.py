@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 
 from app import __version__
 from app.auth import Identity, require_identity
+from app.errors import format_platform_error, sanitize_error_text
 from app.config import get_settings
 from app.jobs import get_job_manager
 from app.license_guard import require_active_device_license
@@ -69,6 +70,22 @@ api_router.include_router(auth_router)
 api_router.include_router(admin_router)
 
 
+def _public_health_value(value: Any) -> Any:
+    """Strip local filesystem topology from the public health document."""
+    hidden_keys = {"path", "vendor_path", "config_path", "agent_bin"}
+    if isinstance(value, dict):
+        return {
+            str(key): _public_health_value(item)
+            for key, item in value.items()
+            if str(key).lower() not in hidden_keys
+        }
+    if isinstance(value, list):
+        return [_public_health_value(item) for item in value]
+    if isinstance(value, str) and (":\\" in value or value.startswith("/")):
+        return "<redacted>"
+    return value
+
+
 @api_router.get("/v1/covers/{cover_id}.jpg", include_in_schema=False)
 async def get_cached_cover(cover_id: str):
     """只允许读取发现接口预先登记的可信封面，不接受任意远程 URL。"""
@@ -107,15 +124,17 @@ async def health() -> HealthResponse:
             runtime_report = {
                 "ok": False,
                 "degraded": True,
-                "message": str(exc),
-                "agent": {"ok": False, "adb_ok": False, "agent_running": False, "message": str(exc)},
+                "message": sanitize_error_text(exc),
+                "agent": {"ok": False, "adb_ok": False, "agent_running": False, "message": sanitize_error_text(exc)},
                 "fanqie_runtime": {},
                 "hongguo_runtime": {},
             }
 
     from platforms.readiness import build_health_report
 
-    report = build_health_report(include_runtime=include_runtime, runtime_report=runtime_report)
+    report = _public_health_value(
+        build_health_report(include_runtime=include_runtime, runtime_report=runtime_report)
+    )
     checks = [
         HealthDependencyItem(
             key=str(c.get("key") or ""),
@@ -209,12 +228,12 @@ async def _search_one(platform: PlatformName, q: str, page: int) -> tuple[list[S
     try:
         impl = get_platform(platform)
     except (NotImplementedError, KeyError) as exc:
-        return [], str(exc)
+        return [], sanitize_error_text(exc)
     try:
         items = await impl.search(q, page=page)
         return _tag_items(list(items or []), platform), None
     except Exception as exc:  # noqa: BLE001
-        return [], f"{platform.value}: {exc}"
+        return [], f"{platform.value}: {format_platform_error(exc)}"
 
 
 @api_router.get("/v1/search", response_model=SearchResponse)
@@ -330,7 +349,7 @@ async def recognize_image(
             max_candidates=body.max_candidates,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=sanitize_error_text(exc)) from exc
 
 
 @api_router.get("/v1/hongguo/people", response_model=PeopleResponse)
@@ -478,7 +497,7 @@ async def discover(
                 filtered_items.append(item)
             return platform_name, filtered_items, None
         except Exception as exc:  # noqa: BLE001
-            return platform_name, [], str(exc)
+            return platform_name, [], sanitize_error_text(exc)
 
     sections: list[DiscoverSection] = []
     any_live = False
@@ -533,9 +552,9 @@ async def detail(
     try:
         impl = get_platform(platform)
     except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc)) from exc
+        raise HTTPException(status_code=501, detail=sanitize_error_text(exc)) from exc
     except KeyError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=sanitize_error_text(exc)) from exc
     try:
         res = await impl.get_detail(id)
         if platform == PlatformName.hongguo:
@@ -556,7 +575,10 @@ async def detail(
 
         return res
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"detail failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"detail failed: {format_platform_error(exc)}",
+        ) from exc
 
 
 @api_router.post("/v1/jobs", response_model=JobResponse)
@@ -568,12 +590,12 @@ async def create_job(
     try:
         get_platform(body.platform)
     except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc)) from exc
+        raise HTTPException(status_code=501, detail=sanitize_error_text(exc)) from exc
     except KeyError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=sanitize_error_text(exc)) from exc
 
     # 每日配额校验
-    from app.quota import check_job_quota, increment_job_quota
+    from app.quota import check_job_quota, increment_job_quota, release_job_quota
     check_job_quota(identity, db)
 
     owner_user_id = identity.user_id if identity.kind == "user" else None
@@ -590,7 +612,14 @@ async def create_job(
             owner_kind=owner_kind,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
+        release_job_quota(identity)
+        raise HTTPException(status_code=429, detail=sanitize_error_text(exc)) from exc
+    except ValueError as exc:
+        release_job_quota(identity)
+        raise HTTPException(status_code=422, detail=sanitize_error_text(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        release_job_quota(identity)
+        raise HTTPException(status_code=500, detail="job creation failed") from exc
 
     # 创建成功后累加配额计数
     increment_job_quota(identity, db)
@@ -606,7 +635,7 @@ async def create_jobs_batch(
     """批量创建任务；逐项返回 created/skipped/errors，不因单项失败回滚整批。"""
     import uuid
 
-    from app.quota import check_job_quota, increment_job_quota
+    from app.quota import check_job_quota, increment_job_quota, release_job_quota
 
     manager = get_job_manager()
     owner_user_id = identity.user_id if identity.kind == "user" else None
@@ -638,6 +667,7 @@ async def create_jobs_batch(
         try:
             get_platform(item.platform)
             check_job_quota(identity, db)
+            reserved = True
             record = await manager.create_job(
                 platform=item.platform,
                 item_id=item.id,
@@ -649,6 +679,7 @@ async def create_jobs_batch(
                 priority=body.queue_mode == "start_immediately",
             )
             increment_job_quota(identity, db)
+            reserved = False
             existing_by_key.setdefault(key, []).append(record)
             created.append(
                 BatchJobCreatedItem(
@@ -658,11 +689,13 @@ async def create_jobs_batch(
                 )
             )
         except Exception as exc:  # noqa: BLE001
+            if "reserved" in locals() and reserved:
+                release_job_quota(identity)
             errors.append(
                 BatchJobErrorItem(
                     item_id=item.id,
                     platform=item.platform,
-                    message=str(getattr(exc, "detail", exc)),
+                    message=sanitize_error_text(getattr(exc, "detail", exc)),
                 )
             )
 
@@ -777,7 +810,7 @@ async def bulk_retry_jobs(
     identity: Identity = Depends(require_active_device_license),
     db: Session = Depends(get_db),
 ) -> QueueBulkResponse:
-    from app.quota import check_job_quota, increment_job_quota
+    from app.quota import check_job_quota, increment_job_quota, release_job_quota
 
     manager = get_job_manager()
     requested = list(dict.fromkeys(body.job_ids))
@@ -785,8 +818,14 @@ async def bulk_retry_jobs(
     skipped: list[str] = []
     for job_id in requested:
         check_job_quota(identity, db)
-        record = await manager.retry_job_for(job_id, identity)
+        try:
+            record = await manager.retry_job_for(job_id, identity)
+        except Exception:
+            release_job_quota(identity)
+            skipped.append(job_id)
+            continue
         if record is None:
+            release_job_quota(identity)
             skipped.append(job_id)
             continue
         increment_job_quota(identity, db)
@@ -817,11 +856,16 @@ async def retry_job(
     identity: Identity = Depends(require_active_device_license),
     db: Session = Depends(get_db),
 ) -> JobResponse:
-    from app.quota import check_job_quota, increment_job_quota
+    from app.quota import check_job_quota, increment_job_quota, release_job_quota
 
     check_job_quota(identity, db)
-    record = await get_job_manager().retry_job_for(job_id, identity)
+    try:
+        record = await get_job_manager().retry_job_for(job_id, identity)
+    except Exception as exc:  # noqa: BLE001
+        release_job_quota(identity)
+        raise HTTPException(status_code=500, detail="job retry failed") from exc
     if record is None:
+        release_job_quota(identity)
         raise HTTPException(status_code=400, detail="只有失败或已取消任务可以重试")
     increment_job_quota(identity, db)
     return record.to_response()
@@ -887,7 +931,7 @@ async def configure_hongguo_new_monitor(
             verified_device_id=verified_device_id,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        raise HTTPException(status_code=403, detail=sanitize_error_text(exc)) from exc
 
 
 @api_router.post(
@@ -1047,6 +1091,7 @@ async def get_file(
 async def open_file(
     file_id: str,
     body: FileOpenRequest,
+    request: Request,
     identity: Identity = Depends(require_identity),
 ) -> FileOpenResponse:
     manager = get_job_manager()
@@ -1055,6 +1100,19 @@ async def open_file(
     path = manager.resolve_file(file_id)
     if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="指定文件或目录不存在")
+    settings = get_settings()
+    if not (
+        bool(getattr(settings, "server_side_file_open", False))
+        or bool(getattr(settings, "allow_server_file_open", False))
+    ):
+        raise HTTPException(status_code=403, detail="SERVER_FILE_OPEN_DISABLED_USE_DESKTOP_BRIDGE")
+    from app.security_boot import is_loopback_host
+
+    client_host = request.client.host if request.client else ""
+    if not is_loopback_host(client_host):
+        raise HTTPException(status_code=403, detail="SERVER_FILE_OPEN_LOOPBACK_ONLY")
+    if body.action not in {"play", "folder"}:
+        raise HTTPException(status_code=400, detail="unsupported file open action")
 
     try:
         if body.action == "folder":

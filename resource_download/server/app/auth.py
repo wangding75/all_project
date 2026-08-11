@@ -97,7 +97,7 @@ async def require_identity(
 ) -> Identity:
     """统一身份依赖：根据 AUTH_MODE 校验 API Key 和/或 Bearer JWT。"""
     settings = get_settings()
-    mode = (settings.auth_mode or "dev").strip().lower()
+    mode = str(settings.auth_mode).strip().lower()
     if mode not in {"dev", "dual", "jwt_only"}:
         logger.error("非法 AUTH_MODE=%r，拒绝降级到开发模式", mode)
         raise HTTPException(

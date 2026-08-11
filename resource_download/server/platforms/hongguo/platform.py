@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,12 @@ from platforms.hongguo.bridge import (
     load_offline_dl,
     vendor_ready,
 )
+
+
+# ``offline_dl`` is a legacy vendor module whose output and state locations
+# are module globals.  Until the vendor exposes an instance API, serialize the
+# complete call so concurrent RD jobs cannot overwrite one another's paths.
+_OFFLINE_DL_LOCK = threading.RLock()
 
 
 class HongguoPlatform(BasePlatform):
@@ -284,7 +291,11 @@ class HongguoPlatform(BasePlatform):
         options: dict[str, Any] | None = None,
         progress: ProgressCallback | None = None,
     ) -> list[Path]:
-        options = options or {}
+        from app.options import split_job_options, validate_range_spec
+
+        persisted_options, runtime_options = split_job_options(PlatformName.hongguo, options)
+        options = {**persisted_options, **runtime_options}
+        range_spec = validate_range_spec(range_spec)
         quality = str(options.get("quality") or "best")
         concurrency = int(options.get("concurrency") or options.get("c") or 2)
         download_cover = bool(options.get("download_cover"))
@@ -301,10 +312,8 @@ class HongguoPlatform(BasePlatform):
             ODL = load_offline_dl()
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # 让上游下载落到我们的 job 目录
-            ODL.OUT = str(output_dir)
-            ODL.STATE_DIR = str(output_dir / ".state")
-
+            # 让上游下载落到我们的 job 目录.  This assignment and the
+            # vendor call must remain in one critical section (see above).
             if progress:
                 progress(1.0, "prepare series")
 
@@ -342,13 +351,36 @@ class HongguoPlatform(BasePlatform):
                     pass
 
             # 复用上游整剧逻辑（内部签名+下载+解密）
-            ODL.dl_series(
-                str(item_id),
-                rng=range_spec or "all",
-                concurrency=max(1, concurrency),
-                retry_rounds=int(options.get("retry") or 2),
-                quality=quality,
-            )
+            # This critical section protects the vendor module globals while
+            # ``dl_series`` runs.
+            with _OFFLINE_DL_LOCK:
+                call_old_out = getattr(ODL, "OUT", None)
+                call_old_state = getattr(ODL, "STATE_DIR", None)
+                ODL.OUT = str(output_dir)
+                ODL.STATE_DIR = str(output_dir / ".state")
+                try:
+                    ODL.dl_series(
+                        str(item_id),
+                        rng=range_spec or "all",
+                        concurrency=max(1, concurrency),
+                        retry_rounds=int(options.get("retry") or 2),
+                        quality=quality,
+                    )
+                finally:
+                    if call_old_out is None:
+                        try:
+                            delattr(ODL, "OUT")
+                        except AttributeError:
+                            pass
+                    else:
+                        ODL.OUT = call_old_out
+                    if call_old_state is None:
+                        try:
+                            delattr(ODL, "STATE_DIR")
+                        except AttributeError:
+                            pass
+                    else:
+                        ODL.STATE_DIR = call_old_state
 
             # 收集 mp4（排除 .enc）
             paths = sorted(

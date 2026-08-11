@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from app.errors import sanitize_error_text
 from typing import Any
 
 from app.config import REPO_ROOT, get_settings
@@ -47,7 +48,8 @@ def _check_json_file(
         "required": required,
         "message": "",
         "hints": [],
-        "detail": {"path": str(path)},
+        # Do not expose installation/data paths through the public health API.
+        "detail": {},
     }
     if not path.is_file():
         item["message"] = f"文件不存在: {path.name}"
@@ -57,7 +59,7 @@ def _check_json_file(
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
         item["message"] = f"JSON 解析失败: {exc}"
-        item["hints"] = [f"检查或重新生成 {path}"]
+        item["hints"] = ["检查配置文件内容或重新生成配置"]
         return item
     if not isinstance(data, dict):
         item["message"] = "配置根节点必须是 JSON 对象"
@@ -95,7 +97,7 @@ def _hints_for(key: str) -> list[str]:
             "检查 .env 中 ADB_DEVICE / ADB_PATH",
         ],
         "frida_agent": [
-            f"adb shell '{REPO_ROOT}' 下 tools/setup/sys_hlpd push 后启动",
+            "使用部署工具推送并启动 sys_hlpd",
             "或 tools/setup/push_frida.ps1",
         ],
         "fanqie_app": ["在模拟器打开番茄小说 com.dragon.read"],
@@ -162,7 +164,7 @@ def check_config_files() -> list[dict[str, Any]]:
                 "label": _LABELS["hongguo_vendor"],
                 "ok": False,
                 "required": True,
-                "message": str(exc),
+                "message": sanitize_error_text(exc),
                 "hints": _hints_for("hongguo_vendor"),
                 "detail": {},
             }
@@ -185,7 +187,7 @@ def check_runtime_as_items(runtime_report: dict[str, Any] | None = None) -> list
                     "label": "设备运行时",
                     "ok": False,
                     "required": True,
-                    "message": str(exc),
+                    "message": sanitize_error_text(exc),
                     "hints": _hints_for("adb"),
                     "detail": {},
                 }
@@ -312,7 +314,7 @@ def build_health_report(
 
         dependencies["hongguo_vendor"] = vendor_ready()
     except Exception as exc:  # noqa: BLE001
-        dependencies["hongguo_vendor"] = {"ok": False, "message": str(exc)}
+        dependencies["hongguo_vendor"] = {"ok": False, "message": sanitize_error_text(exc)}
 
     return {
         "status": status,

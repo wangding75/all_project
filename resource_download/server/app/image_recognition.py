@@ -111,7 +111,9 @@ async def recognize_cover(
             )
             return platform_name, [*(hot or []), *(new or [])], None
         except Exception as exc:  # noqa: BLE001
-            return platform_name, [], str(exc)
+            from app.errors import sanitize_error_text
+
+            return platform_name, [], sanitize_error_text(exc)
 
     discovered = await asyncio.gather(*[_discover(platform) for platform in targets])
     errors: dict[str, str] = {}

@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     fanqie_delay: float = 1.0
     # 可选全局 Cookie（也可在创建 job 时 options.cookie 传入）
     fanqie_cookie: str = ""
+    # Explicit CA bundle for Fanqie HTTPS; empty uses the system trust store.
+    fanqie_ca_bundle: str = ""
 
     # 鉴权模式（阶段 D-0）：dev | dual | jwt_only
     # dev=仅 X-API-Key（默认，兼容 e2e）；dual=Key 或 JWT；jwt_only=仅 JWT
@@ -63,6 +65,12 @@ class Settings(BaseSettings):
     vip_jobs_per_day: int = 50
     max_concurrent_jobs: int = 5
     max_queued_jobs: int = 100
+    max_history_jobs: int = 200
+
+    # Server-side launching is disabled by default; the desktop native bridge
+    # opens downloaded files on the local machine.
+    server_side_file_open: bool = False
+    allow_server_file_open: bool = False
 
     # License Service（RD 独立 Service Credential；私钥只从 Secret 注入）
     license_service_base_url: str = ""

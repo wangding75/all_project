@@ -145,7 +145,9 @@ def probe_shared_agent(*, try_start: bool = False) -> dict[str, Any]:
         result["message"] = "agent 就绪"
         return result
     except Exception as exc:
-        result["message"] = str(exc)
+        from app.errors import sanitize_error_text
+
+        result["message"] = sanitize_error_text(exc)
         return result
 
 

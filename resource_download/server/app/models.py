@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PlatformName(str, Enum):
@@ -85,7 +85,15 @@ class BatchJobItem(BaseModel):
     platform: PlatformName
     id: str = Field(min_length=1)
     range: str = "all"
-    options: dict[str, Any] = Field(default_factory=dict)
+    options: dict[str, Any] = Field(default_factory=dict, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_download_input(self):
+        from app.options import split_job_options, validate_range_spec
+
+        split_job_options(self.platform, self.options)
+        self.range = validate_range_spec(self.range)
+        return self
 
 
 class BatchJobCreateRequest(BaseModel):
@@ -208,7 +216,15 @@ class JobCreateRequest(BaseModel):
     """书 ID / 剧 ID，或番茄 page URL。"""
     range: str = "all"
     """all | 1-10 | 1,3,5"""
-    options: dict[str, Any] = Field(default_factory=dict)
+    options: dict[str, Any] = Field(default_factory=dict, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_download_input(self):
+        from app.options import split_job_options, validate_range_spec
+
+        split_job_options(self.platform, self.options)
+        self.range = validate_range_spec(self.range)
+        return self
 
 
 class JobFile(BaseModel):

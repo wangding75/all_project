@@ -18,9 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-import warnings
 import requests
-import urllib3
 
 
 HERE = Path(__file__).resolve().parent
@@ -185,9 +183,19 @@ def api_once(method: str, path: str, body: dict | None = None, extra_query: dict
         headers["x-ss-stub"] = hashlib.md5(data).hexdigest().upper()
     if signed:
         headers.update(sign(url, headers))
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", urllib3.exceptions.InsecureRequestWarning)
-        r = requests.request(method, url, data=data, headers=headers, verify=False, timeout=30)
+    # Certificate verification is always enabled.  A private CA may be
+    # supplied explicitly for a controlled development environment.
+    from app.config import get_settings
+
+    ca_bundle = str(get_settings().fanqie_ca_bundle or "").strip()
+    r = requests.request(
+        method,
+        url,
+        data=data,
+        headers=headers,
+        verify=ca_bundle or True,
+        timeout=30,
+    )
     r.raise_for_status()
     return r.json()
 
