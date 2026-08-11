@@ -2661,18 +2661,43 @@
     }
   }
 
+  function libraryFileCategory(file) {
+    const mediaType = String(file && file.media_type || "").toLowerCase();
+    const platform = String(file && file.platform || "").toLowerCase();
+    if (mediaType === "text/plain" || mediaType.startsWith("text/") || platform === "fanqie") {
+      return "fanqie";
+    }
+    return "hongguo";
+  }
+
+  function filesForLibraryFilter(filter, files = state.libraryFiles || []) {
+    if (filter === "fanqie" || filter === "hongguo") {
+      return files.filter((file) => libraryFileCategory(file) === filter);
+    }
+    return files;
+  }
+
+  function updateLibraryFilterStats() {
+    if (!elements.libraryFilterTabs) return;
+    const files = state.libraryFiles || [];
+    const labels = {
+      all: "全部",
+      hongguo: "🔴 短剧视频",
+      fanqie: "🍅 小说文本",
+    };
+    elements.libraryFilterTabs.forEach((tab, index) => {
+      const filter = tab.dataset.libraryFilter || (index === 1 ? "hongguo" : index === 2 ? "fanqie" : "all");
+      const count = filesForLibraryFilter(filter, files).length;
+      tab.textContent = `${labels[filter] || labels.all} (${count})`;
+    });
+  }
+
   function renderLibraryGrid() {
     if (!elements.libraryGrid) return;
     elements.libraryGrid.innerHTML = "";
 
-    let files = state.libraryFiles;
-
-    // 过滤类型
-    if (state.libraryFilter === "hongguo") {
-      files = files.filter((f) => f.media_type === "video/mp4" || f.platform === "hongguo");
-    } else if (state.libraryFilter === "fanqie") {
-      files = files.filter((f) => f.media_type === "text/plain" || f.platform === "fanqie");
-    }
+    updateLibraryFilterStats();
+    let files = filesForLibraryFilter(state.libraryFilter);
 
     // 搜索关键字
     if (state.librarySearch) {
@@ -3809,7 +3834,7 @@
         tab.addEventListener("click", () => {
           elements.libraryFilterTabs.forEach((t) => t.classList.remove("active"));
           tab.classList.add("active");
-          state.libraryFilter = index === 1 ? "hongguo" : index === 2 ? "fanqie" : "all";
+          state.libraryFilter = tab.dataset.libraryFilter || (index === 1 ? "hongguo" : index === 2 ? "fanqie" : "all");
           renderLibraryGrid();
         });
       });
