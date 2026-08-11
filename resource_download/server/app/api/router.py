@@ -594,9 +594,27 @@ async def detail(
 
 
 def _idempotency_scope(identity: Identity) -> str:
+    if identity.license_id and identity.device_id:
+        return f"license:{identity.license_id}:device:{identity.device_id}"
     if identity.kind == "user" and identity.user_id is not None:
         return f"user:{identity.user_id}"
     return "ops"
+
+
+def _job_owner(identity: Identity) -> tuple[int | None, str, str | None, str | None]:
+    """Choose a persisted owner from the verified License Context."""
+    if (
+        identity.license_context_source == "remote"
+        and identity.license_id
+        and identity.device_id
+    ):
+        return identity.user_id, "license_device", identity.license_id, identity.device_id
+    return (
+        identity.user_id if identity.kind == "user" else None,
+        identity.kind if identity.kind == "user" else "ops",
+        None,
+        None,
+    )
 
 
 def _read_idempotency_key(request: Request) -> str:
@@ -646,8 +664,7 @@ async def create_job(
     from app.quota import check_job_quota, increment_job_quota, release_job_quota
     reserved = False
 
-    owner_user_id = identity.user_id if identity.kind == "user" else None
-    owner_kind = identity.kind if identity.kind == "user" else "ops"
+    owner_user_id, owner_kind, license_id, device_id = _job_owner(identity)
 
     manager = get_job_manager()
     try:
@@ -660,6 +677,8 @@ async def create_job(
             options=body.options,
             owner_user_id=owner_user_id,
             owner_kind=owner_kind,
+            license_id=license_id,
+            device_id=device_id,
         )
         increment_job_quota(identity, db)
         reserved = False
@@ -712,8 +731,7 @@ async def create_jobs_batch(
     from app.quota import check_job_quota, increment_job_quota, release_job_quota
 
     manager = get_job_manager()
-    owner_user_id = identity.user_id if identity.kind == "user" else None
-    owner_kind = identity.kind if identity.kind == "user" else "ops"
+    owner_user_id, owner_kind, license_id, device_id = _job_owner(identity)
     existing, _ = await manager.list_jobs_for(identity, page=1, page_size=1000)
     existing_by_key: dict[tuple[PlatformName, str], list] = {}
     for record in existing:
@@ -750,6 +768,8 @@ async def create_jobs_batch(
                 max_active=get_settings().max_queued_jobs,
                 owner_user_id=owner_user_id,
                 owner_kind=owner_kind,
+                license_id=license_id,
+                device_id=device_id,
                 priority=body.queue_mode == "start_immediately",
             )
             increment_job_quota(identity, db)

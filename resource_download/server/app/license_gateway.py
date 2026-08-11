@@ -139,6 +139,49 @@ class LicenseGateway:
             "source": "fail_closed",
         }
 
+    @staticmethod
+    def _normalize_active_context(
+        result: dict[str, Any],
+        *,
+        device_id: str,
+    ) -> dict[str, Any]:
+        """Validate and normalize the rc4 License Context before RD uses it."""
+        plan = result.get("plan")
+        if not isinstance(plan, dict):
+            return {"decision": "INACTIVE", "reason": "PLAN_ENTITLEMENT_INVALID", "source": "remote"}
+        license_id = result.get("license_id")
+        returned_device_id = result.get("device_id")
+        plan_code = plan.get("code")
+        plan_version = plan.get("version")
+        schema_version = result.get("entitlement_schema_version")
+        entitlements = result.get("entitlements")
+        if (
+            not isinstance(license_id, str)
+            or not license_id.strip()
+            or returned_device_id != device_id
+            or not isinstance(plan_code, str)
+            or not plan_code.strip()
+            or isinstance(plan_version, bool)
+            or not isinstance(plan_version, int)
+            or plan_version < 1
+            or isinstance(schema_version, bool)
+            or not isinstance(schema_version, int)
+            or schema_version < 1
+            or not isinstance(entitlements, dict)
+        ):
+            return {"decision": "INACTIVE", "reason": "PLAN_ENTITLEMENT_INVALID", "source": "remote"}
+        normalized = dict(result)
+        normalized.update(
+            {
+                "license_id": license_id,
+                "device_id": device_id,
+                "plan": {"code": plan_code, "version": plan_version},
+                "entitlement_schema_version": schema_version,
+                "entitlements": dict(entitlements),
+            }
+        )
+        return normalized
+
     def activate(self, payload: dict[str, Any], *, request_id: str = "") -> dict[str, Any]:
         """Proxy activation to License Service without touching RD SQLite."""
         started = time.perf_counter()
@@ -217,6 +260,8 @@ class LicenseGateway:
             result = self._unknown("LICENSE_SERVICE_UNAVAILABLE")
         result.setdefault("decision", "ACTIVE" if result.get("activated") else "INACTIVE")
         result.setdefault("source", "remote")
+        if result.get("decision") == "ACTIVE":
+            result = self._normalize_active_context(result, device_id=device_id)
         return self._record_result(
             device_id=device_id,
             result=result,
@@ -264,6 +309,8 @@ class LicenseGateway:
                 "source",
                 "remote" if decision != "UNKNOWN" else "fail_closed",
             )
+            if decision == "ACTIVE":
+                result = self._normalize_active_context(result, device_id=device_id)
         return self._record_result(
             device_id=device_id,
             result=result,

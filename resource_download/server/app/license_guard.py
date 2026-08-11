@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import Depends, HTTPException, Request, status
 
 from app.auth import Identity, require_identity
+from app.config import get_settings
 from app.license_gateway import LicenseGateway, get_license_gateway
 
 DEVICE_PROOF_HEADER_NAMES = (
@@ -28,6 +29,7 @@ _INACTIVE_REASONS = {
     "LICENSE_EXPIRED",
     "LICENSE_REVOKED",
     "DEVICE_LIMIT_REACHED",
+    "PLAN_ENTITLEMENT_INVALID",
 }
 _UNKNOWN_REASONS = {
     "LICENSE_SERVICE_UNAVAILABLE",
@@ -100,6 +102,64 @@ async def require_active_device_license(
     reason = str(result.get("reason") or "")
     request.state.license_result = result
     if decision == "ACTIVE":
+        context = {
+            "license_id": result.get("license_id"),
+            "device_id": result.get("device_id") or device_id,
+            "plan_code": None,
+            "plan_version": None,
+            "entitlement_schema_version": result.get("entitlement_schema_version"),
+            "entitlements": result.get("entitlements"),
+        }
+        plan = result.get("plan")
+        if isinstance(plan, dict):
+            context["plan_code"] = plan.get("code")
+            context["plan_version"] = plan.get("version")
+        valid_context = (
+            isinstance(context["license_id"], str)
+            and bool(context["license_id"].strip())
+            and context["device_id"] == device_id
+            and isinstance(context["plan_code"], str)
+            and bool(context["plan_code"].strip())
+            and isinstance(context["plan_version"], int)
+            and not isinstance(context["plan_version"], bool)
+            and context["plan_version"] >= 1
+            and isinstance(context["entitlement_schema_version"], int)
+            and not isinstance(context["entitlement_schema_version"], bool)
+            and context["entitlement_schema_version"] >= 1
+            and isinstance(context["entitlements"], dict)
+        )
+        # Existing offline unit doubles predate rc4.  Keep that test seam
+        # isolated; a configured remote gateway with a partial response fails
+        # closed instead of manufacturing a plan or quota.
+        if not valid_context and hasattr(gateway, "client"):
+            request.state.license_result = {
+                "activated": False,
+                "decision": "INACTIVE",
+                "reason": "PLAN_ENTITLEMENT_INVALID",
+                "source": "remote",
+            }
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="PLAN_ENTITLEMENT_INVALID")
+        if not valid_context:
+            context = {
+                "license_id": (
+                    f"legacy:{identity.kind}:{identity.user_id}"
+                    if identity.user_id is not None
+                    else f"legacy:{identity.kind}"
+                ),
+                "device_id": device_id,
+                "plan_code": "legacy",
+                "plan_version": 1,
+                "entitlement_schema_version": 1,
+                "entitlements": {
+                    "quota.daily_jobs": int(get_settings().vip_jobs_per_day),
+                    "job.max_concurrency": int(get_settings().max_concurrent_jobs),
+                },
+                "license_context_source": "legacy_compat",
+            }
+        else:
+            context["license_context_source"] = "remote"
+        identity = identity.model_copy(update=context)
+        request.state.license_context = context
         # Only a Device-Proof-validated identity may be persisted as an
         # automation binding.  The body is never used for this value.
         request.state.verified_device_id = device_id

@@ -28,7 +28,7 @@ class Base(DeclarativeBase):
     pass
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _sqlite_column_default(column) -> str | None:

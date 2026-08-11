@@ -46,6 +46,8 @@ class JobRecord:
     updated_at: str = field(default_factory=_utc_now)
     owner_user_id: int | None = None
     owner_kind: str | None = None
+    license_id: str | None = None
+    device_id: str | None = None
     queue_position: int = 0
     archived: bool = False
     pause_scope: str = ""
@@ -65,6 +67,10 @@ class JobRecord:
             extra_dict["owner_user_id"] = self.owner_user_id
         if self.owner_kind is not None:
             extra_dict["owner_kind"] = self.owner_kind
+        if self.license_id is not None:
+            extra_dict["license_id"] = self.license_id
+        if self.device_id is not None:
+            extra_dict["device_id"] = self.device_id
         extra_dict["queue_position"] = self.queue_position
         extra_dict["archived"] = self.archived
         if self.pause_scope:
@@ -122,6 +128,13 @@ class JobManager:
     def can_access_job(self, record: JobRecord, identity: Identity) -> bool:
         if identity.is_ops or identity.kind == "api_key":
             return True
+        if record.owner_kind == "license_device":
+            return (
+                bool(identity.license_id)
+                and bool(identity.device_id)
+                and record.license_id == identity.license_id
+                and record.device_id == identity.device_id
+            )
         if identity.kind == "user":
             return (
                 record.owner_kind == "user"
@@ -131,13 +144,22 @@ class JobManager:
         return False
 
     @staticmethod
-    def _owner_key(owner_kind: str | None, owner_user_id: int | None) -> str:
+    def _owner_key(
+        owner_kind: str | None,
+        owner_user_id: int | None,
+        license_id: str | None = None,
+        device_id: str | None = None,
+    ) -> str:
+        if owner_kind == "license_device" and license_id and device_id:
+            return f"license:{license_id}:device:{device_id}"
         if owner_kind == "user" and owner_user_id is not None:
             return f"user:{owner_user_id}"
         return "ops"
 
     @staticmethod
     def _identity_owner_key(identity: Identity) -> str:
+        if identity.license_id and identity.device_id:
+            return f"license:{identity.license_id}:device:{identity.device_id}"
         if identity.kind == "user" and identity.user_id is not None:
             return f"user:{identity.user_id}"
         return "ops"
@@ -210,6 +232,8 @@ class JobManager:
                         updated_at=data.get("updated_at", _utc_now()),
                         owner_user_id=data.get("owner_user_id"),
                         owner_kind=data.get("owner_kind"),
+                        license_id=data.get("license_id"),
+                        device_id=data.get("device_id"),
                         queue_position=int(data.get("queue_position") or 0),
                         archived=bool(data.get("archived", False)),
                         pause_scope=str(data.get("pause_scope") or ""),
@@ -227,7 +251,12 @@ class JobManager:
                     self._jobs[job_id] = record
                     if record.status == JobStatus.paused and record.pause_scope != "item":
                         self._paused_owners.add(
-                            self._owner_key(record.owner_kind, record.owner_user_id)
+                            self._owner_key(
+                                record.owner_kind,
+                                record.owner_user_id,
+                                record.license_id,
+                                record.device_id,
+                            )
                         )
                     if was_active or not data.get("queue_position"):
                         self._persist(record)
@@ -274,6 +303,8 @@ class JobManager:
         max_active: int | None = None,
         owner_user_id: int | None = None,
         owner_kind: str | None = None,
+        license_id: str | None = None,
+        device_id: str | None = None,
         priority: bool = False,
     ) -> JobRecord:
         persisted_options, runtime_options = split_job_options(platform, options)
@@ -317,10 +348,12 @@ class JobManager:
                 },
                 owner_user_id=owner_user_id,
                 owner_kind=owner_kind,
+                license_id=license_id,
+                device_id=device_id,
                 queue_position=queue_position,
                 status=(
                     JobStatus.paused
-                    if self._owner_key(owner_kind, owner_user_id)
+                    if self._owner_key(owner_kind, owner_user_id, license_id, device_id)
                     in self._paused_owners
                     else JobStatus.pending
                 ),
@@ -570,7 +603,12 @@ class JobManager:
             self._queue_counter += 1
             record.status = (
                 JobStatus.paused
-                if self._owner_key(record.owner_kind, record.owner_user_id)
+                if self._owner_key(
+                    record.owner_kind,
+                    record.owner_user_id,
+                    record.license_id,
+                    record.device_id,
+                )
                 in self._paused_owners
                 else JobStatus.pending
             )
@@ -972,6 +1010,8 @@ class JobManager:
                 "updated_at": record.updated_at,
                 "owner_user_id": record.owner_user_id,
                 "owner_kind": record.owner_kind,
+                "license_id": record.license_id,
+                "device_id": record.device_id,
                 "queue_position": record.queue_position,
                 "archived": record.archived,
                 "pause_scope": record.pause_scope,

@@ -34,6 +34,8 @@ def _utc_now() -> str:
 
 
 def _identity_key(identity: Identity) -> str:
+    if identity.license_context_source == "remote" and identity.license_id and identity.device_id:
+        return f"license:{identity.license_id}:device:{identity.device_id}"
     if identity.kind == "user" and identity.user_id is not None:
         return f"user:{identity.user_id}"
     return "ops"
@@ -113,6 +115,8 @@ class HongguoMonitorService:
             **config.model_dump(),
             "owner_kind": "user" if identity.kind == "user" else "ops",
             "owner_user_id": identity.user_id if identity.kind == "user" else None,
+            "license_id": identity.license_id,
+            "device_id": identity.device_id,
             "license_device_id": None,
             "baseline_initialized": False,
             "known_ids": [],
@@ -278,6 +282,8 @@ class HongguoMonitorService:
             policy["license_device_id"] = str(verified_device_id)
             policy["owner_kind"] = "user" if identity.kind == "user" else "ops"
             policy["owner_user_id"] = identity.user_id if identity.kind == "user" else None
+            policy["license_id"] = identity.license_id
+            policy["device_id"] = identity.device_id or str(verified_device_id)
             policy["last_error"] = ""
             await asyncio.to_thread(self._persist)
             result = self._status(policy)
@@ -459,12 +465,55 @@ class HongguoMonitorService:
                 reason if decision != "UNKNOWN" else "UNKNOWN",
             )
 
+        plan = entitlement.get("plan")
+        context_valid = (
+            isinstance(entitlement.get("license_id"), str)
+            and bool(str(entitlement.get("license_id")).strip())
+            and entitlement.get("device_id") == license_device_id
+            and isinstance(plan, dict)
+            and isinstance(plan.get("code"), str)
+            and bool(str(plan.get("code")).strip())
+            and isinstance(plan.get("version"), int)
+            and not isinstance(plan.get("version"), bool)
+            and plan.get("version") >= 1
+            and isinstance(entitlement.get("entitlement_schema_version"), int)
+            and not isinstance(entitlement.get("entitlement_schema_version"), bool)
+            and entitlement.get("entitlement_schema_version") >= 1
+            and isinstance(entitlement.get("entitlements"), dict)
+        )
+        if not context_valid and hasattr(gateway, "client"):
+            raise BackgroundLicenseDenied("INACTIVE", "PLAN_ENTITLEMENT_INVALID")
+
         owner_kind = str(policy.get("owner_kind") or "ops")
         owner_user_id = policy.get("owner_user_id")
         identity = Identity(
             kind="user" if owner_kind == "user" else "api_key",
             user_id=int(owner_user_id) if owner_user_id is not None else None,
             is_ops=owner_kind != "user",
+            license_id=(
+                str(entitlement.get("license_id"))
+                if context_valid
+                else (
+                    f"legacy:{owner_kind}:{owner_user_id}"
+                    if owner_user_id is not None
+                    else "legacy:ops"
+                )
+            ),
+            device_id=license_device_id,
+            plan_code=plan.get("code") if context_valid else "legacy",
+            plan_version=plan.get("version") if context_valid else 1,
+            entitlement_schema_version=(
+                entitlement.get("entitlement_schema_version") if context_valid else 1
+            ),
+            entitlements=(
+                dict(entitlement.get("entitlements") or {})
+                if context_valid
+                else {
+                    "quota.daily_jobs": int(self.settings.vip_jobs_per_day),
+                    "job.max_concurrency": int(self.settings.max_concurrent_jobs),
+                }
+            ),
+            license_context_source="remote" if context_valid else "legacy_compat",
         )
         existing, _ = await self.manager.list_jobs_for(
             identity,
@@ -480,8 +529,9 @@ class HongguoMonitorService:
             return False
 
         db = None
+        quota_reserved = False
         try:
-            if identity.kind == "user":
+            if not identity.is_ops and identity.kind != "api_key":
                 from app.db import SessionLocal
                 from app.models_orm import User
                 from app.quota import check_job_quota, increment_job_quota, release_job_quota
@@ -510,9 +560,11 @@ class HongguoMonitorService:
                 },
                 max_active=self.settings.max_queued_jobs,
                 owner_user_id=identity.user_id,
-                owner_kind="user" if identity.kind == "user" else "ops",
+                owner_kind="license_device" if context_valid else ("user" if identity.kind == "user" else "ops"),
+                license_id=identity.license_id if context_valid else None,
+                device_id=identity.device_id if context_valid else None,
             )
-            if identity.kind == "user" and db is not None:
+            if not identity.is_ops and identity.kind != "api_key" and db is not None:
                 increment_job_quota(identity, db)
                 quota_reserved = False
             return True

@@ -60,3 +60,20 @@ class UsageDaily(Base):
     user_id = Column(Integer, primary_key=True)
     day = Column(String(10), primary_key=True)  # UTC YYYY-MM-DD
     job_count = Column(Integer, nullable=False, default=0)
+
+
+class LicenseUsageDaily(Base):
+    """Daily job usage keyed by the License Service subject."""
+
+    __tablename__ = "license_usage_daily"
+
+    license_id = Column(String(128), primary_key=True)
+    day = Column(String(10), primary_key=True)  # UTC YYYY-MM-DD
+    used_count = Column(Integer, nullable=False, default=0)
+    limit_snapshot = Column(Integer, nullable=False)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )

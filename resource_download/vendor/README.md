@@ -2,13 +2,13 @@
 
 ## License Service Server SDK
 
-`license_service_client-1.0.0rc3-py3-none-any.whl` is the fixed RD server
-dependency from the License Service contract baseline.
+`license_service_client-1.0.0rc4-py3-none-any.whl` is the fixed RD server
+dependency from the License Service entitlement contract.
 
 SHA-256:
 
 ```text
-30EC6E2FFA86627A7F1E6DD2E9AE7F2A07FE44161495AFD864D9090CBBF43A53
+62E502DC2BAB6F925DACB4A51E92D4D39F9CD459E7C209C618C8FB46CC5C29C9
 ```
 
 Install from the wheel; do not use editable installs from the adjacent

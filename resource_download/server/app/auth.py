@@ -8,6 +8,7 @@ import bcrypt
 from fastapi import Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from typing import Any
 
 from app.config import get_settings
 from app.db import get_db
@@ -23,6 +24,15 @@ class Identity(BaseModel):
     user_id: int | None = None
     username: str | None = None
     is_ops: bool = False
+    # License Service context is attached only after a successful Device
+    # Proof authorization.  These fields are never accepted from request JSON.
+    license_id: str | None = None
+    device_id: str | None = None
+    plan_code: str | None = None
+    plan_version: int | None = None
+    entitlement_schema_version: int | None = None
+    entitlements: dict[str, Any] = Field(default_factory=dict)
+    license_context_source: str | None = None
 
 
 def _unauthorized(detail: str) -> HTTPException:
