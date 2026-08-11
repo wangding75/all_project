@@ -134,6 +134,12 @@ def test_protected_scope_and_unprotected_scope_are_exact() -> None:
         ("POST", "/v1/jobs/batch"),
         ("POST", "/v1/jobs/queue/bulk/retry"),
         ("POST", "/v1/jobs/job-1/retry"),
+        ("GET", "/v1/jobs"),
+        ("GET", "/v1/jobs/job-1"),
+        ("GET", "/v1/search?q=x"),
+        ("GET", "/v1/detail?id=x"),
+        ("GET", "/v1/files"),
+        ("GET", "/v1/files/job-1/file.txt"),
         ("PUT", "/v1/automation/hongguo-new"),
         ("POST", "/v1/automation/hongguo-new/scan"),
     }
@@ -142,11 +148,6 @@ def test_protected_scope_and_unprotected_scope_are_exact() -> None:
     for method, target in {
         ("POST", "/v1/auth/login"),
         ("POST", "/v1/auth/redeem"),
-        ("GET", "/v1/jobs"),
-        ("GET", "/v1/jobs/job-1"),
-        ("GET", "/v1/search?q=x"),
-        ("GET", "/v1/detail?id=x"),
-        ("GET", "/v1/files"),
         ("GET", "/health"),
     }:
         assert not is_protected_endpoint(method, target)

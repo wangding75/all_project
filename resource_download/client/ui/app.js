@@ -492,7 +492,7 @@
     return fileId.split("/").map(encodeURIComponent).join("/");
   }
 
-  // This is intentionally the same six-endpoint scope as server/app/license_guard.py.
+  // This is intentionally the same business scope as server/app/license_guard.py.
   // Only the desktop bridge can sign these calls; a normal browser has no key.
   function isProtectedEndpoint(endpoint, method = "GET") {
     let path = endpoint;
@@ -500,15 +500,17 @@
       path = new URL(endpoint, state.apiBase).pathname;
     } catch (_) {}
     const verb = String(method || "GET").toUpperCase();
-    if (
-      verb === "POST" &&
-      ["/v1/jobs", "/v1/jobs/batch", "/v1/jobs/queue/bulk/retry"].includes(path)
-    ) {
-      return true;
-    }
-    if (verb === "POST" && /^\/v1\/jobs\/[^/]+\/retry$/.test(path)) return true;
-    if (verb === "PUT" && path === "/v1/automation/hongguo-new") return true;
-    return verb === "POST" && path === "/v1/automation/hongguo-new/scan";
+    if (/^\/v1\/jobs(?:\/.*)?$/.test(path)) return true;
+    if (/^\/v1\/files(?:\/.*)?$/.test(path)) return true;
+    if ([
+      "/v1/search",
+      "/v1/detail",
+      "/v1/discover",
+      "/v1/batch/resolve",
+      "/v1/image/recognize",
+      "/v1/hongguo/people",
+    ].includes(path)) return true;
+    return path.startsWith("/v1/automation/hongguo-new");
   }
 
   const licenseReasonMessages = {
@@ -524,6 +526,7 @@
     LICENSE_REVOKED: "License 已撤销，商业操作已停止。",
     DEVICE_REVOKED: "设备已撤销，商业操作已停止。",
     DEVICE_LIMIT_REACHED: "已达到 License 的设备数量上限。",
+    PLAN_ENTITLEMENT_INVALID: "License 计划权益数据无效，请联系管理员。",
     INVALID_KEY: "激活码无效。",
     LICENSE_SERVICE_UNAVAILABLE: "License Service 暂时不可用，请稍后重试。",
     LICENSE_SERVICE_TIMEOUT: "License Service 暂时不可用，请稍后重试。",
@@ -661,28 +664,8 @@
   }
 
   async function downloadFileInBrowser(file) {
-    const fileId = file.file_id;
-    const baseUrl = state.apiBase.replace(/\/+$/, "");
-    const response = await fetch(`${baseUrl}/v1/files/${encodeFilePath(fileId)}`, {
-      headers: authHeaders(false),
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.detail || `HTTP ${response.status}`);
-    }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    try {
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = file.name || file.title || fileId.split("/").pop() || "download.bin";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } finally {
-      setTimeout(() => URL.revokeObjectURL(url), 30000);
-    }
-    return { success: true, browser: true };
+    void file;
+    throw new Error("DESKTOP_DEVICE_IDENTITY_REQUIRED");
   }
 
   async function deliverFileLocal(file, action = "download") {

@@ -57,6 +57,10 @@ data/                   # 运行时
 
 ## 快速开始
 
+普通业务请求现在统一使用 Device Proof + ACTIVE License Context；API Key
+仅用于运维边界，不能绕过 License。Legacy User/JWT auth endpoints remain
+available as deprecated compatibility APIs and are not required by Desktop business routes.
+
 ### 1. 服务端（中转）
 
 ```powershell
@@ -71,7 +75,7 @@ API Key 仍是 RD 身份/运维凭证，但不能绕过 `POST /v1/jobs` 的 Devi
 
 生产请配置强随机 `api_key` / `jwt_secret` 以及 `LICENSE_SERVICE_*` RD Service
 Credential，见 `docs/production.env.example`。固定的
-`vendor/license_service_client-1.0.0rc3-py3-none-any.whl` 会随 requirements
+`vendor/license_service_client-1.0.0rc4-py3-none-any.whl` 会随 requirements
 安装，禁止使用相邻 License Service 源码 editable install。
 
 ### 2. 瘦客户端

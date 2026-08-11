@@ -148,6 +148,14 @@ search/detail、Job list/status/files、register/login、health 与 admin 不因
 
 ---
 
+## T27 business authorization note
+
+All ordinary business endpoints (content discovery, search/detail, jobs, queue,
+files, and automation) require Device Proof and an ACTIVE License Context.
+Legacy register/login/me/redeem endpoints remain deprecated compatibility APIs;
+Desktop business requests do not require User/JWT authentication. API keys do
+not bypass the License Guard.
+
 ## GET /health
 
 无需鉴权。

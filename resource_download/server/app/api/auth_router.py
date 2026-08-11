@@ -35,6 +35,7 @@ auth_router = APIRouter()
     "/v1/auth/register",
     response_model=UserRegisterResponse,
     status_code=status.HTTP_201_CREATED,
+    deprecated=True,
     dependencies=[Depends(ip_rate_limiter("auth"))],
 )
 def register(
@@ -73,6 +74,7 @@ def register(
 @auth_router.post(
     "/v1/auth/login",
     response_model=UserLoginResponse,
+    deprecated=True,
     dependencies=[Depends(ip_rate_limiter("auth"))],
 )
 def login(
@@ -110,6 +112,7 @@ def login(
 @auth_router.get(
     "/v1/auth/me",
     response_model=UserMeResponse,
+    deprecated=True,
 )
 def me(
     identity: Identity = Depends(require_identity),
@@ -165,6 +168,7 @@ def me(
 @auth_router.post(
     "/v1/auth/redeem",
     response_model=RedeemResponse,
+    deprecated=True,
 )
 def redeem_card(
     request: Request,

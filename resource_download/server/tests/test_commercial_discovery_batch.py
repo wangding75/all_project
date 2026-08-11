@@ -64,6 +64,15 @@ def commercial_client():
 
     app.dependency_overrides[get_db] = _db_override
     with TestClient(app) as client:
+        client.headers.update(
+            {
+                "X-Device-Id": "dev_" + "1" * 64,
+                "X-Device-Key-Algorithm": "ED25519",
+                "X-Device-Proof-Timestamp": "1760000000",
+                "X-Device-Proof-Nonce": "commercial-proof-nonce-123456",
+                "X-Device-Proof-Signature": "commercial-proof-signature",
+            }
+        )
         yield client
     app.dependency_overrides.clear()
 

@@ -36,6 +36,15 @@ def commercial_client(license_gateway_for_tests):
     app.dependency_overrides[get_db] = override_get_db
     try:
         with TestClient(app) as client:
+            client.headers.update(
+                {
+                    "X-Device-Id": "dev_" + "1" * 64,
+                    "X-Device-Key-Algorithm": "ED25519",
+                    "X-Device-Proof-Timestamp": "1760000000",
+                    "X-Device-Proof-Nonce": "t22-proof-nonce-123456",
+                    "X-Device-Proof-Signature": "t22-proof-signature",
+                }
+            )
             yield client
     finally:
         app.dependency_overrides.pop(get_db, None)

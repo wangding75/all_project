@@ -343,7 +343,7 @@ def test_http_automation_saves_only_verified_device_id(tmp_path, monkeypatch):
         with TestClient(app) as client:
             response = client.put(
                 "/v1/automation/hongguo-new",
-                headers=_request_headers(DEVICE_ID),
+                headers={key: value for key, value in _request_headers(DEVICE_ID).items() if key != "X-API-Key"},
                 json={"auto_enqueue": True, "enabled": False},
             )
         assert response.status_code == 200
@@ -352,7 +352,7 @@ def test_http_automation_saves_only_verified_device_id(tmp_path, monkeypatch):
                 encoding="utf-8"
             )
         )
-        assert payload["user:42"]["license_device_id"] == DEVICE_ID
+        assert next(iter(payload.values()))["license_device_id"] == DEVICE_ID
         assert response.json()["license_context_status"] == "READY"
     finally:
         app.dependency_overrides.pop(require_identity, None)

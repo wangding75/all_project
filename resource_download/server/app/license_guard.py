@@ -6,9 +6,9 @@ import asyncio
 import uuid
 from typing import Any
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 
-from app.auth import Identity, require_identity
+from app.auth import Identity, decode_jwt
 from app.config import get_settings
 from app.license_gateway import LicenseGateway, get_license_gateway
 
@@ -67,12 +67,43 @@ def _proof_from_headers(request: Request) -> tuple[str, str, dict[str, Any]] | N
     )
 
 
+def _business_identity(
+    x_api_key: str | None,
+    authorization: str | None,
+) -> Identity:
+    """Build an optional legacy marker; License Context is the real identity.
+
+    Desktop business requests do not require register/login/JWT.  If an old
+    client still sends a valid JWT, its subject is retained only as a nullable
+    compatibility/display marker and never authorizes the request.
+    """
+    settings = get_settings()
+    if x_api_key and x_api_key == settings.api_key:
+        return Identity(kind="api_key", is_ops=True)
+    if authorization:
+        parts = authorization.strip().split(None, 1)
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            try:
+                payload = decode_jwt(parts[1].strip())
+                user_id = int(payload["sub"])
+                return Identity(
+                    kind="user",
+                    user_id=user_id,
+                    username=str(payload.get("username") or "") or None,
+                )
+            except Exception:  # invalid legacy marker does not bypass License
+                pass
+    return Identity(kind="license")
+
+
 async def require_active_device_license(
     request: Request,
-    identity: Identity = Depends(require_identity),
     gateway: LicenseGateway = Depends(get_license_gateway),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
 ) -> Identity:
     """Require identity plus an ACTIVE License decision for the real request."""
+    identity = _business_identity(x_api_key, authorization)
     parsed = _proof_from_headers(request)
     if parsed is None:
         raise HTTPException(

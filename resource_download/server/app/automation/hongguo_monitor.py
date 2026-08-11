@@ -113,8 +113,14 @@ class HongguoMonitorService:
         config = HongguoMonitorConfig()
         return {
             **config.model_dump(),
-            "owner_kind": "user" if identity.kind == "user" else "ops",
+            "owner_kind": (
+                "license_device"
+                if identity.license_context_source == "remote"
+                else ("user" if identity.kind == "user" else "ops")
+            ),
             "owner_user_id": identity.user_id if identity.kind == "user" else None,
+            "license_id": identity.license_id,
+            "device_id": identity.device_id,
             "license_id": identity.license_id,
             "device_id": identity.device_id,
             "license_device_id": None,
@@ -254,11 +260,6 @@ class HongguoMonitorService:
         *,
         verified_device_id: str,
     ) -> HongguoMonitorStatus:
-        if identity.kind != "user" or identity.is_ops:
-            raise BackgroundLicenseDenied(
-                "INACTIVE",
-                "BACKGROUND_LICENSE_CONTEXT_REQUIRED",
-            )
         if not _DEVICE_ID_PATTERN.fullmatch(str(verified_device_id or "")):
             raise BackgroundLicenseDenied(
                 "INACTIVE",
@@ -280,7 +281,11 @@ class HongguoMonitorService:
             # Persist only the identity that the Device Proof guard accepted.
             # A client-supplied JSON field is never read for this value.
             policy["license_device_id"] = str(verified_device_id)
-            policy["owner_kind"] = "user" if identity.kind == "user" else "ops"
+            policy["owner_kind"] = (
+                "license_device"
+                if identity.license_context_source == "remote"
+                else ("user" if identity.kind == "user" else "ops")
+            )
             policy["owner_user_id"] = identity.user_id if identity.kind == "user" else None
             policy["license_id"] = identity.license_id
             policy["device_id"] = identity.device_id or str(verified_device_id)
@@ -487,9 +492,9 @@ class HongguoMonitorService:
         owner_kind = str(policy.get("owner_kind") or "ops")
         owner_user_id = policy.get("owner_user_id")
         identity = Identity(
-            kind="user" if owner_kind == "user" else "api_key",
+            kind="license" if context_valid else ("user" if owner_kind == "user" else "api_key"),
             user_id=int(owner_user_id) if owner_user_id is not None else None,
-            is_ops=owner_kind != "user",
+            is_ops=(owner_kind not in {"user", "license_device"}) if not context_valid else False,
             license_id=(
                 str(entitlement.get("license_id"))
                 if context_valid
@@ -531,7 +536,11 @@ class HongguoMonitorService:
         db = None
         quota_reserved = False
         try:
-            if not identity.is_ops and identity.kind != "api_key":
+            if (
+                not identity.is_ops
+                and identity.kind != "api_key"
+                and identity.license_context_source != "remote"
+            ):
                 from app.db import SessionLocal
                 from app.models_orm import User
                 from app.quota import check_job_quota, increment_job_quota, release_job_quota
@@ -543,6 +552,18 @@ class HongguoMonitorService:
                 # The control endpoints are License-Protected.  Do not use the
                 # legacy User.vip_expires_at field as a second authorization
                 # truth for scheduled jobs; quota remains RD-owned here.
+                check_job_quota(identity, db)
+                quota_reserved = True
+
+            if (
+                not identity.is_ops
+                and identity.kind != "api_key"
+                and identity.license_context_source == "remote"
+            ):
+                from app.db import SessionLocal
+                from app.quota import check_job_quota
+
+                db = SessionLocal()
                 check_job_quota(identity, db)
                 quota_reserved = True
 

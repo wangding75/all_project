@@ -14,6 +14,16 @@ from .device_proof import DeviceProofService
 
 
 _PROTECTED_JOB_RETRY = re.compile(r"^/v1/jobs/[^/]+/retry$")
+_PROTECTED_JOB_PATH = re.compile(r"^/v1/jobs(?:/.*)?$")
+_PROTECTED_FILE_PATH = re.compile(r"^/v1/files(?:/.*)?$")
+_PROTECTED_CONTENT_PATHS = {
+    "/v1/search",
+    "/v1/detail",
+    "/v1/discover",
+    "/v1/batch/resolve",
+    "/v1/image/recognize",
+    "/v1/hongguo/people",
+}
 _RETRYABLE_HTTP = {408, 425, 429, 500, 502, 503, 504}
 _KNOWN_LICENSE_REASONS = {
     "DEVICE_PROOF_REQUIRED",
@@ -28,6 +38,7 @@ _KNOWN_LICENSE_REASONS = {
     "DEVICE_LIMIT_REACHED",
     "INVALID_KEY",
     "LICENSE_SERVICE_UNAVAILABLE",
+    "PLAN_ENTITLEMENT_INVALID",
 }
 
 
@@ -36,15 +47,11 @@ def is_protected_endpoint(method: str, request_target: str) -> bool:
     parsed = urllib.parse.urlsplit(request_target)
     path = parsed.path
     method = method.upper()
-    if method == "POST" and path in {"/v1/jobs", "/v1/jobs/batch", "/v1/jobs/queue/bulk/retry"}:
+    if _PROTECTED_JOB_PATH.fullmatch(path) or _PROTECTED_FILE_PATH.fullmatch(path):
         return True
-    if method == "POST" and _PROTECTED_JOB_RETRY.fullmatch(path):
+    if path in _PROTECTED_CONTENT_PATHS:
         return True
-    if method == "PUT" and path == "/v1/automation/hongguo-new":
-        return True
-    if method == "POST" and path == "/v1/automation/hongguo-new/scan":
-        return True
-    return False
+    return path.startswith("/v1/automation/hongguo-new")
 
 
 def normalize_reason(status_code: int, detail: Any) -> str:

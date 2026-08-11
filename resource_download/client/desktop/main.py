@@ -378,6 +378,12 @@ class WindowApi:
             headers["Authorization"] = f"Bearer {access_token}"
         elif api_key:
             headers["X-API-Key"] = api_key
+        request_target = f"/v1/files/{encoded}"
+        try:
+            self.initialize_device_identity()
+            headers.update(self._proof_service.request_headers("GET", request_target, b""))
+        except DeviceIdentityError as exc:
+            return {"success": False, "message": exc.code, "reason": exc.code}
 
         normalized_parts = [part for part in file_id.replace("\\", "/").split("/") if part]
         job_folder = _safe_filename(normalized_parts[0]) if len(normalized_parts) > 1 else ""

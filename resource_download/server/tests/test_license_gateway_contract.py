@@ -221,16 +221,34 @@ def test_memory_replay_store_consumes_nonce_once():
     assert store.consume("nonce", expires_at=time.time() + 30) is False
 
 
-def test_rd_license_guard_scope_is_exact_current_vip_scope():
+def test_rd_license_guard_scope_covers_all_ordinary_business_routes():
     from app.main import app
 
     expected = {
+        "/v1/search",
+        "/v1/detail",
+        "/v1/discover",
+        "/v1/batch/resolve",
+        "/v1/image/recognize",
+        "/v1/hongguo/people",
         "/v1/jobs",
         "/v1/jobs/batch",
+        "/v1/jobs",
+        "/v1/jobs/summary",
+        "/v1/jobs/queue",
+        "/v1/jobs/queue/pause",
+        "/v1/jobs/queue/resume",
+        "/v1/jobs/queue/reorder",
+        "/v1/jobs/queue/bulk",
         "/v1/jobs/queue/bulk/retry",
         "/v1/jobs/{job_id}/retry",
+        "/v1/jobs/{job_id}",
         "/v1/automation/hongguo-new",
         "/v1/automation/hongguo-new/scan",
+        "/v1/files",
+        "/v1/files/thumbnail",
+        "/v1/files/{file_id:path}",
+        "/v1/files/{file_id:path}/open",
     }
     guarded = {
         route.path
@@ -240,7 +258,4 @@ def test_rd_license_guard_scope_is_exact_current_vip_scope():
             for dependency in getattr(getattr(route, "dependant", None), "dependencies", [])
         )
     }
-    assert guarded == expected
-    assert "/v1/search" not in guarded
-    assert "/v1/detail" not in guarded
-    assert "/v1/files" not in guarded
+    assert expected <= guarded

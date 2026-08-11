@@ -250,7 +250,7 @@ async def search(
         description="fanqie | hongguo | all；省略或 all 时聚合双平台搜索",
     ),
     page: int = Query(1, ge=1),
-    _: Identity = Depends(require_identity),
+    _: Identity = Depends(require_active_device_license),
 ) -> SearchResponse:
     """单平台或聚合搜索。聚合时某平台失败仍返回另一平台结果，错误写在 platform_errors。"""
     import asyncio
@@ -298,7 +298,7 @@ async def search(
 @api_router.post("/v1/batch/resolve", response_model=BatchResolveResponse)
 async def resolve_batch(
     body: BatchResolveRequest,
-    _: Identity = Depends(require_identity),
+    _: Identity = Depends(require_active_device_license),
 ) -> BatchResolveResponse:
     """批量识别链接或资源 ID；单条失败不会中断整批。"""
     import asyncio
@@ -349,7 +349,7 @@ async def resolve_batch(
 @api_router.post("/v1/image/recognize", response_model=ImageRecognizeResponse)
 async def recognize_image(
     body: ImageRecognizeRequest,
-    _: Identity = Depends(require_identity),
+    _: Identity = Depends(require_active_device_license),
 ) -> ImageRecognizeResponse:
     from app.image_recognition import decode_image_base64, recognize_cover
 
@@ -368,7 +368,7 @@ async def recognize_image(
 async def hongguo_people(
     genre: str = Query("short_play"),
     work_limit: int = Query(20, ge=1, le=30),
-    _: Identity = Depends(require_identity),
+    _: Identity = Depends(require_active_device_license),
 ) -> PeopleResponse:
     if genre not in {"short_play", "comic_series", "ai_series"}:
         raise HTTPException(status_code=400, detail=f"unsupported hongguo genre: {genre}")
@@ -416,7 +416,7 @@ async def discover(
     min_episode_count: int = Query(0, ge=0, le=10000),
     keyword: str | None = Query(None, max_length=50),
     only_today: bool = Query(True),
-    _: Identity = Depends(require_identity),
+    _: Identity = Depends(require_active_device_license),
 ) -> DiscoverResponse:
     """首页发现页：聚合平台真实热榜 / 今日上新，单平台失败时降级返回。"""
     raw = (platform or "all").strip().lower()
@@ -559,7 +559,7 @@ async def detail(
     id: str = Query(..., min_length=1, description="书/剧 ID 或 URL"),
     page: int | None = Query(None, ge=1, description="可选选集页码"),
     page_size: int | None = Query(None, ge=1, le=500, description="可选每页选集数量"),
-    _: Identity = Depends(require_identity),
+    _: Identity = Depends(require_active_device_license),
 ) -> DetailResponse:
     try:
         impl = get_platform(platform)
@@ -806,7 +806,7 @@ async def list_jobs(
     status: JobStatus | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> JobListResponse:
     manager = get_job_manager()
     records, total = await manager.list_jobs_for(identity, status=status, page=page, page_size=page_size)
@@ -820,7 +820,7 @@ async def list_jobs(
 
 @api_router.get("/v1/jobs/summary", response_model=JobsSummaryResponse)
 async def jobs_summary(
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> JobsSummaryResponse:
     manager = get_job_manager()
     data = await manager.summary_for(identity)
@@ -829,14 +829,14 @@ async def jobs_summary(
 
 @api_router.get("/v1/jobs/queue", response_model=QueueStateResponse)
 async def get_queue(
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> QueueStateResponse:
     return QueueStateResponse(**await get_job_manager().queue_state_for(identity))
 
 
 @api_router.post("/v1/jobs/queue/pause")
 async def pause_queue(
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> dict[str, Any]:
     count = await get_job_manager().pause_queue_for(identity)
     return {"paused": True, "affected": count}
@@ -844,7 +844,7 @@ async def pause_queue(
 
 @api_router.post("/v1/jobs/queue/resume")
 async def resume_queue(
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> dict[str, Any]:
     count = await get_job_manager().resume_queue_for(identity)
     return {"paused": False, "affected": count}
@@ -853,7 +853,7 @@ async def resume_queue(
 @api_router.post("/v1/jobs/queue/reorder")
 async def reorder_queue(
     body: QueueReorderRequest,
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> dict[str, Any]:
     ok = await get_job_manager().reorder_queue_for(identity, body.job_ids)
     if not ok:
@@ -864,7 +864,7 @@ async def reorder_queue(
 @api_router.post("/v1/jobs/queue/bulk", response_model=QueueBulkResponse)
 async def bulk_queue_action(
     body: QueueBulkActionRequest,
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> QueueBulkResponse:
     manager = get_job_manager()
     requested = list(dict.fromkeys(body.job_ids))
@@ -935,7 +935,7 @@ async def bulk_retry_jobs(
 @api_router.get("/v1/jobs/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: str,
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> JobResponse:
     manager = get_job_manager()
     record = await manager.get_job_for(job_id, identity)
@@ -968,7 +968,7 @@ async def retry_job(
 @api_router.delete("/v1/jobs/{job_id}")
 async def cancel_job(
     job_id: str,
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> dict[str, str]:
     manager = get_job_manager()
     record = await manager.get_job_for(job_id, identity)
@@ -986,7 +986,7 @@ async def cancel_job(
     response_model=HongguoMonitorStatus,
 )
 async def get_hongguo_new_monitor(
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> HongguoMonitorStatus:
     from app.automation import get_hongguo_monitor_service
 
@@ -1003,11 +1003,8 @@ async def configure_hongguo_new_monitor(
     identity: Identity = Depends(require_active_device_license),
     gateway: LicenseGateway = Depends(get_license_gateway),
 ) -> HongguoMonitorStatus:
-    if identity.kind != "user" or identity.is_ops:
-        raise HTTPException(
-            status_code=403,
-            detail="BACKGROUND_LICENSE_CONTEXT_REQUIRED",
-        )
+    if request.headers.get("X-API-Key") or not identity.license_id or not identity.device_id:
+        raise HTTPException(status_code=403, detail="BACKGROUND_LICENSE_CONTEXT_REQUIRED")
     if body.quality != "1080p":
         raise HTTPException(status_code=400, detail="红果自动下载当前仅支持可播放的 1080p")
     from app.automation import get_hongguo_monitor_service
@@ -1043,7 +1040,7 @@ async def scan_hongguo_new_now(
 
 @api_router.get("/v1/files", response_model=FileListResponse)
 async def list_files(
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> FileListResponse:
     manager = get_job_manager()
     settings = get_settings()
@@ -1096,7 +1093,7 @@ async def list_files(
 @api_router.get("/v1/files/thumbnail")
 async def get_file_thumbnail(
     file_id: str = Query(..., min_length=1),
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> FileResponse:
     """生成或读取媒体缩略图；视频抽帧，小说优先使用同目录真实封面。"""
     import asyncio
@@ -1170,7 +1167,7 @@ async def get_file_thumbnail(
 @api_router.get("/v1/files/{file_id:path}")
 async def get_file(
     file_id: str,
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> FileResponse:
     manager = get_job_manager()
     if not manager.can_access_file(file_id, identity):
@@ -1186,7 +1183,7 @@ async def open_file(
     file_id: str,
     body: FileOpenRequest,
     request: Request,
-    identity: Identity = Depends(require_identity),
+    identity: Identity = Depends(require_active_device_license),
 ) -> FileOpenResponse:
     manager = get_job_manager()
     if not manager.can_access_file(file_id, identity):

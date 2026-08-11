@@ -48,6 +48,15 @@ def fixture_client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
+        c.headers.update(
+            {
+                "X-Device-Id": "dev_" + "1" * 64,
+                "X-Device-Key-Algorithm": "ED25519",
+                "X-Device-Proof-Timestamp": "1760000000",
+                "X-Device-Proof-Nonce": "isolation-proof-nonce-123456",
+                "X-Device-Proof-Signature": "isolation-proof-signature",
+            }
+        )
         yield c
     app.dependency_overrides.clear()
 
