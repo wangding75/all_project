@@ -11,6 +11,7 @@ from app.auth import (
     Identity,
     create_access_token,
     hash_password,
+    require_legacy_user_auth,
     require_identity,
     verify_password,
 )
@@ -36,7 +37,7 @@ auth_router = APIRouter()
     response_model=UserRegisterResponse,
     status_code=status.HTTP_201_CREATED,
     deprecated=True,
-    dependencies=[Depends(ip_rate_limiter("auth"))],
+    dependencies=[Depends(require_legacy_user_auth), Depends(ip_rate_limiter("auth"))],
 )
 def register(
     body: UserRegisterRequest,
@@ -75,7 +76,7 @@ def register(
     "/v1/auth/login",
     response_model=UserLoginResponse,
     deprecated=True,
-    dependencies=[Depends(ip_rate_limiter("auth"))],
+    dependencies=[Depends(require_legacy_user_auth), Depends(ip_rate_limiter("auth"))],
 )
 def login(
     body: UserLoginRequest,
@@ -113,6 +114,7 @@ def login(
     "/v1/auth/me",
     response_model=UserMeResponse,
     deprecated=True,
+    dependencies=[Depends(require_legacy_user_auth)],
 )
 def me(
     identity: Identity = Depends(require_identity),
@@ -169,6 +171,7 @@ def me(
     "/v1/auth/redeem",
     response_model=RedeemResponse,
     deprecated=True,
+    dependencies=[Depends(require_legacy_user_auth)],
 )
 def redeem_card(
     request: Request,

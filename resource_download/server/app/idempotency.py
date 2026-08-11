@@ -12,6 +12,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
@@ -51,7 +52,7 @@ class IdempotencyStore:
         for key in expired:
             self._entries.pop(key, None)
 
-    def begin(self, scope: str, key: str, fingerprint: str) -> tuple[bool, _Entry]:
+    def begin(self, scope: str, key: str, fingerprint: str, *, db=None) -> tuple[bool, _Entry]:
         now = time.monotonic()
         lookup = (scope, key)
         with self._lock:
@@ -61,27 +62,105 @@ class IdempotencyStore:
                 if entry.fingerprint != fingerprint:
                     raise IdempotencyConflict("IDEMPOTENCY_CONFLICT")
                 return False, entry
+            if db is not None:
+                from app.models_orm import IdempotencyRecord
+
+                now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+                row = (
+                    db.query(IdempotencyRecord)
+                    .filter(
+                        IdempotencyRecord.scope == scope,
+                        IdempotencyRecord.key == key,
+                    )
+                    .first()
+                )
+                if row is not None and row.expires_at <= now_utc:
+                    db.delete(row)
+                    db.commit()
+                    row = None
+                if row is not None:
+                    if row.fingerprint != fingerprint:
+                        raise IdempotencyConflict("IDEMPOTENCY_CONFLICT")
+                    durable_response = None
+                    if row.response_json:
+                        try:
+                            decoded = json.loads(row.response_json)
+                            if isinstance(decoded, dict):
+                                durable_response = decoded
+                        except (TypeError, ValueError):
+                            durable_response = None
+                    entry = _Entry(
+                        fingerprint=fingerprint,
+                        expires_at=time.monotonic() + self.ttl_seconds,
+                        response=durable_response,
+                    )
+                    self._entries[lookup] = entry
+                    return False, entry
+                db.add(
+                    IdempotencyRecord(
+                        scope=scope,
+                        key=key,
+                        fingerprint=fingerprint,
+                        expires_at=now_utc + timedelta(seconds=self.ttl_seconds),
+                    )
+                )
+                db.commit()
             entry = _Entry(fingerprint=fingerprint, expires_at=now + self.ttl_seconds)
             self._entries[lookup] = entry
             return True, entry
 
-    def complete(self, scope: str, key: str, entry: _Entry, response: dict[str, Any]) -> None:
+    def complete(self, scope: str, key: str, entry: _Entry, response: dict[str, Any], *, db=None) -> None:
         with self._lock:
             current = self._entries.get((scope, key))
             if current is not entry:
                 return
             entry.response = response
             entry.expires_at = time.monotonic() + self.ttl_seconds
+            if db is not None:
+                from app.models_orm import IdempotencyRecord
+
+                row = (
+                    db.query(IdempotencyRecord)
+                    .filter(
+                        IdempotencyRecord.scope == scope,
+                        IdempotencyRecord.key == key,
+                        IdempotencyRecord.fingerprint == entry.fingerprint,
+                    )
+                    .first()
+                )
+                if row is not None:
+                    row.response_json = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+                    row.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+                        seconds=self.ttl_seconds
+                    )
+                    db.commit()
             entry.event.set()
 
-    def fail(self, scope: str, key: str, entry: _Entry) -> None:
+    def fail(self, scope: str, key: str, entry: _Entry, *, db=None) -> None:
         with self._lock:
             current = self._entries.get((scope, key))
             if current is entry:
                 self._entries.pop((scope, key), None)
+                if db is not None:
+                    from app.models_orm import IdempotencyRecord
+
+                    row = (
+                        db.query(IdempotencyRecord)
+                        .filter(
+                            IdempotencyRecord.scope == scope,
+                            IdempotencyRecord.key == key,
+                            IdempotencyRecord.fingerprint == entry.fingerprint,
+                        )
+                        .first()
+                    )
+                    if row is not None:
+                        db.delete(row)
+                        db.commit()
                 entry.event.set()
 
     def wait(self, entry: _Entry) -> dict[str, Any] | None:
+        if entry.response is not None:
+            return entry.response
         if not entry.event.wait(timeout=IDEMPOTENCY_WAIT_SECONDS):
             raise IdempotencyInProgress("IDEMPOTENCY_IN_PROGRESS")
         return entry.response

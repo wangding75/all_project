@@ -742,6 +742,7 @@ async def create_job(
                 _idempotency_scope(identity),
                 idempotency_key,
                 request_fingerprint(body.model_dump(mode="json")),
+                db=db,
             )
         except IdempotencyConflict as exc:
             raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT") from exc
@@ -749,7 +750,10 @@ async def create_job(
             import asyncio
 
             try:
-                cached = await asyncio.to_thread(idempotency_store.wait, idempotency_entry)
+                cached = await asyncio.to_thread(
+                    idempotency_store.wait,
+                    idempotency_entry,
+                )
             except IdempotencyInProgress as exc:
                 raise HTTPException(status_code=409, detail="IDEMPOTENCY_IN_PROGRESS") from exc
             if cached is None:
@@ -784,31 +788,40 @@ async def create_job(
                 idempotency_key,
                 idempotency_entry,
                 response.model_dump(mode="json"),
+                db=db,
             )
         return response
     except HTTPException:
         if reserved:
             release_job_quota(identity)
         if idempotency_key and idempotency_entry is not None:
-            idempotency_store.fail(_idempotency_scope(identity), idempotency_key, idempotency_entry)
+            idempotency_store.fail(
+                _idempotency_scope(identity), idempotency_key, idempotency_entry, db=db
+            )
         raise
     except RuntimeError as exc:
         if reserved:
             release_job_quota(identity)
         if idempotency_key and idempotency_entry is not None:
-            idempotency_store.fail(_idempotency_scope(identity), idempotency_key, idempotency_entry)
+            idempotency_store.fail(
+                _idempotency_scope(identity), idempotency_key, idempotency_entry, db=db
+            )
         raise HTTPException(status_code=429, detail=sanitize_error_text(exc)) from exc
     except ValueError as exc:
         if reserved:
             release_job_quota(identity)
         if idempotency_key and idempotency_entry is not None:
-            idempotency_store.fail(_idempotency_scope(identity), idempotency_key, idempotency_entry)
+            idempotency_store.fail(
+                _idempotency_scope(identity), idempotency_key, idempotency_entry, db=db
+            )
         raise HTTPException(status_code=422, detail=sanitize_error_text(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         if reserved:
             release_job_quota(identity)
         if idempotency_key and idempotency_entry is not None:
-            idempotency_store.fail(_idempotency_scope(identity), idempotency_key, idempotency_entry)
+            idempotency_store.fail(
+                _idempotency_scope(identity), idempotency_key, idempotency_entry, db=db
+            )
         raise HTTPException(status_code=500, detail="job creation failed") from exc
 
     # 创建成功后累加配额计数

@@ -22,6 +22,9 @@ from platforms.registry import get_platform
 
 logger = logging.getLogger(__name__)
 
+LEGACY_UNOWNED_OWNER_KIND = "legacy_unowned"
+JOB_PERSISTENCE_VERSION = 2
+
 if TYPE_CHECKING:
     from app.auth import Identity
 
@@ -48,6 +51,7 @@ class JobRecord:
     owner_kind: str | None = None
     license_id: str | None = None
     device_id: str | None = None
+    legacy_unowned: bool = False
     queue_position: int = 0
     archived: bool = False
     pause_scope: str = ""
@@ -71,6 +75,8 @@ class JobRecord:
             extra_dict["license_id"] = self.license_id
         if self.device_id is not None:
             extra_dict["device_id"] = self.device_id
+        if self.legacy_unowned:
+            extra_dict["legacy_unowned"] = True
         extra_dict["queue_position"] = self.queue_position
         extra_dict["archived"] = self.archived
         if self.pause_scope:
@@ -84,17 +90,24 @@ class JobRecord:
         outputs_root = get_settings().outputs_dir.resolve()
         safe_files: list[JobFile] = []
         for job_file in self.files:
+            file_owner = {
+                "owner_kind": self.owner_kind,
+                "owner_user_id": self.owner_user_id,
+                "license_id": self.license_id,
+                "device_id": self.device_id,
+                "legacy_unowned": self.legacy_unowned,
+            }
             if not job_file.path:
-                safe_files.append(job_file)
+                safe_files.append(job_file.model_copy(update=file_owner))
                 continue
             try:
                 candidate = Path(job_file.path).resolve()
                 if candidate.is_relative_to(outputs_root):
-                    safe_files.append(job_file)
+                    safe_files.append(job_file.model_copy(update=file_owner))
                 else:
-                    safe_files.append(job_file.model_copy(update={"path": None}))
+                    safe_files.append(job_file.model_copy(update={"path": None, **file_owner}))
             except OSError:
-                safe_files.append(job_file.model_copy(update={"path": None}))
+                safe_files.append(job_file.model_copy(update={"path": None, **file_owner}))
 
         return JobResponse(
             job_id=self.job_id,
@@ -217,6 +230,25 @@ class JobManager:
                             except OSError:
                                 job_file.path = None
                         files.append(job_file)
+                    license_id = str(data.get("license_id") or "").strip() or None
+                    device_id = str(data.get("device_id") or "").strip() or None
+                    owner_kind = str(data.get("owner_kind") or "").strip() or None
+                    legacy_unowned = bool(data.get("legacy_unowned"))
+                    # A historical JSON job can only be re-owned when both
+                    # License subject fields were durably persisted together.
+                    # Never infer a License from a User/JWT or from a filename.
+                    if not (license_id and device_id and owner_kind == "license_device"):
+                        legacy_unowned = True
+                        owner_kind = LEGACY_UNOWNED_OWNER_KIND
+                    file_owner_migration_needed = any(
+                        not isinstance(raw_file, dict)
+                        or raw_file.get("owner_kind") != owner_kind
+                        or raw_file.get("owner_user_id") != data.get("owner_user_id")
+                        or raw_file.get("license_id") != license_id
+                        or raw_file.get("device_id") != device_id
+                        or bool(raw_file.get("legacy_unowned")) != legacy_unowned
+                        for raw_file in (data.get("files") or [])
+                    )
                     record = JobRecord(
                         job_id=job_id,
                         platform=PlatformName(data["platform"]),
@@ -231,9 +263,10 @@ class JobManager:
                         created_at=data.get("created_at", _utc_now()),
                         updated_at=data.get("updated_at", _utc_now()),
                         owner_user_id=data.get("owner_user_id"),
-                        owner_kind=data.get("owner_kind"),
-                        license_id=data.get("license_id"),
-                        device_id=data.get("device_id"),
+                        owner_kind=owner_kind,
+                        license_id=license_id,
+                        device_id=device_id,
+                        legacy_unowned=legacy_unowned,
                         queue_position=int(data.get("queue_position") or 0),
                         archived=bool(data.get("archived", False)),
                         pause_scope=str(data.get("pause_scope") or ""),
@@ -243,6 +276,18 @@ class JobManager:
                             if isinstance(item, str)
                         },
                     )
+                    record.files = [
+                        job_file.model_copy(
+                            update={
+                                "owner_kind": record.owner_kind,
+                                "owner_user_id": record.owner_user_id,
+                                "license_id": record.license_id,
+                                "device_id": record.device_id,
+                                "legacy_unowned": record.legacy_unowned,
+                            }
+                        )
+                        for job_file in record.files
+                    ]
                     if record.queue_position <= 0:
                         self._queue_counter += 1
                         record.queue_position = self._queue_counter
@@ -258,7 +303,14 @@ class JobManager:
                                 record.device_id,
                             )
                         )
-                    if was_active or not data.get("queue_position"):
+                    if (
+                        was_active
+                        or not data.get("queue_position")
+                        or data.get("persistence_version") != JOB_PERSISTENCE_VERSION
+                        or data.get("owner_kind") != record.owner_kind
+                        or bool(data.get("legacy_unowned")) != record.legacy_unowned
+                        or file_owner_migration_needed
+                    ):
                         self._persist(record)
                 except Exception as exc:  # noqa: BLE001
                     logger.error(
@@ -987,6 +1039,15 @@ class JobManager:
             persisted_files: list[dict[str, Any]] = []
             for job_file in record.files:
                 file_data = job_file.model_dump()
+                file_data.update(
+                    {
+                        "owner_kind": record.owner_kind,
+                        "owner_user_id": record.owner_user_id,
+                        "license_id": record.license_id,
+                        "device_id": record.device_id,
+                        "legacy_unowned": record.legacy_unowned,
+                    }
+                )
                 if file_data.get("path"):
                     try:
                         stored_path = Path(str(file_data["path"])).resolve()
@@ -1012,6 +1073,8 @@ class JobManager:
                 "owner_kind": record.owner_kind,
                 "license_id": record.license_id,
                 "device_id": record.device_id,
+                "legacy_unowned": record.legacy_unowned,
+                "persistence_version": JOB_PERSISTENCE_VERSION,
                 "queue_position": record.queue_position,
                 "archived": record.archived,
                 "pause_scope": record.pause_scope,

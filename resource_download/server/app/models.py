@@ -234,6 +234,13 @@ class JobFile(BaseModel):
     name: str
     size: int = 0
     path: str | None = None
+    # Owner is copied from the parent Job during persistence migration.  It is
+    # never accepted as an authorization input from a client.
+    owner_kind: str | None = None
+    owner_user_id: int | None = None
+    license_id: str | None = None
+    device_id: str | None = None
+    legacy_unowned: bool = False
 
 
 class JobResponse(BaseModel):

@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # dev=仅 X-API-Key（默认，兼容 e2e）；dual=Key 或 JWT；jwt_only=仅 JWT
     # Desktop/RD 的默认开发链路必须能完成真实用户登录，因此默认使用 dual。
     auth_mode: Literal["dev", "dual", "jwt_only"] = "dual"
+    # Historical User/JWT endpoints are isolated from the production License
+    # path.  Enable only for an explicit legacy migration/test environment.
+    legacy_user_auth_enabled: bool = False
     # JWT（D-1 起生效；D-0 仅预留配置，Bearer 请求返回 501）
     jwt_secret: str = "change-me-jwt-secret"
     jwt_expire_minutes: int = 10080

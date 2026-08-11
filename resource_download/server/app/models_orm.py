@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 
 from app.db import Base
 
@@ -77,3 +77,20 @@ class LicenseUsageDaily(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class IdempotencyRecord(Base):
+    """Durable, bounded replay record for License-subject Job creation."""
+
+    __tablename__ = "idempotency_records"
+
+    scope = Column(String(256), primary_key=True)
+    key = Column(String(128), primary_key=True)
+    fingerprint = Column(String(64), nullable=False)
+    response_json = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    expires_at = Column(DateTime, nullable=False, index=True)

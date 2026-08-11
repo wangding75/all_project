@@ -115,6 +115,9 @@ def clean_test_environment():
     os.environ["TRY_START_PLATFORM_APPS"] = "false"
     os.environ["REQUIRE_PLATFORM_APPS"] = "false"
     os.environ["FANQIE_REQUIRE_RUNTIME"] = "false"
+    # Legacy User/JWT tests are explicit compatibility coverage.  Production
+    # defaults to the License-only path via Settings.legacy_user_auth_enabled.
+    os.environ["LEGACY_USER_AUTH_ENABLED"] = "true"
     get_settings.cache_clear()
     with _rate_limit_lock:
         _rate_limit_cache.clear()

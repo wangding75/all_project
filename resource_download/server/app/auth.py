@@ -41,6 +41,15 @@ def _unauthorized(detail: str) -> HTTPException:
         detail=detail,
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def require_legacy_user_auth() -> None:
+    """Gate historical User/JWT APIs away from the production business path."""
+    if not get_settings().legacy_user_auth_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="LEGACY_USER_AUTH_DISABLED",
+        )
 def _match_api_key(x_api_key: str | None) -> Identity | None:
     settings = get_settings()
     if x_api_key and x_api_key == settings.api_key:

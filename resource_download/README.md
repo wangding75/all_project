@@ -16,7 +16,7 @@
 | **禁止进客户端** | `platforms` / Frida / `vendor` | 履约只在服务端 |
 
 ```text
-client (瘦)  --HTTPS + User/JWT + Device Proof V3-->  RD server
+client (瘦)  --HTTPS + Device Proof V3 + License Context-->  RD server
                                                    |
                                                    +-- LicenseServerClient --> License Service (rd Tenant)
 ```
@@ -58,7 +58,7 @@ data/                   # 运行时
 ## 快速开始
 
 普通业务请求现在统一使用 Device Proof + ACTIVE License Context；API Key
-仅用于运维边界，不能绕过 License。Legacy User/JWT auth endpoints remain
+仅用于运维边界，不能绕过 License。Legacy User/JWT endpoints are disabled by default
 available as deprecated compatibility APIs and are not required by Desktop business routes.
 
 ### 1. 服务端（中转）
