@@ -163,3 +163,50 @@ BACKGROUND REVOKE: PASS
 CLIENT CUTOVER: COMPLETE
 RD LICENSE INTEGRATION: PASS
 ```
+
+## T17 Final Global Review and Delivery Closeout (2026-08-11)
+
+### Final result
+
+```text
+RD License Integration: PASS
+Client Cutover: COMPLETE
+Ready for formal functional/UI acceptance or production deployment preparation.
+```
+
+### Review matrix
+
+| Area | Result | Evidence |
+|---|---|---|
+| Architecture and source boundaries | PASS | RD routes through RD `LicenseGateway`; no RD License DB access; License Service source unchanged |
+| Authorization truth | PASS | License / Device / Binding / Plan / Activation truth remains License Service; `vip_expires_at` and CardKey are display/migration-only |
+| Protected routes | PASS | `POST /v1/jobs`, batch, bulk retry, job retry, automation PUT and scan use the same Device Proof guard |
+| Client Device Proof V3 | PASS | One persistent DPAPI identity, public-key-derived `device_id`, fresh nonce per proof, method/query/raw-body binding, retry re-signing |
+| Background entitlement | PASS | Verified saved `license_device_id` → entitlement → quota → Job; `UNKNOWN` and every non-ACTIVE state fail closed |
+| E2E fixture isolation | PASS | T16 deterministic discovery is subprocess-local; production discovery code has no fixture switch or hardcoded candidate |
+| SDK runtime | PASS | rc3 wheel only; pinned SHA-256 `30EC6E2FFA86627A7F1E6DD2E9AE7F2A07FE44161495AFD864D9090CBBF43A53`; no rc2 in runtime/build/package paths |
+| Fail closed and reason semantics | PASS | Timeout, connection failure, 401/409/429/5xx, malformed response and invalid proof cannot become ACTIVE or create a Job |
+| Quota ordering | PASS | License/entitlement ACTIVE precedes quota check; denied entitlement does not consume quota |
+| Production configuration | PASS | License Service URL, credential, audience, timeout, cache TTL and TLS verification are environment/config driven; `18081` appears only in local E2E harness/docs |
+| Secrets | SAFE | No plaintext secret values in tracked source, build/dist, E2E logs or retained fixtures; EXE marker scan clean |
+| Documentation | PASS | Release status corrected to `RD LICENSE INTEGRATION PASS / CLIENT CUTOVER COMPLETE`; historical T15/T16 notes retained explicitly |
+| Git boundaries | PASS | SX unchanged; License Service source unchanged |
+
+### Executed verification
+
+- `python -m pytest server/tests client/tests -q`: **137 passed**.
+- `python scripts/quality_gate.py`: **PASS**; 5 phases passed, server suite 126 passed and 1 expected nested-gate skip.
+- Real isolated HTTP Activation + protected `POST /v1/jobs`: **PASS**.
+- T16 real background E2E: **PASS** — ACTIVE created one Job; official `LICENSE_REVOKED` created zero Jobs and consumed no quota; Service Down was `UNKNOWN`/fail-closed; recovery resumed; legacy null binding remained fail-closed.
+- `python scripts/build_exe.py`: **PASS**; `dist/ResourceDownloader.exe` rebuilt at 28.90 MB.
+- EXE startup smoke: **PASS**; the rebuilt EXE and WebView child process remained alive during the smoke window and were cleanly terminated afterward.
+- Secret and binary marker audit: **SAFE**; no Master Key, Service Credential, License Key, private key, DSN, full signature, or rc2 marker in the final EXE.
+
+### Delivery package
+
+The final source backup is generated under `dist/` as
+`resource_download_license_integration_final_<timestamp>.zip`. It contains a
+Git-tracked source snapshot, the final report, test and Quality Gate evidence,
+Git commit/tree metadata, and a SHA-256 manifest. `.env`, E2E secrets, private
+keys, database files/dumps, logs, runtime data, `tmp/`, `build/`, and `dist/`
+outputs are excluded from the archive.

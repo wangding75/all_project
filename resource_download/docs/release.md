@@ -97,8 +97,8 @@ python scripts/build_exe.py --noconsole
 ## 4. 商业 dual 模式与客户端闭环
 
 桌面客户端保留 RD 用户登录与旧兑换 UI，但 T06 服务端已切换为统一
-License Service Device License。当前发布状态为 **SERVER INTEGRATION PASS /
-CLIENT CUTOVER PENDING**：客户端尚未发送 Device Proof V3。
+License Service Device License。当前发布状态为 **RD LICENSE INTEGRATION PASS /
+CLIENT CUTOVER COMPLETE**：正式客户端已经使用 Device Proof V3。
 
 1. **商业默认路径 (AUTH_MODE=dual / jwt_only)**:
    - 用户打开客户端后，在侧边栏或设置页面点击「登录 / 注册」。
