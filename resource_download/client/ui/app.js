@@ -84,6 +84,7 @@
     user: null,
     licenseContext: null,
     licenseStatusReason: "LICENSE_STATUS_UNKNOWN",
+    licenseRefreshInFlight: null,
     currentDetail: null,
     searchResults: [],
     allSearchResults: [],
@@ -282,9 +283,12 @@
     settingBtnLogout: document.getElementById("settingBtnLogout"),
     settingBtnActivate: document.getElementById("settingBtnActivate"),
     settingLicensePlan: document.getElementById("settingLicensePlan"),
+    settingLicensePlanVersion: document.getElementById("settingLicensePlanVersion"),
+    settingLicenseUsed: document.getElementById("settingLicenseUsed"),
+    settingLicenseLimit: document.getElementById("settingLicenseLimit"),
+    settingLicenseExpires: document.getElementById("settingLicenseExpires"),
+    settingLicenseStatus: document.getElementById("settingLicenseStatus"),
     settingLicenseDevice: document.getElementById("settingLicenseDevice"),
-    settingLicenseQuota: document.getElementById("settingLicenseQuota"),
-    settingLicenseReason: document.getElementById("settingLicenseReason"),
     btnResetDeviceIdentity: document.getElementById("btnResetDeviceIdentity"),
     settingApiBase: document.getElementById("settingApiBase"),
     settingApiKey: document.getElementById("settingApiKey"),
@@ -721,48 +725,62 @@
     }
   }
 
-  // 获取 /v1/auth/me 并更新状态
+  // 获取 License status/usage 并同步首页与设置页
   function renderLicenseContext(context, reason = "") {
     const data = context || {};
     const active = String(data.status || "").toUpperCase() === "ACTIVE";
+    const planCode = data.plan_code ? String(data.plan_code) : "—";
+    const planVersion = data.plan_version === null || data.plan_version === undefined || data.plan_version === ""
+      ? "—"
+      : String(data.plan_version);
     const plan = data.plan_code
-      ? `${data.plan_code}${data.plan_version ? ` v${data.plan_version}` : ""}`
+      ? `${planCode}${planVersion !== "—" ? ` v${planVersion}` : ""}`
       : "License 未激活";
     const expiry = data.expires_at ? formatDate(data.expires_at) : "未激活";
     const device = data.device_id ? `Device ${String(data.device_id).slice(0, 16)}…` : "Device 未就绪";
-    const quota = typeof data.used === "number" && typeof data.limit === "number"
-      ? `${data.used} / ${data.limit}`
-      : "—";
     const why = reason || data.reason || (active ? "ACTIVE" : "LICENSE_REQUIRED");
+    const status = data.status || why;
+    const used = Number.isFinite(Number(data.used)) ? String(data.used) : "—";
+    const limit = Number.isFinite(Number(data.limit)) ? String(data.limit) : "—";
+    const quota = `${used} / ${limit}`;
     if (elements.licensePlanName) elements.licensePlanName.textContent = plan;
     if (elements.licenseExpireStatus) elements.licenseExpireStatus.textContent = active ? expiry : why;
     if (elements.licenseStatusReason) elements.licenseStatusReason.textContent = why;
-    if (elements.settingLicensePlan) elements.settingLicensePlan.textContent = plan;
-    if (elements.settingLicenseDevice) elements.settingLicenseDevice.textContent = `${expiry} · ${device}`;
-    if (elements.settingLicenseQuota) elements.settingLicenseQuota.textContent = quota;
-    if (elements.settingLicenseReason) elements.settingLicenseReason.textContent = why;
+    if (elements.settingLicensePlan) elements.settingLicensePlan.textContent = planCode;
+    if (elements.settingLicensePlanVersion) elements.settingLicensePlanVersion.textContent = planVersion;
+    if (elements.settingLicenseUsed) elements.settingLicenseUsed.textContent = used;
+    if (elements.settingLicenseLimit) elements.settingLicenseLimit.textContent = limit;
+    if (elements.settingLicenseExpires) elements.settingLicenseExpires.textContent = expiry;
+    if (elements.settingLicenseStatus) elements.settingLicenseStatus.textContent = status;
+    if (elements.settingLicenseDevice) elements.settingLicenseDevice.textContent = device;
     if (elements.vipUsername) elements.vipUsername.textContent = plan;
     if (elements.vipExpireDate) elements.vipExpireDate.textContent = active ? expiry : why;
     if (elements.settingQuotaVal) elements.settingQuotaVal.textContent = quota;
   }
 
   async function refreshLicenseStatus({ openActivation = true } = {}) {
-    try {
-      const status = await apiFetch("/v1/license/status");
-      state.licenseContext = status;
-      state.licenseStatusReason = status.reason || "ACTIVE";
-      renderLicenseContext(status);
-      if (elements.modalRedeemKey) elements.modalRedeemKey.classList.remove("active");
-      return status;
-    } catch (err) {
-      state.licenseContext = null;
-      state.licenseStatusReason = err.reason || err.message || "LICENSE_REQUIRED";
-      renderLicenseContext(null, state.licenseStatusReason);
-      if (openActivation && elements.modalRedeemKey && isDesktopBridge()) {
-        elements.modalRedeemKey.classList.add("active");
+    if (state.licenseRefreshInFlight) return state.licenseRefreshInFlight;
+    state.licenseRefreshInFlight = (async () => {
+      try {
+        const status = await apiFetch("/v1/license/status");
+        state.licenseContext = status;
+        state.licenseStatusReason = status.reason || "ACTIVE";
+        renderLicenseContext(status);
+        if (elements.modalRedeemKey) elements.modalRedeemKey.classList.remove("active");
+        return status;
+      } catch (err) {
+        state.licenseContext = null;
+        state.licenseStatusReason = err.reason || err.message || "LICENSE_REQUIRED";
+        renderLicenseContext(null, state.licenseStatusReason);
+        if (openActivation && elements.modalRedeemKey && isDesktopBridge()) {
+          elements.modalRedeemKey.classList.add("active");
+        }
+        return null;
+      } finally {
+        state.licenseRefreshInFlight = null;
       }
-      return null;
-    }
+    })();
+    return state.licenseRefreshInFlight;
   }
 
   async function fetchMe() {
@@ -814,14 +832,6 @@
       if (elements.settingVipExpireVal) {
         elements.settingVipExpireVal.textContent = isVip && u.vip_expires_at ? formatDate(u.vip_expires_at) : "未开通 VIP";
       }
-      if (elements.settingQuotaVal) {
-        if (typeof u.jobs_today === "number" && typeof u.jobs_limit === "number") {
-          const lim = u.jobs_limit <= 0 ? "不限" : String(u.jobs_limit);
-          elements.settingQuotaVal.textContent = `今日 ${u.jobs_today} / ${lim}`;
-        } else {
-          elements.settingQuotaVal.textContent = isVip ? "VIP 生效中" : "登录后可见额度";
-        }
-      }
       if (elements.settingBtnAuthModal) elements.settingBtnAuthModal.style.display = "none";
       if (elements.settingBtnLogout) elements.settingBtnLogout.style.display = "inline-block";
     } else {
@@ -837,7 +847,6 @@
       // 设置页面
       if (elements.settingUsernameVal) elements.settingUsernameVal.textContent = "未登录";
       if (elements.settingVipExpireVal) elements.settingVipExpireVal.textContent = "未开通 VIP";
-      if (elements.settingQuotaVal) elements.settingQuotaVal.textContent = "未登录";
       if (elements.settingBtnAuthModal) elements.settingBtnAuthModal.style.display = "inline-block";
       if (elements.settingBtnLogout) elements.settingBtnLogout.style.display = "none";
     }
@@ -1136,6 +1145,7 @@
       startJobsPolling();
     } else if (pageId === "page-settings") {
       loadHongguoMonitor();
+      refreshLicenseStatus({ openActivation: false });
       stopJobsPolling();
     } else {
       stopJobsPolling();
@@ -3119,6 +3129,9 @@
     try {
       const data = await apiFetch("/health");
       applyHealthToUI(data);
+      if (state.activePage === "page-settings" || !state.licenseContext || state.licenseStatusReason !== "ACTIVE") {
+        refreshLicenseStatus({ openActivation: false });
+      }
     } catch (e) {
       if (elements.serverStatusText) {
         elements.serverStatusText.textContent = "服务不可达";

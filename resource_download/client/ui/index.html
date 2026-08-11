@@ -482,9 +482,9 @@ https://v.example.com/share/xxxx"></textarea>
               <span style="font-size: 13px; color: var(--color-fanqie); font-weight: 600;" id="settingVipExpireVal">未开通 VIP</span>
             </div>
             <div class="form-group">
-              <label class="form-label">今日下载额度</label>
+              <label class="form-label">License 每日额度</label>
               <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);" id="settingQuotaVal">—</span>
-              <span class="form-hint">额度由服务端按 VIP 策略计算；登录后可见今日已用 / 上限。</span>
+              <span class="form-hint">数据来自当前 License Context 的 used / limit；不会读取旧 User 配额。</span>
             </div>
             <div class="form-group">
               <label class="form-label">桌面设备身份</label>
@@ -673,10 +673,13 @@ https://v.example.com/share/xxxx"></textarea>
 
           <div class="settings-card license-context-settings">
             <h3 class="settings-card-title">License Context</h3>
-            <div class="form-group"><label class="form-label">Plan</label><span id="settingLicensePlan">未激活</span></div>
-            <div class="form-group"><label class="form-label">Expires / Device</label><span id="settingLicenseDevice">未激活</span></div>
-            <div class="form-group"><label class="form-label">Quota used / limit</label><span id="settingLicenseQuota">—</span></div>
-            <div class="form-group"><label class="form-label">License reason</label><span id="settingLicenseReason">等待状态</span></div>
+            <div class="form-group"><label class="form-label">Plan code</label><span id="settingLicensePlan">未激活</span></div>
+            <div class="form-group"><label class="form-label">Plan version</label><span id="settingLicensePlanVersion">—</span></div>
+            <div class="form-group"><label class="form-label">Used</label><span id="settingLicenseUsed">—</span></div>
+            <div class="form-group"><label class="form-label">Limit</label><span id="settingLicenseLimit">—</span></div>
+            <div class="form-group"><label class="form-label">Expires</label><span id="settingLicenseExpires">未激活</span></div>
+            <div class="form-group"><label class="form-label">Status</label><span id="settingLicenseStatus">等待状态</span></div>
+            <div class="form-group"><label class="form-label">Device</label><span id="settingLicenseDevice">未就绪</span></div>
             <button class="btn-primary" id="settingBtnActivate" type="button">输入 Activation Code</button>
           </div>
 
