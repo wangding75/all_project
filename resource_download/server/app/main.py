@@ -85,24 +85,28 @@ async def lifespan(_app: FastAPI):
         get_sign_pool()
         logging.info("签名节点池已启用 (SIGN_POOL_ENABLED=True)")
 
-    # 配置/依赖完整性（文件级：fanqie_config、hongguo_config、vendor 等）
-    try:
-        from platforms.readiness import bootstrap_config_on_startup
-
-        bootstrap_config_on_startup()
-    except Exception as exc:
-        logging.warning("配置完整性检查异常（不阻断启动）: %s", exc)
-
     # 多平台设备运行时：共享 Frida agent + 番茄/红果 App（可自启）
+    runtime_bootstrapped = False
     if settings.platform_probe_on_startup or settings.fanqie_probe_on_startup:
         try:
             from platforms.runtime import bootstrap_on_startup
 
             bootstrap_on_startup()
+            runtime_bootstrapped = True
         except RuntimeError:
             raise
         except Exception as exc:
             logging.warning("平台运行时探测异常（不阻断启动）: %s", exc)
+
+    # 配置/依赖完整性（文件级：fanqie_config、hongguo_config、vendor 等）
+    # Must run after the RD App/agent bootstrap so Fanqie session metadata can
+    # be rebuilt on a clean state.
+    try:
+        from platforms.readiness import bootstrap_config_on_startup
+
+        bootstrap_config_on_startup(recover_fanqie=runtime_bootstrapped)
+    except Exception as exc:
+        logging.warning("配置完整性检查异常（不阻断启动）: %s", exc)
 
     # 仅在启用运行时探测时汇总 ADB/Frida 状态；关闭开关必须保证完全离线启动。
     if settings.platform_probe_on_startup or settings.fanqie_probe_on_startup:

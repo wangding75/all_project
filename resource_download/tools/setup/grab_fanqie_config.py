@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import html
+import re
 import subprocess
 import sys
 import time
@@ -39,8 +41,88 @@ SESSION_HEADERS = (
 )
 
 
+def pref(name: str, xml: str) -> str | None:
+    match = re.search(rf'<string name="{re.escape(name)}">([^<]*)</string>', xml)
+    return html.unescape(match.group(1)) if match else None
+
+
+def build_cfg_from_prefs() -> dict:
+    """Build guest-device metadata from the installed RD Fanqie App.
+
+    This is a recovery path for a clean-state where no captured request file
+    remains.  It reads App-owned device/session metadata and still signs every
+    request through the live Java bridge; it never invents a signed session or
+    accepts a user login credential.
+    """
+    applog = adb("shell", "cat", f"/data/data/{PKG}/shared_prefs/applog_stats.xml")
+    csrf = adb("shell", "cat", f"/data/data/{PKG}/shared_prefs/CsrfTokenManager_sp.xml")
+    push = adb("shell", "cat", f"/data/data/{PKG}/shared_prefs/push_multi_process_config.xml")
+    device_id = pref("device_id", applog) or ""
+    install_id = pref("install_id", applog) or ""
+    channel = pref("dr_channel", applog) or ""
+    csrf_token = pref("csrf_token", csrf) or ""
+    ssids = pref("ssids", push) or ""
+    cdid = ""
+    if ssids:
+        device_id = device_id or (re.search(r'"device_id"\s*:\s*"(\d+)"', ssids) or ["", ""])[1]
+        install_id = install_id or (re.search(r'"install_id"\s*:\s*"(\d+)"', ssids) or ["", ""])[1]
+        cdid_match = re.search(r'"clientudid"\s*:\s*"([^"]+)"', ssids)
+        cdid = cdid_match.group(1) if cdid_match else ""
+
+    package_info = adb("shell", "dumpsys", "package", PKG)
+    version_code = (re.search(r"versionCode=(\d+)", package_info) or ["", "71932"])[1]
+    version_name = (re.search(r"versionName=([^\s]+)", package_info) or ["", "7.1.9.32"])[1]
+    if not device_id or not install_id:
+        raise RuntimeError("Fanqie App prefs 缺少 device_id/iid")
+
+    cfg = {
+        "api_host": "api5-normal-sinfonlinea.fqnovel.com",
+        "base_query": {
+            "iid": install_id,
+            "device_id": device_id,
+            "aid": "1967",
+            "app_name": "novelread",
+            "version_code": version_code,
+            "version_name": version_name,
+            "channel": channel or "novel_channel",
+            "device_platform": "android",
+            "device_type": "SM-S9210",
+            "device_brand": "Samsung",
+            "os_version": "15",
+            "os_api": "35",
+            "update_version_code": version_code,
+            "cdid": cdid,
+            "manifest_version_code": version_code,
+            "resolution": "1080*1920",
+            "dpi": "480",
+            "language": "zh",
+            "os": "android",
+            "ssmix": "a",
+            "host_abi": "x86_64",
+            "ac": "wifi",
+        },
+        "session_headers": {
+            "user-agent": f"com.dragon.read/{version_code} (Linux; U; Android 15; zh_CN; SM-S9210; Build/AP3A;tt-ok/3.12.13.20)",
+            "sdk-version": "2",
+            "passport-sdk-version": "5051452",
+            "x-tt-store-region": "cn-sh",
+            "x-tt-store-region-src": "uid",
+        },
+        "source": "fanqie_app_prefs",
+    }
+    if csrf_token:
+        cfg["session_headers"]["cookie"] = f"passport_csrf_token={csrf_token}; store-region=cn-sh"
+    return cfg
+
+
 def adb(*a: str) -> str:
-    r = subprocess.run([ADB, "-s", DEV, *a], capture_output=True, text=True)
+    r = subprocess.run(
+        [ADB, "-s", DEV, *a],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     return (r.stdout or "") + (r.stderr or "")
 
 
@@ -55,9 +137,14 @@ def get_frida_device():
 def main() -> int:
     print(f"frida={frida.__version__} adb={ADB} device={DEV}")
     subprocess.run([ADB, "connect", DEV], capture_output=True)
-    subprocess.run([ADB, "-s", DEV, "root"], capture_output=True)
-    time.sleep(0.3)
-    subprocess.run([ADB, "connect", DEV], capture_output=True)
+    # Do not restart adbd when the formal RD bootstrap already has a live
+    # root agent: adb root can tear down the just-started bridge on a MuMu
+    # restart.  Standalone use still obtains root when the agent is absent.
+    existing_ps = adb("shell", "ps", "-A")
+    if "sys_hlpd" not in existing_ps and "frida-server" not in existing_ps:
+        subprocess.run([ADB, "-s", DEV, "root"], capture_output=True)
+        time.sleep(0.3)
+        subprocess.run([ADB, "connect", DEV], capture_output=True)
 
     pids = adb("shell", "pidof", PKG).strip().split()
     if not pids:
@@ -108,11 +195,24 @@ def main() -> int:
         time.sleep(0.5)
 
     try:
-        g = sc.exports_sync.grab(60000)
+        g = sc.exports_sync.grab(20000)
     except Exception as e:
-        print("FAIL grab:", e)
+        print("WARN grab:", e)
+        # A freshly installed guest App can have no natural request in the
+        # observation window.  Recover from its own prefs while retaining the
+        # live Java bridge as the signing authority.
+        try:
+            cfg = build_cfg_from_prefs()
+        except Exception as prefs_exc:
+            print("FAIL App prefs recovery:", prefs_exc)
+            s.detach()
+            return 2
+        OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        OUT_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"SUCCESS: Recovered config from Fanqie App prefs to {OUT_FILE}")
+        print("session headers:", list(cfg["session_headers"].keys()))
         s.detach()
-        return 2
+        return 0
 
     print("Got request URL:", (g.get("url") or "")[:160])
     headers = {

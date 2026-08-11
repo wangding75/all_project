@@ -15,7 +15,7 @@
 例: python hongguo.py browse ai_series --theme 玄幻 --setting 逆袭 --sort hot_score --days 7
 程序内: filters(genre) / browse(genre, theme=, setting=, background=, sort=, gender=, days=, max_items=)
 """
-import sys, os, json, time, hashlib, re, subprocess, threading
+import sys, os, json, time, hashlib, re, subprocess, threading, base64
 import urllib3
 import requests
 try:
@@ -502,6 +502,54 @@ def get_video_tracks(vids, force=False, batch_size=5):
     一次 5 个 vid(app 真实批量大小)→ 5 集只签 1 次, 大幅降签名/节流/风控压力。
     按 vid 缓存 5h(main_url url_expire 约6h); force=True 跳过缓存(URL过期续传用)。
     返回 {vid(str): [track,...]}; 未返回的 vid 不在结果里(调用方自行回退)。"""
+    def normalize_tracks(value):
+        """Normalize current and legacy video_model track shapes.
+
+        Recent Hongguo responses return ``video_list`` as a mapping keyed by
+        track name and flatten ``video_meta``/``encrypt_info`` fields.  The
+        offline downloader intentionally consumes the older list shape, so
+        translate the wire format without changing the signed URLs or the
+        real spade_a material.
+        """
+        if isinstance(value, dict):
+            rows = list(value.values())
+        elif isinstance(value, list):
+            rows = value
+        else:
+            return []
+        def decode_url(value):
+            if not isinstance(value, str) or "://" in value:
+                return value
+            try:
+                decoded = base64.b64decode(value).decode("utf-8")
+            except Exception:
+                return value
+            return decoded if "://" in decoded else value
+
+        normalized = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if "video_meta" in row or "encrypt_info" in row:
+                normalized.append(row)
+                continue
+            item = dict(row)
+            item["main_url"] = decode_url(row.get("main_url"))
+            item["backup_url"] = decode_url(row.get("backup_url") or row.get("backup_url_1"))
+            item["video_meta"] = {
+                "definition": row.get("definition") or "?",
+                "size": row.get("size") or 0,
+                "vwidth": row.get("vwidth"),
+                "vheight": row.get("vheight"),
+                "codec_type": row.get("codec_type"),
+            }
+            item["encrypt_info"] = {
+                "encrypt": bool(row.get("encrypt")),
+                "spade_a": row.get("spade_a"),
+            }
+            normalized.append(item)
+        return normalized
+
     out, todo, seen = {}, [], set()
     for v in vids:
         v = str(v)
@@ -510,7 +558,9 @@ def get_video_tracks(vids, force=False, batch_size=5):
         seen.add(v)
         c = None if force else SG.cache_get(SG.cache_key("vmtracks", v))
         if c is not None:
-            out[v] = c
+            normalized = normalize_tracks(c)
+            if normalized:
+                out[v] = normalized
         else:
             todo.append(v)
     bs = max(1, min(int(batch_size or 5), 5))
@@ -526,7 +576,7 @@ def get_video_tracks(vids, force=False, batch_size=5):
             vm = v.get("video_model")
             if not vm:
                 continue
-            tracks = (json.loads(vm).get("video_list") or [])
+            tracks = normalize_tracks(json.loads(vm).get("video_list") or [])
             if tracks:
                 out[str(vid)] = tracks
                 SG.cache_set(SG.cache_key("vmtracks", str(vid)), tracks, ttl=18000)

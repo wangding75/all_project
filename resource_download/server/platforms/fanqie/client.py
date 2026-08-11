@@ -27,6 +27,7 @@ CFG_PATH = REPO_ROOT / "data" / "config" / "fanqie_config.json"
 
 _CFG: dict[str, Any] = {}
 _CFG_LOCK = threading.Lock()
+_SESSION_REFRESH_LOCK = threading.Lock()
 
 
 def load_config() -> dict[str, Any]:
@@ -144,22 +145,60 @@ def refresh_session() -> None:
     """从运行中的番茄 App 捕获新会话配置并重建签名连接。"""
     global _CFG
 
-    get_oracle().close()
-    grabber = REPO_ROOT / "tools" / "setup" / "grab_fanqie_config.py"
-    if not grabber.is_file():
-        raise RuntimeError(f"缺少番茄会话捕获脚本: {grabber}")
-    result = subprocess.run(
-        [sys.executable, str(grabber)],
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        timeout=120,
+    with _SESSION_REFRESH_LOCK:
+        # Another request may have repaired the file while this caller was
+        # waiting.  Reuse it instead of attaching a second Java bridge.
+        if CFG_PATH.is_file():
+            try:
+                candidate = json.loads(CFG_PATH.read_text(encoding="utf-8"))
+                candidate_query = candidate.get("base_query") if isinstance(candidate, dict) else None
+                if (
+                    isinstance(candidate, dict)
+                    and candidate.get("api_host")
+                    and isinstance(candidate_query, dict)
+                    and candidate_query.get("device_id")
+                    and candidate_query.get("iid")
+                ):
+                    with _CFG_LOCK:
+                        _CFG = candidate
+                    return
+            except Exception:
+                pass
+
+        get_oracle().close()
+        grabber = REPO_ROOT / "tools" / "setup" / "grab_fanqie_config.py"
+        if not grabber.is_file():
+            raise RuntimeError(f"缺少番茄会话捕获脚本: {grabber}")
+        result = subprocess.run(
+            [sys.executable, str(grabber)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0 or not CFG_PATH.is_file():
+            message = (result.stderr or result.stdout or "unknown error").strip()
+            raise RuntimeError(f"番茄会话刷新失败（需 RD App/Java bridge，不是用户登录凭据）: {message[-800:]}")
+        with _CFG_LOCK:
+            _CFG = json.loads(CFG_PATH.read_text(encoding="utf-8"))
+
+
+def config_needs_refresh() -> bool:
+    """Whether the persisted runtime metadata is absent or structurally stale."""
+    if not CFG_PATH.is_file():
+        return True
+    try:
+        cfg = json.loads(CFG_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return True
+    query = cfg.get("base_query") if isinstance(cfg, dict) else None
+    return not (
+        isinstance(cfg, dict)
+        and bool(cfg.get("api_host"))
+        and isinstance(query, dict)
+        and bool(query.get("device_id"))
+        and bool(query.get("iid"))
     )
-    if result.returncode != 0 or not CFG_PATH.is_file():
-        message = (result.stderr or result.stdout or "unknown error").strip()
-        raise RuntimeError(f"番茄会话刷新失败: {message[-800:]}")
-    with _CFG_LOCK:
-        _CFG = json.loads(CFG_PATH.read_text(encoding="utf-8"))
 
 
 def build_url(path: str, extra: dict[str, str] | None = None) -> str:
@@ -203,6 +242,10 @@ def api_once(method: str, path: str, body: dict | None = None, extra_query: dict
 
 def api(method: str, path: str, body: dict | None = None, extra_query: dict[str, str] | None = None, max_retries: int = 3, signed: bool = True) -> dict[str, Any]:
     last = None
+    if signed and config_needs_refresh():
+        # Clean-state/restart recovery is a normal runtime bootstrap path.
+        # Do not send the stale hard-coded fallback first.
+        refresh_session()
     for attempt in range(max_retries):
         try:
             return api_once(method, path, body, extra_query, signed=signed)

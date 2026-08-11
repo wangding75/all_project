@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "server"))
 sys.path.insert(0, str(ROOT / "server" / ".venv" / "Lib" / "site-packages"))
 
 os.environ.setdefault("ADB", r"D:\install\Netease\MuMu\nx_main\adb.exe")
-os.environ.setdefault("ADB_DEVICE", "127.0.0.1:16384")
+os.environ.setdefault("ADB_DEVICE", "127.0.0.1:7555")
 os.environ.setdefault("FRIDA_HOST", "127.0.0.1:27042")
 os.environ.setdefault("AGENT_BIN", "/data/local/tmp/sys_hlpd")
 

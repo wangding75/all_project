@@ -14,7 +14,7 @@ OUT = ROOT / "tmp" / "fanqie_probe" / "hook_hits"
 OUT.mkdir(parents=True, exist_ok=True)
 
 os.environ.setdefault("ADB", r"D:\install\Netease\MuMu\nx_main\adb.exe")
-os.environ.setdefault("ADB_DEVICE", "127.0.0.1:16384")
+os.environ.setdefault("ADB_DEVICE", "127.0.0.1:7555")
 os.environ.setdefault("FRIDA_HOST", "127.0.0.1:27042")
 # 强制无缓冲，便于实时看日志
 os.environ["PYTHONUNBUFFERED"] = "1"

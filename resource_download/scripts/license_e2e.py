@@ -130,6 +130,7 @@ def _compose_command(action: str) -> None:
     service_root = os.environ.get("LICENSE_SERVICE_ROOT", "").strip()
     if not service_root:
         _fail("LICENSE_SERVICE_ROOT is required for service lifecycle E2E")
+    env_file = os.environ.get("LICENSE_SERVICE_ENV_FILE", ".env.e2e.local")
     compose_env = os.environ.copy()
     compose_env["LICENSE_HOST_PORT"] = os.environ.get("LICENSE_HOST_PORT", "")
     result = subprocess.run(
@@ -137,7 +138,7 @@ def _compose_command(action: str) -> None:
             "docker",
             "compose",
             "--env-file",
-            ".env.e2e.local",
+            env_file,
             "-f",
             "docker-compose.yml",
             "-f",
@@ -176,13 +177,14 @@ def _tenant_sql(sql: str) -> str:
     postgres_password = os.environ.get("POSTGRES_PASSWORD", "")
     if not service_root or not tenant_db or not postgres_user or not postgres_password:
         _fail("local License fixture database environment is incomplete")
+    env_file = os.environ.get("LICENSE_SERVICE_ENV_FILE", ".env.e2e.local")
     compose_env = os.environ.copy()
     compose_env["LICENSE_HOST_PORT"] = os.environ.get("LICENSE_HOST_PORT", "")
     command = [
         "docker",
         "compose",
         "--env-file",
-        ".env.e2e.local",
+        env_file,
         "-f",
         "docker-compose.yml",
         "-f",

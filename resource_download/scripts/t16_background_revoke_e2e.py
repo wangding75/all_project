@@ -32,14 +32,20 @@ from license_service_client import activation_proof, generate_device_identity, r
 
 ROOT = Path(__file__).resolve().parents[1]
 LS_ROOT = Path(os.environ.get("LICENSE_SERVICE_ROOT", r"D:\github\license_service"))
-LS_ENV_FILE = LS_ROOT / ".env.e2e.local"
-LS_HANDOFF = LS_ROOT / "data" / "e2e" / "rd-e2e.ps1"
+LS_ENV_FILE = Path(
+    os.environ.get("LICENSE_SERVICE_ENV_FILE", str(LS_ROOT / ".env.e2e.local"))
+)
+LS_HANDOFF = Path(
+    os.environ.get(
+        "LICENSE_SERVICE_HANDOFF", str(LS_ROOT / "data" / "e2e" / "rd-e2e.ps1")
+    )
+)
 LS_URL = "http://127.0.0.1:18081"
 RD_PORT = int(os.environ.get("T16_RD_PORT", "8001"))
 RD_URL = f"http://127.0.0.1:{RD_PORT}"
 COMPOSE_FILES = (
     "--env-file",
-    ".env.e2e.local",
+    str(LS_ENV_FILE),
     "-f",
     "docker-compose.yml",
     "-f",
@@ -243,6 +249,21 @@ class T16E2E:
         if not rd or not rd.get("id"):
             raise RuntimeError("RD tenant service is missing")
         self.admin_service_id = str(rd["id"])
+        if os.environ.get("T16_ROTATE_RD_CREDENTIAL", "").strip().lower() == "true":
+            rotated = self._admin(
+                "POST",
+                f"/admin/api/services/{self.admin_service_id}/rotate-key?grace_seconds=0",
+            )
+            if rotated.status_code != 200:
+                raise RuntimeError("RD service credential rotation failed")
+            credential = rotated.json()
+            key_id = str(credential.get("key_id") or "")
+            private_key = str(credential.get("service_private_key") or "")
+            if not key_id or not private_key:
+                raise RuntimeError("RD service credential rotation returned incomplete material")
+            self.handoff["LICENSE_SERVICE_KEY_ID"] = key_id
+            self.handoff["LICENSE_SERVICE_PRIVATE_KEY"] = private_key
+            self.sensitive.update({key_id, private_key})
 
     def _admin(self, method: str, target: str, **kwargs: Any) -> requests.Response:
         headers = dict(kwargs.pop("headers", {}) or {})

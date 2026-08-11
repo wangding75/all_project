@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 ADB = r"D:\install\Netease\MuMu\nx_main\adb.exe"
-DEV = "127.0.0.1:16384"
+DEV = os.environ.get("ADB_DEVICE", "127.0.0.1:7555")
 OUT = Path(__file__).resolve().parents[2] / "vendor" / "hongguo" / "config.json"
 
 

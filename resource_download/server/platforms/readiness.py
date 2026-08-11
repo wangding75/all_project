@@ -350,8 +350,29 @@ def log_startup_readiness(report: dict[str, Any] | None = None) -> dict[str, Any
     return report
 
 
-def bootstrap_config_on_startup() -> dict[str, Any]:
-    """启动时：尝试补齐可自动修复的配置，再检查完整性。"""
+def bootstrap_config_on_startup(*, recover_fanqie: bool = False) -> dict[str, Any]:
+    """启动时：在 runtime ready 后补齐可自动恢复的配置，再检查完整性。"""
+    # fanqie_config is generated runtime state, not a user credential.  It is
+    # deliberately absent after a secure clean-state, so recreate it from the
+    # real Fanqie App/Java bridge before reporting readiness.
+    if recover_fanqie:
+        try:
+            # A bridge restart may leave both the App and agent down.  Make
+            # the recovery entry point self-contained; normal server startup
+            # already performs this step earlier, while a direct recovery call
+            # remains safe and deterministic.
+            from platforms.fanqie.device import ensure_fanqie_running, ensure_frida_agent
+
+            ensure_frida_agent()
+            ensure_fanqie_running()
+            from platforms.fanqie.client import config_needs_refresh, refresh_session
+
+            if config_needs_refresh():
+                refresh_session()
+                logger.info("番茄会话配置已从 RD App/Java bridge 自动恢复")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("番茄会话配置自动恢复失败（非用户登录凭据）: %s", sanitize_error_text(exc))
+
     # 红果配置：若缺且 vendor 有 config.json 则复制
     try:
         from platforms.hongguo.bridge import ensure_config

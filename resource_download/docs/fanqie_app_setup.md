@@ -12,7 +12,7 @@
 2. 在模拟器中安装 **番茄小说 App** (`com.dragon.read`) 并正常打开运行一次。  
    - **不需要**红果 App / `com.phoenix.read`；签名与解密均在番茄进程内完成。  
    - 若同机也要下红果，可同时安装红果，两条链路分 pid attach，互不依赖。
-3. 确保 ADB 调试工具能够连接模拟器端口（例如 `127.0.0.1:16384`）。
+3. 确保 ADB 调试工具能够连接 RD 测试实例 `127.0.0.1:7555`。
 4. 设备上放置 Frida agent（`/data/local/tmp/frida-server` 或伪装名 `sys_hlpd`）。
 
 ### 1.2 注入脚本部署
@@ -28,7 +28,7 @@
 
 ```env
 ADB=D:\install\Netease\MuMu\nx_main\adb.exe
-ADB_DEVICE=127.0.0.1:16384
+ADB_DEVICE=127.0.0.1:7555
 FRIDA_HOST=127.0.0.1:27042
 FANQIE_PKG=com.dragon.read
 ```

@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "vendor" / "hongguo"))
 sys.path.insert(0, str(ROOT / "vendor" / "hongguo" / "frida"))
 
 os.environ.setdefault("ADB", r"D:\install\Netease\MuMu\nx_main\adb.exe")
-os.environ.setdefault("ADB_DEVICE", "127.0.0.1:16384")
+os.environ.setdefault("ADB_DEVICE", "127.0.0.1:7555")
 os.environ.setdefault("FRIDA_HOST", "127.0.0.1:27042")
 
 import hongguo as H  # noqa: E402

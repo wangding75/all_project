@@ -25,7 +25,7 @@
   - `requests` & `httpx`
 
 - **运行机环境需求（红果/番茄 App 会话功能可用前置）**:
-  - 本地具备可用的 Android 模拟器（如 MuMu 模拟器，ADB 默认地址 `127.0.0.1:16384`）。
+  - 本地具备可用的 RD Android 测试实例（ADB 默认地址 `127.0.0.1:7555`）。
   - 配置了与 `frida-server` 连通的 Frida 调试端口（针对番茄 App 解混淆）。
   - 在 EXE 同级下安装或放置 `vendor/hongguo`。
   - Windows 系统需要安装有 WebView2 运行时（现代 Win10/Win11 已默认内置）。

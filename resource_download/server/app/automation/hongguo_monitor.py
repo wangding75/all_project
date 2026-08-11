@@ -337,6 +337,18 @@ class HongguoMonitorService:
                 "new",
                 limit=int(snapshot.get("scan_limit") or 50),
             )
+            # The real short-play endpoint is a daily bucket.  An empty
+            # bucket is a valid business result, not an API failure; fall
+            # back to the same signed upstream's latest list so a first
+            # bootstrap/recovery scan remains useful across date/timezone
+            # boundaries.  The persisted known-id set still prevents
+            # re-enqueueing items already seen by this policy.
+            if not rows:
+                rows = await platform.discover(
+                    "new",
+                    limit=int(snapshot.get("scan_limit") or 50),
+                    only_today=False,
+                )
             known = set(str(value) for value in snapshot.get("known_ids") or [])
             baseline_initialized = bool(snapshot.get("baseline_initialized"))
             detected_all = [

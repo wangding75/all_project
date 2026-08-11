@@ -99,7 +99,9 @@ class Settings(BaseSettings):
 
     # ADB 与 Frida 配置（番茄 App 会话 / 书名搜索 / App 下载）
     adb_path: str = "adb"
-    adb_device: str = "127.0.0.1:16384"  # 模拟器 adb 地址，务必与 adb devices 一致
+    # RD acceptance device.  Override explicitly for another local emulator;
+    # never silently fall back to the unrelated SX instance.
+    adb_device: str = "127.0.0.1:7555"  # RD 测试实例，务必与 adb devices 一致
     frida_host: str = "127.0.0.1:27042"
     fanqie_pkg: str = "com.dragon.read"
     hongguo_pkg: str = "com.phoenix.read"

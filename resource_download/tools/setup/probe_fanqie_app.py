@@ -17,7 +17,7 @@ import urllib3
 urllib3.disable_warnings()
 
 ADB = r"D:\install\Netease\MuMu\nx_main\adb.exe"
-DEV = "127.0.0.1:16384"
+DEV = os.environ.get("ADB_DEVICE", "127.0.0.1:7555")
 FRIDA_HOST = "127.0.0.1:27042"
 PKG = "com.dragon.read"
 ORACLE_JS = Path(__file__).resolve().parents[2] / "vendor" / "hongguo" / "frida" / "oracle.js"
