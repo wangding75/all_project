@@ -252,8 +252,6 @@ class WindowApi:
         """Create the Activation Proof and its body in one native, non-browser path."""
         if not isinstance(card_code, str) or not card_code.strip():
             return {"ok": False, "status": 400, "detail": "INVALID_KEY", "reason": "INVALID_KEY"}
-        if not access_token:
-            return {"ok": False, "status": 401, "detail": "AUTH_REQUIRED", "reason": "AUTH_REQUIRED"}
 
         def body_factory() -> bytes:
             identity = self._proof_service.identity()
@@ -272,9 +270,8 @@ class WindowApi:
         try:
             result = self._http_client.request_json(
                 "POST",
-                "/v1/auth/redeem",
+                "/v1/license/activate",
                 body_factory,
-                access_token=access_token,
                 protected=False,
             )
             return {"ok": True, "data": result}

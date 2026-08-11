@@ -314,6 +314,12 @@ class RedeemResponse(BaseModel):
     license_expires_at: str | None = None
     max_devices: int | None = None
     active_devices: int | None = None
+    license_id: str | None = None
+    device_id: str | None = None
+    plan_code: str | None = None
+    plan_version: int | None = None
+    entitlement_schema_version: int | None = None
+    entitlements: dict[str, Any] = Field(default_factory=dict)
     # Deprecated display alias. It is not an authorization fact and is never
     # persisted back to User.vip_expires_at by the new activation flow.
     vip_expires_at: str | None = None

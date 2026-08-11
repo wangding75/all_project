@@ -7,7 +7,7 @@
 
 ## Device Proof V3（正式桌面路径）
 
-Windows Desktop Client 使用 License Service 固定的 `LS-DEVICE-V3` 和 rc3
+Windows Desktop Client 使用 License Service 固定的 `LS-DEVICE-V3` 和 rc4
 Python helper，当前算法为 `ED25519`。首次启动生成一对设备密钥；
 `device_id` 始终由 32-byte raw public key 的 SHA-256 派生为
 `dev_<64 lowercase hex>`，不会使用 UUID、MAC、MachineGuid、用户名或硬盘序列号。
@@ -90,7 +90,7 @@ python client/desktop/main.py
 - 客户端：本目录 UI + 桌面壳，只连 `API_BASE`
 
 打包前必须安装仓库固定的
-`vendor/license_service_client-1.0.0rc3-py3-none-any.whl`（SHA-256
-`30EC6E2FFA86627A7F1E6DD2E9AE7F2A07FE44161495AFD864D9090CBBF43A53`）及其
+`vendor/license_service_client-1.0.0rc4-py3-none-any.whl`（SHA-256
+`62E502DC2BAB6F925DACB4A51E92D4D39F9CD459E7C209C618C8FB46CC5C29C9`）及其
 `cryptography` 依赖。生产 Desktop EXE 默认不包含 `server/app`、平台适配或
 `vendor` 目录。

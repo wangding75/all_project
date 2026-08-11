@@ -77,13 +77,13 @@
       } catch (_) {}
       return "http://127.0.0.1:8000";
     })(),
-    apiKey: localStorage.getItem("apiKey") || defaultApiKeyFor(
-      localStorage.getItem("apiBase") || (typeof location !== "undefined" ? location.origin : "")
-    ),
-    accessToken: localStorage.getItem("accessToken") || "",
+    // T28 activation-first: normal business requests carry no User/JWT/API key.
+    apiKey: "",
+    accessToken: "",
     nativeApiBase: "",
     user: null,
-    authMode: "login",
+    licenseContext: null,
+    licenseStatusReason: "LICENSE_STATUS_UNKNOWN",
     currentDetail: null,
     searchResults: [],
     allSearchResults: [],
@@ -172,6 +172,10 @@
     btnOpenAuthModal: document.getElementById("btnOpenAuthModal"),
     btnRedeemKey: document.getElementById("btnRedeemKey"),
     btnLogoutBtn: document.getElementById("btnLogoutBtn"),
+    btnOpenActivation: document.getElementById("btnOpenActivation"),
+    licensePlanName: document.getElementById("licensePlanName"),
+    licenseExpireStatus: document.getElementById("licenseExpireStatus"),
+    licenseStatusReason: document.getElementById("licenseStatusReason"),
 
     // 首页
     homeSearchQuery: document.getElementById("homeSearchQuery"),
@@ -276,6 +280,11 @@
     settingDeviceIdentityStatus: document.getElementById("settingDeviceIdentityStatus"),
     settingBtnAuthModal: document.getElementById("settingBtnAuthModal"),
     settingBtnLogout: document.getElementById("settingBtnLogout"),
+    settingBtnActivate: document.getElementById("settingBtnActivate"),
+    settingLicensePlan: document.getElementById("settingLicensePlan"),
+    settingLicenseDevice: document.getElementById("settingLicenseDevice"),
+    settingLicenseQuota: document.getElementById("settingLicenseQuota"),
+    settingLicenseReason: document.getElementById("settingLicenseReason"),
     btnResetDeviceIdentity: document.getElementById("btnResetDeviceIdentity"),
     settingApiBase: document.getElementById("settingApiBase"),
     settingApiKey: document.getElementById("settingApiKey"),
@@ -509,6 +518,7 @@
       "/v1/batch/resolve",
       "/v1/image/recognize",
       "/v1/hongguo/people",
+      "/v1/license/status",
     ].includes(path)) return true;
     return path.startsWith("/v1/automation/hongguo-new");
   }
@@ -575,7 +585,7 @@
     if (!known.includes(reason)) return false;
     const needsActivation = reason === "DEVICE_NOT_ACTIVATED";
     toast(`${prefix}：${licenseReasonMessage(reason)}`, needsActivation ? "warning" : "error", 5500);
-    if (needsActivation && state.accessToken && elements.modalRedeemKey) {
+    if (needsActivation && elements.modalRedeemKey) {
       elements.modalRedeemKey.classList.add("active");
     }
     return true;
@@ -712,6 +722,49 @@
   }
 
   // 获取 /v1/auth/me 并更新状态
+  function renderLicenseContext(context, reason = "") {
+    const data = context || {};
+    const active = String(data.status || "").toUpperCase() === "ACTIVE";
+    const plan = data.plan_code
+      ? `${data.plan_code}${data.plan_version ? ` v${data.plan_version}` : ""}`
+      : "License 未激活";
+    const expiry = data.expires_at ? formatDate(data.expires_at) : "未激活";
+    const device = data.device_id ? `Device ${String(data.device_id).slice(0, 16)}…` : "Device 未就绪";
+    const quota = typeof data.used === "number" && typeof data.limit === "number"
+      ? `${data.used} / ${data.limit}`
+      : "—";
+    const why = reason || data.reason || (active ? "ACTIVE" : "LICENSE_REQUIRED");
+    if (elements.licensePlanName) elements.licensePlanName.textContent = plan;
+    if (elements.licenseExpireStatus) elements.licenseExpireStatus.textContent = active ? expiry : why;
+    if (elements.licenseStatusReason) elements.licenseStatusReason.textContent = why;
+    if (elements.settingLicensePlan) elements.settingLicensePlan.textContent = plan;
+    if (elements.settingLicenseDevice) elements.settingLicenseDevice.textContent = `${expiry} · ${device}`;
+    if (elements.settingLicenseQuota) elements.settingLicenseQuota.textContent = quota;
+    if (elements.settingLicenseReason) elements.settingLicenseReason.textContent = why;
+    if (elements.vipUsername) elements.vipUsername.textContent = plan;
+    if (elements.vipExpireDate) elements.vipExpireDate.textContent = active ? expiry : why;
+    if (elements.settingQuotaVal) elements.settingQuotaVal.textContent = quota;
+  }
+
+  async function refreshLicenseStatus({ openActivation = true } = {}) {
+    try {
+      const status = await apiFetch("/v1/license/status");
+      state.licenseContext = status;
+      state.licenseStatusReason = status.reason || "ACTIVE";
+      renderLicenseContext(status);
+      if (elements.modalRedeemKey) elements.modalRedeemKey.classList.remove("active");
+      return status;
+    } catch (err) {
+      state.licenseContext = null;
+      state.licenseStatusReason = err.reason || err.message || "LICENSE_REQUIRED";
+      renderLicenseContext(null, state.licenseStatusReason);
+      if (openActivation && elements.modalRedeemKey && isDesktopBridge()) {
+        elements.modalRedeemKey.classList.add("active");
+      }
+      return null;
+    }
+  }
+
   async function fetchMe() {
     if (!state.accessToken) {
       state.user = null;
@@ -984,6 +1037,20 @@
     if (elements.settingNameUsePrefix) elements.settingNameUsePrefix.checked = !!p.nameUsePrefix;
     if (elements.settingNameIncludeTitle) elements.settingNameIncludeTitle.checked = !!p.nameIncludeTitle;
     if (elements.settingNameSeparator) elements.settingNameSeparator.value = p.nameSeparator || ".";
+    if (elements.btnOpenActivation) {
+      elements.btnOpenActivation.addEventListener("click", () => {
+        if (elements.redeemErrorMessage) elements.redeemErrorMessage.style.display = "none";
+        if (elements.modalRedeemKey) elements.modalRedeemKey.classList.add("active");
+      });
+    }
+    if (elements.settingBtnActivate) {
+      elements.settingBtnActivate.addEventListener("click", () => {
+        if (elements.modalRedeemKey) elements.modalRedeemKey.classList.add("active");
+      });
+    }
+    const legacyAccountCard = elements.settingUsernameVal && elements.settingUsernameVal.closest(".settings-card");
+    if (legacyAccountCard) legacyAccountCard.style.display = "none";
+
     if (elements.settingQualityPills) {
       elements.settingQualityPills.forEach((btn) => {
         btn.classList.toggle("active", btn.getAttribute("data-quality") === p.quality);
@@ -2225,7 +2292,14 @@
     }
 
     // 检查是否未登录
-    if (!state.accessToken && (!state.apiKey || state.apiKey === "dev-key-change-me")) {
+    if (!state.licenseContext) {
+      await refreshLicenseStatus();
+      if (!state.licenseContext) {
+        toast("请先激活 License", "warning");
+        return;
+      }
+    }
+    if (false) {
       toast("请先登录账号（商业路径）", "warning");
       openAuthModal("login");
       return;
@@ -3050,11 +3124,37 @@
     initTheme();
     initSettingsForm();
     setPlatform(state.platform);
+    // T28: activation-first UI has no ordinary account or API-key controls.
+    const legacyAccountCard = elements.btnOpenAuthModal && elements.btnOpenAuthModal.closest(".vip-status-card");
+    if (legacyAccountCard) legacyAccountCard.style.display = "none";
+    const apiKeyGroup = elements.settingApiKey && elements.settingApiKey.closest(".form-group");
+    if (apiKeyGroup) apiKeyGroup.style.display = "none";
 
     // 拉取当前用户登录态
-    fetchMe();
+    // T28: load Device Identity/License status before entering business UI.
+    try {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.get_runtime_info) {
+        window.pywebview.api.get_runtime_info().then((runtime) => {
+          const status = runtime && runtime.device_identity_status;
+          if (elements.settingDeviceIdentityStatus && status) {
+            elements.settingDeviceIdentityStatus.textContent = status;
+          }
+        });
+      }
+    } catch (_) {}
+    if (elements.modalRedeemKey) {
+      const title = elements.modalRedeemKey.querySelector(".modal-title");
+      const hint = elements.modalRedeemKey.querySelector(".modal-hint");
+      if (title) title.textContent = "🔑 Activate License";
+      if (hint) hint.textContent = "输入 License Service 提供的 Activation Code。私钥只保存在 Windows secure storage。";
+    }
+    if (elements.btnModalSubmit) elements.btnModalSubmit.textContent = "Activate";
+    refreshLicenseStatus().then((status) => {
+      if (!status) return;
+      loadDiscover();
+    });
     // 默认首页发现
-    loadDiscover();
+    // T28: discover is loaded only after an active License Context is present.
 
     if (elements.themeToggleBtn) {
       elements.themeToggleBtn.addEventListener("click", () => setTheme(state.theme === "dark" ? "light" : "dark"));
@@ -3636,7 +3736,7 @@
     // VIP 卡密兑换弹窗 (E2 硬约束: success===true 才能关弹窗并刷新 me)
     if (elements.btnRedeemKey) {
       elements.btnRedeemKey.addEventListener("click", () => {
-        if (!state.accessToken) {
+        if (false && !state.accessToken) {
           if (confirm("请先登录账号后再兑换 VIP 卡密。是否立即登录？")) {
             openAuthModal("login");
           }
@@ -3675,7 +3775,7 @@
           if (res && res.success === true) {
             elements.modalRedeemKey.classList.remove("active");
             elements.inputCardKey.value = "";
-            await fetchMe();
+            await refreshLicenseStatus({ openActivation: false });
             const expiry = res.license_expires_at || res.vip_expires_at;
             const planInfo = res.max_devices ? ` · 设备上限 ${res.max_devices}` : "";
             toast(

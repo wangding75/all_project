@@ -87,7 +87,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 
 ### 统一 License Service 配置
 
-RD 使用固定版本 `license-service-client==1.0.0rc3` wheel，Service code 与
+RD 使用固定版本 `license-service-client==1.0.0rc4` wheel，Service code 与
 Device Proof audience 固定为 `rd`。生产必须配置：
 
 | 变量 | 说明 |

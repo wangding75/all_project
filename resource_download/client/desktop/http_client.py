@@ -23,6 +23,7 @@ _PROTECTED_CONTENT_PATHS = {
     "/v1/batch/resolve",
     "/v1/image/recognize",
     "/v1/hongguo/people",
+    "/v1/license/status",
 }
 _RETRYABLE_HTTP = {408, 425, 429, 500, 502, 503, 504}
 _KNOWN_LICENSE_REASONS = {

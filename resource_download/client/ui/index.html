@@ -6,6 +6,12 @@
   <title>全能短剧/小说资源下载器 Desktop</title>
   <!-- 绝对路径：从 / 打开时相对 styles.css 会 404；/ui/ 与桌面壳均可用 -->
   <link rel="stylesheet" href="/ui/styles.css">
+  <style>
+    /* T28: legacy User/JWT controls remain hidden compatibility markup. */
+    #modalAuth, #btnOpenAuthModal, #btnLogoutBtn, #settingBtnAuthModal, #settingBtnLogout { display: none !important; }
+    #settingApiKey, #btnResetApiKey { display: none !important; }
+    .vip-status-card:not(.license-context-card) { display: none !important; }
+  </style>
 </head>
 <body>
   <!-- 1. 顶部无边框 Windows 标题栏 -->
@@ -27,6 +33,19 @@
     <!-- 左侧固定边栏 (240px) -->
     <aside class="app-sidebar">
       <div>
+        <div class="vip-status-card license-context-card">
+          <div class="vip-user-info">
+            <div class="vip-avatar">🔐</div>
+            <div class="vip-details">
+              <span class="vip-name" id="licensePlanName">License 未激活</span>
+              <span class="vip-expire" id="licenseExpireStatus">请先输入 Activation Code</span>
+            </div>
+          </div>
+          <div class="vip-card-actions">
+            <button class="btn-redeem-key" id="btnOpenActivation"><span>🔑</span><span>激活 License</span></button>
+            <span class="form-hint" id="licenseStatusReason">正在读取 License 状态…</span>
+          </div>
+        </div>
         <!-- VIP 状态与卡密兑换/账号卡片 -->
         <div class="vip-status-card">
           <div class="vip-user-info">
@@ -650,6 +669,15 @@ https://v.example.com/share/xxxx"></textarea>
                 <span class="form-hint">商业用户请登录账号，勿依赖 API Key。</span>
               </div>
             </div>
+          </div>
+
+          <div class="settings-card license-context-settings">
+            <h3 class="settings-card-title">License Context</h3>
+            <div class="form-group"><label class="form-label">Plan</label><span id="settingLicensePlan">未激活</span></div>
+            <div class="form-group"><label class="form-label">Expires / Device</label><span id="settingLicenseDevice">未激活</span></div>
+            <div class="form-group"><label class="form-label">Quota used / limit</label><span id="settingLicenseQuota">—</span></div>
+            <div class="form-group"><label class="form-label">License reason</label><span id="settingLicenseReason">等待状态</span></div>
+            <button class="btn-primary" id="settingBtnActivate" type="button">输入 Activation Code</button>
           </div>
 
           <div class="settings-footer-actions">

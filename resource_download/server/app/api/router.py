@@ -76,6 +76,101 @@ api_router.include_router(auth_router)
 api_router.include_router(admin_router)
 
 
+def _activation_response(result: dict[str, Any]) -> RedeemResponse:
+    decision = str(result.get("decision") or "UNKNOWN")
+    reason = str(result.get("reason") or "")
+    if decision == "UNKNOWN":
+        if reason not in {
+            "LICENSE_SERVICE_UNAVAILABLE",
+            "LICENSE_SERVICE_TIMEOUT",
+            "LICENSE_SERVICE_REJECTED",
+        }:
+            reason = "LICENSE_SERVICE_UNAVAILABLE"
+        raise HTTPException(status_code=503, detail=reason)
+    if decision != "ACTIVE":
+        if reason == "INVALID_DEVICE_PROOF":
+            reason = "DEVICE_PROOF_INVALID"
+        raise HTTPException(status_code=403, detail=reason or "LICENSE_REQUIRED")
+    return RedeemResponse(
+        success=True,
+        message=reason or "ACTIVATED",
+        reason=reason or "ACTIVATED",
+        license_expires_at=str(result["expires_at"]) if result.get("expires_at") is not None else None,
+        max_devices=result.get("max_devices"),
+        active_devices=result.get("active_devices"),
+        license_id=result.get("license_id"),
+        device_id=result.get("device_id"),
+        plan_code=result.get("plan_code") or (result.get("plan") or {}).get("code"),
+        plan_version=result.get("plan_version") or (result.get("plan") or {}).get("version"),
+        entitlement_schema_version=result.get("entitlement_schema_version"),
+        entitlements=dict(result.get("entitlements") or {}),
+    )
+
+
+@api_router.post("/v1/license/activate", response_model=RedeemResponse)
+def activate_license(
+    request: Request,
+    body: RedeemRequest,
+    gateway: LicenseGateway = Depends(get_license_gateway),
+) -> RedeemResponse:
+    """Activation-first Desktop entry point; no User/JWT is required."""
+    card_code = body.card_code.strip()
+    if not card_code:
+        raise HTTPException(status_code=400, detail="INVALID_KEY")
+    proof = body.proof
+    if (
+        not body.device_id
+        or not body.device_key_algorithm
+        or not body.device_public_key
+        or proof is None
+        or proof.timestamp is None
+        or not proof.nonce
+        or not proof.signature
+    ):
+        raise HTTPException(status_code=403, detail="DEVICE_PROOF_REQUIRED")
+    result = gateway.activate(
+        {
+            "license_key": card_code,
+            "device_id": body.device_id,
+            "device_key_algorithm": body.device_key_algorithm,
+            "device_public_key": body.device_public_key,
+            "proof": {
+                "timestamp": proof.timestamp,
+                "nonce": proof.nonce,
+                "signature": proof.signature,
+            },
+        },
+        request_id=request.headers.get("X-Request-ID", ""),
+    )
+    return _activation_response(result)
+
+
+@api_router.get("/v1/license/status")
+async def license_status(
+    request: Request,
+    identity: Identity = Depends(require_active_device_license),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Return the verified License Context and RD-owned daily usage."""
+    from app.quota import get_license_usage
+
+    result = dict(getattr(request.state, "license_result", {}) or {})
+    usage = get_license_usage(identity, db)
+    plan = result.get("plan") or {}
+    return {
+        "status": "ACTIVE",
+        "reason": result.get("reason") or "ACTIVE",
+        "license_id": identity.license_id,
+        "device_id": identity.device_id,
+        "plan_code": identity.plan_code or plan.get("code"),
+        "plan_version": identity.plan_version or plan.get("version"),
+        "entitlement_schema_version": identity.entitlement_schema_version,
+        "entitlements": dict(identity.entitlements),
+        "expires_at": result.get("expires_at"),
+        **usage,
+    }
+
+
 def _public_health_value(value: Any) -> Any:
     """Strip local filesystem topology from the public health document."""
     hidden_keys = {"path", "vendor_path", "config_path", "agent_bin"}

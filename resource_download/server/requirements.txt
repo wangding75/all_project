@@ -10,5 +10,5 @@ SQLAlchemy>=2.0.0
 PyJWT>=2.8.0
 bcrypt>=4.0.0
 pytest>=8.0.0
-../vendor/license_service_client-1.0.0rc3-py3-none-any.whl
+../vendor/license_service_client-1.0.0rc4-py3-none-any.whl
 
