@@ -875,7 +875,7 @@ def main() -> None:
     )
     _expect_status(expired_response, 403, "EXPIRED", {"LICENSE_EXPIRED"})
 
-    print("SERVER INTEGRATION PASS")
+    print("RD LICENSE INTEGRATION PASS")
     print("CLIENT CUTOVER COMPLETE (legacy HTTP regression harness)")
 
 
