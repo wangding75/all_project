@@ -97,6 +97,7 @@
     batchSelected: new Set(),
     batchResolving: false,
     selectedEpisodes: new Set(),
+    downloadSubmitting: false,
     jobsPollTimer: null,
     queueState: null,
     jobs: [],
@@ -598,7 +599,8 @@
         endpoint,
         rawBody,
         state.accessToken || "",
-        state.apiKey || ""
+        state.apiKey || "",
+        (fetchOpts.headers && (fetchOpts.headers["Idempotency-Key"] || fetchOpts.headers["idempotency-key"])) || ""
       );
       if (!bridgeResult || bridgeResult.ok !== true) {
         const reason = (bridgeResult && (bridgeResult.reason || bridgeResult.detail)) || "REQUEST_FAILED";
@@ -1443,6 +1445,7 @@
       );
       const items = Array.isArray(data) ? data : (data.items || []);
       const platformErrors = Array.isArray(data) ? {} : (data.platform_errors || {});
+      const platformStatus = Array.isArray(data) ? {} : (data.platform_status || {});
       if (isAppend) {
         const merged = [...state.allSearchResults];
         const seen = new Set(merged.map((item) => `${platformOf(item)}:${item.id}`));
@@ -1476,7 +1479,7 @@
       if (state.allSearchResults.length > 0) {
         if (errKeys.length > 0) {
           const errHtml = errKeys
-            .map((k) => `<div>· <b>${escapeHtml(k)}</b>: ${escapeHtml(platformErrors[k])}</div>`)
+            .map((k) => `<div><b>${escapeHtml(platformStatus[k] || "UPSTREAM_UNAVAILABLE")}</b> · ${escapeHtml(k)}: ${escapeHtml(platformErrors[k])}</div>`)
             .join("");
           setSearchBanner(`部分平台失败，已展示可用结果：${errHtml}`, "warning");
           toast(`部分平台搜索失败：${errKeys.join("、")}`, "warning");
@@ -1490,9 +1493,12 @@
           loadDetail(first.id, state.selectedPlatform);
         }
       } else {
-        let msg = "未搜索到相关资源，请尝试更改关键词或使用「载入 ID」。";
+        let msg = "EMPTY_RESULT: 未搜索到相关资源，请尝试更改关键词或使用「载入 ID」。";
         if (errKeys.length > 0) {
-          msg = "各平台均未返回结果。";
+          const statuses = Object.values(platformStatus);
+          msg = statuses.includes("RUNTIME_INCOMPATIBLE")
+            ? "RUNTIME_INCOMPATIBLE: 平台运行环境版本不兼容，请修复 Frida 后重试。"
+            : "UPSTREAM_UNAVAILABLE: 上游平台暂时不可用，请稍后重试。";
           setSearchBanner(
             errKeys.map((k) => `· <b>${escapeHtml(k)}</b>: ${escapeHtml(platformErrors[k])}`).join("<br>"),
             "error"
@@ -2229,6 +2235,7 @@
 
   // 6. 创建下载任务 (E2 VIP 403 与 429 诚实提示)
   async function createDownloadJob(rangeSpec) {
+    if (state.downloadSubmitting) return;
     if (!state.currentDetail) {
       toast("请先选择要下载的资源", "warning");
       return;
@@ -2246,13 +2253,18 @@
       state.selectedPlatform ||
       (state.platform !== "all" ? state.platform : "hongguo");
     const options = buildJobOptions();
+    const idempotencyKey = `rd-${Date.now()}-${window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
     // 带上标题，任务列表展示用
     if (state.currentDetail && state.currentDetail.title) {
       options.title = state.currentDetail.title;
     }
     try {
+      state.downloadSubmitting = true;
+      if (elements.btnDownloadAll) elements.btnDownloadAll.disabled = true;
+      if (elements.btnDownloadSelected) elements.btnDownloadSelected.disabled = true;
       const res = await apiFetch("/v1/jobs", {
         method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
           platform: jobPlatform,
           id: state.currentDetail.id,
@@ -2277,6 +2289,10 @@
       } else {
         toast(`任务创建失败：${msg}`, "error");
       }
+    } finally {
+      state.downloadSubmitting = false;
+      if (elements.btnDownloadAll) elements.btnDownloadAll.disabled = false;
+      if (elements.btnDownloadSelected) elements.btnDownloadSelected.disabled = false;
     }
   }
 

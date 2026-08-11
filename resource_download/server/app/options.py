@@ -57,6 +57,10 @@ def _validate_scalar(key: str, value: Any) -> Any:
         if not isinstance(value, str) or len(value) > 512:
             raise ValueError(f"{key} must be a short string")
         return value
+    if key == "cookie":
+        if not isinstance(value, str) or len(value) > 16_384:
+            raise ValueError("cookie must be a string")
+        return value
     if key in {"download_cover", "download_desc", "allow_raw"}:
         if not isinstance(value, bool):
             raise ValueError(f"{key} must be boolean")

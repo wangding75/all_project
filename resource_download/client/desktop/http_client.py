@@ -102,6 +102,7 @@ class DesktopHttpClient:
         *,
         access_token: str = "",
         api_key: str = "",
+        idempotency_key: str = "",
         protected: bool | None = None,
     ) -> Any:
         parsed = urllib.parse.urlsplit(request_target)
@@ -118,6 +119,8 @@ class DesktopHttpClient:
                 headers["Authorization"] = f"Bearer {access_token}"
             elif api_key:
                 headers["X-API-Key"] = api_key
+            if idempotency_key:
+                headers["Idempotency-Key"] = idempotency_key
             if protected:
                 # This call is intentionally inside the retry loop: every retry gets
                 # a fresh timestamp/nonce/signature over this exact raw body.

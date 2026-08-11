@@ -148,7 +148,9 @@ def _reset_local_oracle() -> None:
 def _ensure_hongguo_runtime() -> None:
     from app.config import get_settings
     from platforms.runtime import ensure_app_running, probe_shared_agent
+    from platforms.hongguo.frida_compat import ensure_compatible
 
+    ensure_compatible()
     agent = probe_shared_agent(try_start=True)
     if not agent.get("agent_running"):
         raise RuntimeError(agent.get("message") or "Frida agent unavailable")

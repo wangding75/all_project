@@ -14,6 +14,12 @@ from app import __version__
 from app.auth import Identity, require_identity
 from app.errors import format_platform_error, sanitize_error_text
 from app.config import get_settings
+from app.idempotency import (
+    IdempotencyConflict,
+    IdempotencyInProgress,
+    idempotency_store,
+    request_fingerprint,
+)
 from app.jobs import get_job_manager
 from app.license_guard import require_active_device_license
 from app.license_gateway import LicenseGateway, get_license_gateway
@@ -263,19 +269,25 @@ async def search(
     results = await asyncio.gather(*[_search_one(p, q, page) for p in targets])
     items: list[SearchItem] = []
     errors: dict[str, str] = {}
+    platform_status: dict[str, str] = {}
     for p, (plist, err) in zip(targets, results):
         if err:
             errors[p.value] = err
+            platform_status[p.value] = (
+                "RUNTIME_INCOMPATIBLE"
+                if "RUNTIME_INCOMPATIBLE" in err
+                else "UPSTREAM_UNAVAILABLE"
+            )
+        else:
+            platform_status[p.value] = "OK" if plist else "EMPTY_RESULT"
         items.extend(plist)
 
-    # 单平台且完全失败 → 502，与旧行为一致
-    if len(targets) == 1 and not items and errors:
-        raise HTTPException(status_code=502, detail=f"search failed: {next(iter(errors.values()))}")
-
+    # 搜索结果始终返回 200；调用方根据 platform_status 区分空结果、上游不可用和运行时不兼容。
     return SearchResponse(
         items=items,
         platforms_queried=[p.value for p in targets],
         platform_errors=errors,
+        platform_status=platform_status,
         total=len(items),
         page=page,
         page_size=20,
@@ -581,9 +593,23 @@ async def detail(
         ) from exc
 
 
+def _idempotency_scope(identity: Identity) -> str:
+    if identity.kind == "user" and identity.user_id is not None:
+        return f"user:{identity.user_id}"
+    return "ops"
+
+
+def _read_idempotency_key(request: Request) -> str:
+    key = (request.headers.get("Idempotency-Key") or "").strip()
+    if len(key) > 128:
+        raise HTTPException(status_code=400, detail="Idempotency-Key is too long")
+    return key
+
+
 @api_router.post("/v1/jobs", response_model=JobResponse)
 async def create_job(
     body: JobCreateRequest,
+    request: Request,
     identity: Identity = Depends(require_active_device_license),
     db: Session = Depends(get_db),
 ) -> JobResponse:
@@ -595,14 +621,38 @@ async def create_job(
         raise HTTPException(status_code=400, detail=sanitize_error_text(exc)) from exc
 
     # 每日配额校验
+    idempotency_key = _read_idempotency_key(request)
+    idempotency_entry = None
+    if idempotency_key:
+        try:
+            leader, idempotency_entry = idempotency_store.begin(
+                _idempotency_scope(identity),
+                idempotency_key,
+                request_fingerprint(body.model_dump(mode="json")),
+            )
+        except IdempotencyConflict as exc:
+            raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT") from exc
+        if not leader:
+            import asyncio
+
+            try:
+                cached = await asyncio.to_thread(idempotency_store.wait, idempotency_entry)
+            except IdempotencyInProgress as exc:
+                raise HTTPException(status_code=409, detail="IDEMPOTENCY_IN_PROGRESS") from exc
+            if cached is None:
+                raise HTTPException(status_code=409, detail="IDEMPOTENCY_IN_PROGRESS")
+            return JobResponse.model_validate(cached)
+
     from app.quota import check_job_quota, increment_job_quota, release_job_quota
-    check_job_quota(identity, db)
+    reserved = False
 
     owner_user_id = identity.user_id if identity.kind == "user" else None
     owner_kind = identity.kind if identity.kind == "user" else "ops"
 
     manager = get_job_manager()
     try:
+        check_job_quota(identity, db)
+        reserved = True
         record = await manager.create_job(
             platform=body.platform,
             item_id=body.id,
@@ -611,19 +661,43 @@ async def create_job(
             owner_user_id=owner_user_id,
             owner_kind=owner_kind,
         )
+        increment_job_quota(identity, db)
+        reserved = False
+        response = record.to_response()
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.complete(
+                _idempotency_scope(identity),
+                idempotency_key,
+                idempotency_entry,
+                response.model_dump(mode="json"),
+            )
+        return response
+    except HTTPException:
+        if reserved:
+            release_job_quota(identity)
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.fail(_idempotency_scope(identity), idempotency_key, idempotency_entry)
+        raise
     except RuntimeError as exc:
-        release_job_quota(identity)
+        if reserved:
+            release_job_quota(identity)
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.fail(_idempotency_scope(identity), idempotency_key, idempotency_entry)
         raise HTTPException(status_code=429, detail=sanitize_error_text(exc)) from exc
     except ValueError as exc:
-        release_job_quota(identity)
+        if reserved:
+            release_job_quota(identity)
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.fail(_idempotency_scope(identity), idempotency_key, idempotency_entry)
         raise HTTPException(status_code=422, detail=sanitize_error_text(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        release_job_quota(identity)
+        if reserved:
+            release_job_quota(identity)
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.fail(_idempotency_scope(identity), idempotency_key, idempotency_entry)
         raise HTTPException(status_code=500, detail="job creation failed") from exc
 
     # 创建成功后累加配额计数
-    increment_job_quota(identity, db)
-    return record.to_response()
 
 
 @api_router.post("/v1/jobs/batch", response_model=BatchJobCreateResponse)

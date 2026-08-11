@@ -52,6 +52,9 @@ class JobRecord:
     # Per-job secrets (for example a Fanqie cookie) are intentionally kept in
     # memory only and are never serialized to the job JSON file.
     runtime_options: dict[str, Any] = field(default_factory=dict, repr=False)
+    # Non-secret marker used to report REAUTH after a restart.  Values are
+    # deliberately capability names, not client-supplied secret names.
+    runtime_requirements: set[str] = field(default_factory=set, repr=False)
 
     def to_response(self) -> JobResponse:
         extra_dict: dict[str, Any] = {
@@ -210,6 +213,11 @@ class JobManager:
                         queue_position=int(data.get("queue_position") or 0),
                         archived=bool(data.get("archived", False)),
                         pause_scope=str(data.get("pause_scope") or ""),
+                        runtime_requirements={
+                            str(item)
+                            for item in (data.get("runtime_requirements") or [])
+                            if isinstance(item, str)
+                        },
                     )
                     if record.queue_position <= 0:
                         self._queue_counter += 1
@@ -303,6 +311,10 @@ class JobManager:
                 range_spec=range_spec or "all",
                 options=persisted_options,
                 runtime_options=runtime_options,
+                runtime_requirements={
+                    "fanqie_session" if name == "cookie" else str(name)
+                    for name in runtime_options
+                },
                 owner_user_id=owner_user_id,
                 owner_kind=owner_kind,
                 queue_position=queue_position,
@@ -838,6 +850,16 @@ class JobManager:
 
             def on_progress(pct: float, msg: str) -> None:
                 asyncio.run_coroutine_threadsafe(self._update_progress_safe(job_id, pct, msg), loop)
+            missing_runtime = [
+                name
+                for name in record.runtime_requirements
+                if (name == "fanqie_session" and "cookie" not in record.runtime_options)
+                or (name != "fanqie_session" and name not in record.runtime_options)
+            ]
+            if missing_runtime:
+                if "fanqie_session" in missing_runtime:
+                    raise RuntimeError("COOKIE_REQUIRED: runtime Fanqie session must be supplied again")
+                raise RuntimeError("REAUTH_REQUIRED: runtime credentials must be supplied again")
             platform = get_platform(record.platform)
 
             paths = await platform.download(
@@ -953,6 +975,7 @@ class JobManager:
                 "queue_position": record.queue_position,
                 "archived": record.archived,
                 "pause_scope": record.pause_scope,
+                "runtime_requirements": sorted(record.runtime_requirements),
             }
             content = json.dumps(payload, ensure_ascii=False, indent=2)
             with open(tmp_path, "w", encoding="utf-8") as f:

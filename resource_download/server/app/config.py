@@ -53,7 +53,8 @@ class Settings(BaseSettings):
 
     # 鉴权模式（阶段 D-0）：dev | dual | jwt_only
     # dev=仅 X-API-Key（默认，兼容 e2e）；dual=Key 或 JWT；jwt_only=仅 JWT
-    auth_mode: Literal["dev", "dual", "jwt_only"] = "dev"
+    # Desktop/RD 的默认开发链路必须能完成真实用户登录，因此默认使用 dual。
+    auth_mode: Literal["dev", "dual", "jwt_only"] = "dual"
     # JWT（D-1 起生效；D-0 仅预留配置，Bearer 请求返回 501）
     jwt_secret: str = "change-me-jwt-secret"
     jwt_expire_minutes: int = 10080

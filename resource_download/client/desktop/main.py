@@ -62,7 +62,8 @@ if not env_path.is_file() and CLIENT_MODE == "embedded":
         "API_KEY=dev-key-change-me\n"
         "HOST=127.0.0.1\n"
         "PORT=8000\n"
-        "AUTH_MODE=dev\n"
+        "AUTH_MODE=dual\n"
+        "JWT_SECRET=local-desktop-jwt-secret-change-this-value\n"
     )
     env_path.write_text(default_env, encoding="utf-8")
     print(f"[INIT] 缺省配置文件已生成: {env_path}")
@@ -222,6 +223,7 @@ class WindowApi:
         body: str = "",
         access_token: str = "",
         api_key: str = "",
+        idempotency_key: str = "",
     ) -> dict[str, object]:
         """Native bridge for UI API calls; protected endpoints are signed centrally."""
         try:
@@ -235,6 +237,7 @@ class WindowApi:
                 request_target,
                 body,
                 **self._auth_headers(access_token, api_key),
+                idempotency_key=idempotency_key,
                 protected=protected,
             )
             return {"ok": True, "data": result}

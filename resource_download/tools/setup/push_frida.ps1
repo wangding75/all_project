@@ -2,7 +2,8 @@
 param(
     # 新版 MuMu 6.x 默认路径；旧版 Player 12 可用 -Adb 覆盖
     [string]$Adb = "D:\install\Netease\MuMu\nx_main\adb.exe",
-    [string]$Device = "127.0.0.1:16384"
+    [string]$Device = "127.0.0.1:7555",
+    [string]$ExpectedVersion = "16.7.19"
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,6 +37,11 @@ Write-Host "start sys_hlpd ..."
 & $Adb -s $Device shell "/data/local/tmp/sys_hlpd -D &"
 Start-Sleep -Seconds 2
 & $Adb -s $Device forward tcp:27042 tcp:27042
+
+$targetVersion = (& $Adb -s $Device shell "/data/local/tmp/sys_hlpd --version").Trim()
+if ($targetVersion -ne $ExpectedVersion) {
+    Write-Error "Frida target version mismatch: expected $ExpectedVersion, got '$targetVersion'"
+}
 
 Write-Host "host frida version:"
 $py = Join-Path $Root "server\.venv\Scripts\python.exe"

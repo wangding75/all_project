@@ -43,6 +43,12 @@ def format_platform_error(exc: Exception) -> str:
     exc_str = sanitize_error_text(exc)
     exc_lower = exc_str.lower()
 
+    # Stable client-facing contract for restart/re-auth and Frida preflight
+    # failures.  Keep the code visible so the UI does not mistake an upstream
+    # runtime failure for an empty search result.
+    if exc_str.startswith(("COOKIE_REQUIRED", "REAUTH_REQUIRED", "RUNTIME_INCOMPATIBLE")):
+        return exc_str
+
     # 1. 签名池 503 匹配
     if "签名节点" in exc_str or "signpool" in exc_lower:
         return "签名节点繁忙或不可用，请稍后重试"

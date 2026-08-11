@@ -252,6 +252,10 @@ def search(query: str, max_items: int = 20) -> list[dict[str, Any]]:
             # 兼容嵌套：cell / cell.book_data / cell.data
             src = cell if isinstance(cell, dict) else {}
             nested = src.get("book_data") or src.get("data") or src.get("book_info") or {}
+            # The official endpoint currently returns book_data as a one-item
+            # list.  Keep accepting the older object shape as well.
+            if isinstance(nested, list):
+                nested = next((item for item in nested if isinstance(item, dict)), {})
             if not isinstance(nested, dict):
                 nested = {}
             bid = (
@@ -266,12 +270,16 @@ def search(query: str, max_items: int = 20) -> list[dict[str, Any]]:
             if bid in seen:
                 continue
             seen.add(bid)
+            highlight = src.get("search_high_light") or {}
+            highlight_title = highlight.get("title") if isinstance(highlight, dict) else {}
+            highlight_abstract = highlight.get("abstract") if isinstance(highlight, dict) else {}
             title = (
                 src.get("book_name")
                 or src.get("title")
                 or nested.get("book_name")
                 or nested.get("title")
                 or nested.get("book_name_raw")
+                or (highlight_title.get("text") if isinstance(highlight_title, dict) else "")
                 or ""
             )
             # 部分响应 title 本身是数字 id，当作无标题
@@ -294,6 +302,7 @@ def search(query: str, max_items: int = 20) -> list[dict[str, Any]]:
                 or nested.get("abstract")
                 or nested.get("book_abstract")
                 or nested.get("desc")
+                or (highlight_abstract.get("text") if isinstance(highlight_abstract, dict) else "")
                 or ""
             )
             results.append({

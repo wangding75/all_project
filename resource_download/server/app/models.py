@@ -43,6 +43,8 @@ class SearchResponse(BaseModel):
     platforms_queried: list[str] = Field(default_factory=list)
     # 某平台失败时仍返回其它平台结果，错误写在此
     platform_errors: dict[str, str] = Field(default_factory=dict)
+    # Explicit outcome codes let the UI distinguish empty from runtime/upstream failure.
+    platform_status: dict[str, str] = Field(default_factory=dict)
     total: int = 0
     page: int = 1
     page_size: int = 20
