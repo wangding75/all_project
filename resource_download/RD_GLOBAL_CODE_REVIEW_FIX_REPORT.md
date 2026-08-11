@@ -26,7 +26,14 @@ Baseline: `a23a61b51e3f135d94609a11b02913397124ae42` (`main == origin/main` at r
 - `python scripts/build_exe.py`: **PASS** (`dist/ResourceDownloader.exe` produced).
 - Fresh uvicorn startup and `GET /health`: **PASS** (`STARTUP_SMOKE_PASS`).
 - Deterministic Fanqie download and Hongguo concurrent isolation: **PASS**.
-- License authorization/background/revocation/recovery deterministic contract suite: **PASS** in the regression suite. Live License Service E2E was not run because `RD_LICENSE_KEY` and `LICENSE_SERVICE_BASE_URL` are not configured in this workspace.
+- Live License Service E2E (RD HTTP -> License Service HTTP -> PostgreSQL RD Tenant): **PASS**.
+  - Activation: **PASS**
+  - Protected Job: **PASS**
+  - Background ACTIVE: **PASS**
+  - Background REVOKED: **DENIED / PASS**
+  - Service Down: **FAIL-CLOSED**
+  - Recovery: **PASS**
+- License authorization/background/revocation/recovery deterministic contract suite: **PASS** in the regression suite.
 - Fanqie/Hongguo live upstream scripts correctly reported **SKIP** because no live content ID was configured.
 
 ## Security review
