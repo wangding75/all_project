@@ -876,7 +876,7 @@ def main() -> None:
     _expect_status(expired_response, 403, "EXPIRED", {"LICENSE_EXPIRED"})
 
     print("SERVER INTEGRATION PASS")
-    print("CLIENT CUTOVER PENDING (this script is the temporary real-proof test client)")
+    print("CLIENT CUTOVER COMPLETE (legacy HTTP regression harness)")
 
 
 if __name__ == "__main__":

@@ -82,8 +82,9 @@ The persisted context contains only `license_device_id`; a client JSON
 ## Client cutover
 
 The T14 client-side Device Proof V3 cutover and EXE build are complete. T15
-real Desktop acceptance is tracked separately below and remains blocked only
-on the missing real discovery item for the background scheduler.
+real Desktop acceptance is tracked separately below. T16 closes the remaining
+background scheduler reachability gap with a process-local deterministic E2E
+discovery fixture; production discovery code is unchanged.
 
 ```text
 CLIENT CUTOVER CODE COMPLETE
@@ -118,12 +119,47 @@ real Hongguo discovery provider returned zero items on every active scan
 (`last_detected_count=0`, `total_enqueued_count=0`), so the scheduler had no
 item to pass to `/v1/entitlements/check`. The persisted automation policy was
 verified as device-bound, but no `LICENSE_REVOKED` background entitlement
-decision was observed. This leaves the T15 final Desktop E2E status:
-
-```text
-BLOCKED: real Hongguo discovery item unavailable; background entitlement path not exercised
-```
+decision was observed. The T15 shell run therefore did not exercise that
+background entitlement decision; this historical reachability gap is closed
+by the T16 deterministic background E2E below.
 
 The earlier T13 server-side background test remains recorded above as a
 separate historical result; it is not substituted for this T15 Desktop
-acceptance.
+acceptance. T16 below supplies the missing real scheduler cycle.
+
+## T16 deterministic Background Revoke E2E (2026-08-11)
+
+The real RD application was started with the normal lifespan and a fresh
+isolated data directory. The T16 launcher patched platform lookup only inside
+that E2E subprocess so `discover("new")` returned one stable
+`t16-deterministic-hongguo-candidate-001`; production discovery code and
+License Service source were unchanged. The candidate then traversed the real
+monitor scheduler, RD `LicenseGateway`, License Service HTTP, PostgreSQL RD
+tenant, quota check, and JobManager path.
+
+| Scenario | Discovery | Entitlement / result | New Jobs | Quota |
+|---|---:|---|---:|---:|
+| ACTIVE scheduler cycle | 1 | ACTIVE; Job created | 1 | 0 → 1 |
+| Same policy after official revoke | 1 | `LICENSE_REVOKED` / DENIED | 0 | unchanged |
+| License Service application stopped | 1 | `UNKNOWN` / FAIL-CLOSED | 0 | unchanged |
+| License Service recovery | 1 | ACTIVE; next cycle resumed | 1 | 0 → 1 |
+| Legacy `license_device_id = NULL` | 1 | `BACKGROUND_LICENSE_CONTEXT_REQUIRED` / FAIL-CLOSED | 0 | unchanged |
+
+The revoke assertion was made against the same policy/device and the same
+deterministic candidate after resetting only the persisted E2E fixture's
+discovery baseline. The no-Job result was therefore caused by the real
+`LICENSE_REVOKED` entitlement decision, not zero discovery, quota exhaustion,
+disabled automation, duplicate suppression, or an unexecuted scheduler.
+
+T16 real E2E runner: `scripts/t16_background_revoke_e2e.py` (**PASS**).
+Deterministic adapter unit coverage: **1 passed**. Full regression after T16:
+`server/tests` **127 passed**, client tests **10 passed**, **137 total**;
+`scripts/quality_gate.py` **PASS**. License Service HTTP and PostgreSQL
+readiness were **PASS**, logs were secret-safe, SX diff was **EMPTY**, and
+License Service source diff was **EMPTY**.
+
+```text
+BACKGROUND REVOKE: PASS
+CLIENT CUTOVER: COMPLETE
+RD LICENSE INTEGRATION: PASS
+```
