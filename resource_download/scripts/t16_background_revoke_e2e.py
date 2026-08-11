@@ -131,6 +131,9 @@ class T16E2E:
         self.jwt_secret = secrets.token_hex(32)
         self.device_private_keys: list[str] = []
         self.proof_signatures: list[str] = []
+        self.current_device_id = ""
+        self.current_device_private_key = ""
+        self.current_license_id = ""
         self.candidate_count = 0
         self.active_jobs = 0
         self.active_quota = 0
@@ -415,6 +418,8 @@ class T16E2E:
         before = {str(row.get("id")) for row in self.list_licenses()}
         device_id, private_key, public_key = generate_device_identity()
         self.device_private_keys.append(private_key)
+        self.current_device_id = device_id
+        self.current_device_private_key = private_key
         proof = activation_proof(
             private_key,
             audience="rd",
@@ -449,6 +454,7 @@ class T16E2E:
             time.sleep(1)
         if not license_id:
             raise RuntimeError("activated License Service license was not visible to Admin API")
+        self.current_license_id = license_id
         return device_id, private_key, public_key, license_id
 
     def _signed_headers(
@@ -524,9 +530,18 @@ class T16E2E:
         return response.json()
 
     def status(self) -> dict[str, Any]:
+        target = "/v1/automation/hongguo-new"
         response = self.session.get(
-            f"{RD_URL}/v1/automation/hongguo-new",
-            headers=self.auth_headers,
+            f"{RD_URL}{target}",
+            headers={
+                **self.auth_headers,
+                **self._signed_headers(
+                    "GET",
+                    target,
+                    device_id=self.current_device_id,
+                    private_key=self.current_device_private_key,
+                ),
+            },
             timeout=15,
         )
         if response.status_code != 200:
@@ -534,9 +549,18 @@ class T16E2E:
         return response.json()
 
     def jobs_total(self) -> int:
+        target = "/v1/jobs?page=1&page_size=100"
         response = self.session.get(
-            f"{RD_URL}/v1/jobs?page=1&page_size=100",
-            headers=self.auth_headers,
+            f"{RD_URL}{target}",
+            headers={
+                **self.auth_headers,
+                **self._signed_headers(
+                    "GET",
+                    target,
+                    device_id=self.current_device_id,
+                    private_key=self.current_device_private_key,
+                ),
+            },
             timeout=15,
         )
         if response.status_code != 200:
@@ -544,10 +568,75 @@ class T16E2E:
         return int(response.json().get("total") or 0)
 
     def quota_count(self) -> int:
-        response = self.session.get(f"{RD_URL}/v1/auth/me", headers=self.auth_headers, timeout=15)
+        target = "/v1/license/status"
+        response = self.session.get(
+            f"{RD_URL}{target}",
+            headers={
+                **self.auth_headers,
+                **self._signed_headers(
+                    "GET",
+                    target,
+                    device_id=self.current_device_id,
+                    private_key=self.current_device_private_key,
+                ),
+            },
+            timeout=15,
+        )
         if response.status_code != 200:
             raise RuntimeError("RD quota lookup failed")
-        return int(response.json().get("jobs_today") or 0)
+        return int(response.json().get("used") or 0)
+
+    def persisted_status(self) -> dict[str, Any]:
+        if not self.policy_path.is_file():
+            raise RuntimeError("automation fixture was not persisted")
+        payload = json.loads(self.policy_path.read_text(encoding="utf-8"))
+        candidates = [
+            value
+            for value in payload.values()
+            if isinstance(value, dict)
+            and value.get("owner_user_id") == self.user_id
+            and value.get("license_device_id") in (None, self.current_device_id)
+        ]
+        if not candidates:
+            raise RuntimeError("persisted automation status is missing")
+        return dict(candidates[0])
+
+    def persisted_quota_count(self) -> int:
+        with sqlite3.connect(self.database_path) as db:
+            row = db.execute(
+                "SELECT used_count FROM license_usage_daily WHERE license_id = ?",
+                (self.current_license_id,),
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    def persisted_job_count(self) -> int:
+        count = 0
+        for path in self.data_dir.joinpath("jobs").glob("*.json"):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if payload.get("license_id") == self.current_license_id:
+                count += 1
+        return count
+
+    def assert_active_endpoints_denied(self) -> None:
+        for target in ("/v1/license/status", "/v1/automation/hongguo-new", "/v1/jobs?page=1&page_size=100"):
+            response = self.session.get(
+                f"{RD_URL}{target}",
+                headers={
+                    **self.auth_headers,
+                    **self._signed_headers(
+                        "GET",
+                        target,
+                        device_id=self.current_device_id,
+                        private_key=self.current_device_private_key,
+                    ),
+                },
+                timeout=15,
+            )
+            if response.status_code != 403:
+                raise RuntimeError(f"revoked endpoint was not denied: {target}")
 
     def fixture_reset(
         self,
@@ -563,6 +652,18 @@ class T16E2E:
             raise RuntimeError("automation fixture was not persisted")
         payload = json.loads(self.policy_path.read_text(encoding="utf-8"))
         policy = payload.get(f"user:{self.user_id}")
+        if not isinstance(policy, dict):
+            candidates = [
+                value
+                for value in payload.values()
+                if isinstance(value, dict)
+                and value.get("owner_user_id") == self.user_id
+                and (
+                    license_device_id is None
+                    or value.get("license_device_id") == license_device_id
+                )
+            ]
+            policy = candidates[0] if candidates else None
         if not isinstance(policy, dict):
             raise RuntimeError("automation policy is missing")
         policy.update(
@@ -586,11 +687,12 @@ class T16E2E:
         label: str,
         *,
         timeout: float = 55,
+        persisted: bool = False,
     ) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
         last: dict[str, Any] = {}
         while time.monotonic() < deadline:
-            last = self.status()
+            last = self.persisted_status() if persisted else self.status()
             if predicate(last):
                 return last
             time.sleep(2)
@@ -663,7 +765,8 @@ class T16E2E:
             raise RuntimeError("revoke cycle did not discover a candidate")
         if int(revoked_status.get("total_enqueued_count") or 0) != int(active_status.get("total_enqueued_count") or 0):
             raise RuntimeError("LICENSE_REVOKED background cycle created a Job")
-        if self.jobs_total() != self.active_jobs or self.quota_count() != self.active_quota:
+        self.assert_active_endpoints_denied()
+        if self.persisted_quota_count() != self.active_quota:
             raise RuntimeError("LICENSE_REVOKED background cycle consumed quota")
 
         # Use a separate real RD user for service-down/recovery so a prior
@@ -696,7 +799,13 @@ class T16E2E:
             down_status = self.restart_and_wait_error("UNKNOWN")
             if int(down_status.get("last_detected_count") or 0) < 1:
                 raise RuntimeError("service-down cycle did not discover a candidate")
-            if self.jobs_total() != jobs_before_down or self.quota_count() != quota_before_down:
+            try:
+                if self.jobs_total() != jobs_before_down:
+                    raise RuntimeError("service-down background cycle created a Job")
+            except RuntimeError as exc:
+                if str(exc) != "RD job listing failed":
+                    raise
+            if self.persisted_job_count() != jobs_before_down or self.persisted_quota_count() != quota_before_down:
                 raise RuntimeError("service-down background cycle created or charged a Job")
         finally:
             self.start_license_service()
@@ -751,6 +860,7 @@ class T16E2E:
             lambda status: int(status.get("last_detected_count") or 0) >= 1
             and str(status.get("last_error") or "") == error,
             error,
+            persisted=True,
         )
 
 

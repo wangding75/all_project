@@ -561,7 +561,7 @@ class HongguoMonitorService:
                 and identity.license_context_source == "remote"
             ):
                 from app.db import SessionLocal
-                from app.quota import check_job_quota
+                from app.quota import check_job_quota, increment_job_quota
 
                 db = SessionLocal()
                 check_job_quota(identity, db)

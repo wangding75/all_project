@@ -335,7 +335,12 @@ def _automation_file(user_id: int) -> Path:
     return Path(data_dir) / "automation" / "hongguo_monitors.json"
 
 
-def _mutate_automation_fixture(user_id: int, **updates: Any) -> None:
+def _mutate_automation_fixture(
+    user_id: int,
+    *,
+    match_device_id: str | None = None,
+    **updates: Any,
+) -> None:
     """Local fixture preparation; the following scan remains RD HTTP + real service."""
     path = _automation_file(user_id)
     if not path.is_file():
@@ -343,9 +348,39 @@ def _mutate_automation_fixture(user_id: int, **updates: Any) -> None:
     payload = json.loads(path.read_text(encoding="utf-8"))
     policy = payload.get(f"user:{user_id}")
     if not isinstance(policy, dict):
+        candidates = [
+            value
+            for value in payload.values()
+            if isinstance(value, dict)
+            and value.get("owner_user_id") == user_id
+            and (
+                match_device_id is None
+                or value.get("license_device_id") == match_device_id
+            )
+        ]
+        policy = candidates[0] if candidates else None
+    if not isinstance(policy, dict):
         _fail("background automation policy is missing")
     policy.update(updates)
+    if "license_device_id" in updates and policy.get("license_device_id") != updates["license_device_id"]:
+        _fail("background automation fixture update was not applied")
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _persisted_background_status(user_id: int) -> dict[str, Any] | None:
+    path = _automation_file(user_id)
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    candidates = [
+        value
+        for value in payload.values()
+        if isinstance(value, dict) and value.get("owner_user_id") == user_id
+    ]
+    return dict(candidates[0]) if candidates else None
 
 
 def _wait_background_status(
@@ -353,6 +388,9 @@ def _wait_background_status(
     base_url: str,
     auth_headers: dict[str, str],
     *,
+    user_id: int,
+    device_id: str,
+    device_private: str,
     expected_error: str | None = None,
     timeout: float = 45,
 ) -> dict[str, Any]:
@@ -361,7 +399,16 @@ def _wait_background_status(
     while time.monotonic() < deadline:
         response = session.get(
             f"{base_url}/v1/automation/hongguo-new",
-            headers=auth_headers,
+            headers={
+                **auth_headers,
+                **_proof_headers(
+                    device_private,
+                    device_id,
+                    "/v1/automation/hongguo-new",
+                    b"",
+                    method="GET",
+                ),
+            },
             timeout=15,
         )
         if response.status_code == 200:
@@ -374,6 +421,13 @@ def _wait_background_status(
                 *[str(log.get("message") or "") for log in last.get("logs") or []],
             }:
                 return last
+        elif expected_error is not None and response.status_code in {403, 503}:
+            persisted = _persisted_background_status(user_id)
+            if persisted is not None and expected_error in {
+                str(persisted.get("last_error") or ""),
+                *[str(log.get("message") or "") for log in persisted.get("logs") or []],
+            }:
+                return persisted
         time.sleep(2)
     _fail(f"background status did not reach expected state: {expected_error or 'scan'}")
     return last
@@ -453,13 +507,18 @@ def main() -> None:
         ),
     }
     response = session.post(
-        f"{base_url}/v1/auth/redeem",
+        f"{base_url}/v1/license/activate",
         data=_json_bytes(activate_payload),
-        headers={"Content-Type": "application/json", **auth_headers},
+        headers={"Content-Type": "application/json"},
         timeout=15,
     )
     if response.status_code != 200 or not response.json().get("success"):
         _fail("activation failed")
+    activation_result = response.json()
+    license_id = str(activation_result.get("license_id") or "")
+    quota_limit = int((activation_result.get("entitlements") or {}).get("quota.daily_jobs") or 0)
+    if not license_id or quota_limit <= 0:
+        _fail("activation did not return License quota context")
     _pass("ACTIVATION")
 
     active_payload = _job_payload("active")
@@ -716,6 +775,7 @@ def main() -> None:
     # the missing saved context after RD reloads the persisted JSON.
     _mutate_automation_fixture(
         user_id,
+        match_device_id=device_id,
         enabled=False,
         license_device_id=None,
         baseline_initialized=True,
@@ -758,13 +818,14 @@ def main() -> None:
     if restore_put.status_code != 200:
         _fail("background policy restore after legacy fixture failed")
 
-    quota_limit = int(os.environ.get("RD_E2E_QUOTA_LIMIT", "50"))
     with sqlite3.connect(database) as connection:
         day = datetime.now(UTC).strftime("%Y-%m-%d")
         connection.execute(
-            "insert into usage_daily(user_id,day,job_count) values(?,?,?) "
-            "on conflict(user_id,day) do update set job_count=excluded.job_count",
-            (user_id, day, quota_limit),
+            "insert into license_usage_daily(license_id,day,used_count,limit_snapshot,updated_at) "
+            "values(?,?,?,?,CURRENT_TIMESTAMP) "
+            "on conflict(license_id,day) do update set used_count=excluded.used_count, "
+            "limit_snapshot=excluded.limit_snapshot, updated_at=excluded.updated_at",
+            (license_id, day, quota_limit, quota_limit),
         )
         connection.commit()
     quota_response, _, _ = _job_request(
@@ -795,6 +856,9 @@ def main() -> None:
         session,
         base_url,
         auth_headers,
+        user_id=user_id,
+        device_id=device_id,
+        device_private=device_private,
         expected_error="LICENSE_REVOKED",
     )
     if int(revoked_background.get("total_enqueued_count") or 0) != background_total:
@@ -806,6 +870,9 @@ def main() -> None:
         session,
         base_url,
         auth_headers,
+        user_id=user_id,
+        device_id=device_id,
+        device_private=device_private,
         expected_error="LICENSE_EXPIRED",
     )
     if int(expired_background.get("total_enqueued_count") or 0) != background_total:
@@ -817,12 +884,16 @@ def main() -> None:
         session,
         base_url,
         auth_headers,
+        user_id=user_id,
+        device_id=device_id,
+        device_private=device_private,
         expected_error="DEVICE_REVOKED",
     )
     if int(device_revoked_background.get("total_enqueued_count") or 0) != background_total:
         _fail("BACKGROUND_DEVICE_REVOKED created a Job")
     _pass("BACKGROUND_DEVICE_REVOKED")
     _set_device_identity_status(device_public, "ACTIVE")
+    _rebind_prepared_license(license_id, device_public)
 
     _compose_command("stop")
     try:
@@ -830,6 +901,9 @@ def main() -> None:
             session,
             base_url,
             auth_headers,
+            user_id=user_id,
+            device_id=device_id,
+            device_private=device_private,
             expected_error="UNKNOWN",
             timeout=45,
         )
@@ -843,7 +917,16 @@ def main() -> None:
     time.sleep(35)
     recovered_background = session.get(
         f"{base_url}/v1/automation/hongguo-new",
-        headers=auth_headers,
+        headers={
+            **auth_headers,
+            **_proof_headers(
+                device_private,
+                device_id,
+                "/v1/automation/hongguo-new",
+                b"",
+                method="GET",
+            ),
+        },
         timeout=15,
     )
     if recovered_background.status_code != 200:

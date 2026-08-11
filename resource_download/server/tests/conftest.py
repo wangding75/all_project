@@ -115,6 +115,10 @@ def clean_test_environment():
     os.environ["TRY_START_PLATFORM_APPS"] = "false"
     os.environ["REQUIRE_PLATFORM_APPS"] = "false"
     os.environ["FANQIE_REQUIRE_RUNTIME"] = "false"
+    # The application default is the production-safe dual auth mode.  Unit
+    # tests still exercise that mode, so provide a non-default signing secret
+    # instead of forcing AUTH_MODE=dev or relying on the caller's environment.
+    os.environ["JWT_SECRET"] = "t35-pytest-jwt-secret-32-bytes-minimum"
     # Legacy User/JWT tests are explicit compatibility coverage.  Production
     # defaults to the License-only path via Settings.legacy_user_auth_enabled.
     os.environ["LEGACY_USER_AUTH_ENABLED"] = "true"
