@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 from app.errors import format_platform_error
@@ -43,6 +44,54 @@ def test_error_mapping_generic() -> None:
     err = ValueError("unknown format")
     mapped = format_platform_error(err)
     assert mapped.startswith("平台 API 访问失败:")
+
+
+def test_hongguo_runtime_syncs_imported_vendor_adb_path(monkeypatch) -> None:
+    """运行时发现的 ADB 路径必须覆盖 vendor 导入时的旧默认值。"""
+    import platforms.hongguo.bridge as bridge
+    import platforms.hongguo.frida_compat as frida_compat
+    import platforms.device_discovery as device_discovery
+    import platforms.runtime as runtime
+
+    settings = SimpleNamespace(
+        adb_path=r"C:\Android\platform-tools\adb.exe",
+        hongguo_pkg="com.phoenix.read",
+    )
+    vendor = SimpleNamespace(
+        ADB=r"D:\Program Files\Netease\MuMu Player 12\shell\adb.exe",
+        DEV="",
+    )
+    reset_calls: list[str] = []
+
+    monkeypatch.setattr("app.config.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        device_discovery,
+        "resolve_rd_test_device",
+        lambda **_: SimpleNamespace(serial="127.0.0.1:16416"),
+    )
+    monkeypatch.setattr(frida_compat, "ensure_compatible", lambda: None)
+    monkeypatch.setattr(
+        runtime,
+        "probe_shared_agent",
+        lambda **_: {"agent_running": True},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "ensure_app_running",
+        lambda *_args, **_kwargs: {"running": True},
+    )
+    monkeypatch.setattr(bridge, "load_hongguo_api", lambda: vendor)
+    monkeypatch.setattr(
+        bridge,
+        "_reset_local_oracle",
+        lambda: reset_calls.append("reset"),
+    )
+
+    bridge._ensure_hongguo_runtime()
+
+    assert vendor.ADB == settings.adb_path
+    assert vendor.DEV == "127.0.0.1:16416"
+    assert reset_calls == ["reset"]
 
 
 def test_e2e_fanqie_skip_when_no_id() -> None:

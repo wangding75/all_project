@@ -243,7 +243,7 @@ T42 IMPLEMENTATION MIGRATION PLAN 将基于本清单制定：
 |------|--------|-----------|
 | T42 | PASS | DownloadDescriptor、受保护 `/v1/resolve`、短生命周期 Streaming Proxy ticket、Client SQLite/Repository/Download Manager 基础设施；旧 Job/File/Automation 暂保留 |
 | T43 | PASS | Client queue/concurrency, progress, pause/resume, retry, cancel, restart recovery, SQLite history, local file validation/index, Client Timer foundation and UI compatibility bridge |
-| T44 | PENDING | — |
-| T45 | PENDING | — |
+| T44 | PASS | Client UI → RD `/v1/resolve` → Client DownloadManager/SQLite 主链切换完成；UI/布局/信息架构保持不变。报告：`D:\githubtmp\T44_RD_SERVER_CLIENT_MIGRATION_REPORT.md`。 |
+| T45 | PASS | Discovery polling、baseline/deduplication、backoff 与自动 Resolve 入队迁移至 Client Timer 完成；Server Scheduler 不再为 Desktop 主链提供职责。报告：`D:\githubtmp\T45_RD_SERVER_CLIENT_MIGRATION_REPORT.md`。 |
 | T46 | PASS | Server old Job/File/Automation responsibilities removed; Client Resolve/DownloadManager/SQLite chain retained; Device Proof, License Gateway, Entitlement, Quota, Idempotency, Fail-Closed, and no-legacy-route assertions passed. Commit: `2e264870fffb4791fea892fb41bb69df32fda766`. |
-| T47 | BLOCKED | New architecture release gate, real License/PostgreSQL/RD/Device Proof, Fanqie Resolve→Client DownloadManager→Client SQLite/History, Frida compatibility, build and full quality gate passed. Hongguo real Resolve/Download remained blocked by upstream `101000 service error` after bounded recovery retries; final receipt: `D:\githubtmp\T47_RD_SERVER_CLIENT_MIGRATION_REPORT.md`. |
+| T47 | PASS | New architecture release gate, real License/PostgreSQL/RD/Device Proof, Fanqie and Hongguo Resolve→Client DownloadManager→Client SQLite/History, Frida compatibility, build and full quality gate passed. Fixed Hongguo Server bridge ADB path synchronization and verified real 1080p Client download. Report: `D:\githubtmp\T47_RD_SERVER_CLIENT_MIGRATION_REPORT.md`. |

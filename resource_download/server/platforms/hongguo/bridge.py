@@ -158,9 +158,14 @@ def _ensure_hongguo_runtime() -> None:
     device = resolve_rd_test_device(force=True, settings=settings)
     import os
 
-    # The upstream vendor reads ADB (not ADB_PATH). Keep both names in sync so
-    # a package deployment with MuMu's adb outside PATH cannot fail at import.
-    os.environ["ADB"] = str(settings.adb_path or os.environ.get("ADB") or "adb")
+    # The upstream vendor reads ADB (not ADB_PATH). Keep both the environment
+    # and the already-imported module global in sync: the vendor captures its
+    # default ADB path at import time, while RD discovers the MuMu endpoint at
+    # request time. Without this assignment, Detail can pass but the next
+    # signed Resolve fails with WinError 2 when the stale hard-coded path is
+    # no longer installed.
+    adb_path = str(settings.adb_path or os.environ.get("ADB") or "adb")
+    os.environ["ADB"] = adb_path
     os.environ["ADB_DEVICE"] = device.serial
     ensure_compatible()
     agent = probe_shared_agent(try_start=True)
@@ -170,6 +175,8 @@ def _ensure_hongguo_runtime() -> None:
     if not app.get("running"):
         raise RuntimeError(app.get("message") or "Hongguo App unavailable")
     H = load_hongguo_api()
+    if getattr(H, "ADB", adb_path) != adb_path:
+        H.ADB = adb_path
     if getattr(H, "DEV", device.serial) != device.serial:
         _reset_local_oracle()
         if hasattr(H, "set_adb_device"):
