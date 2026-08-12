@@ -1,5 +1,14 @@
 # 客户端打包与发布说明 (Release Manual)
 
+> **T39 authoritative packaging contract:** `scripts/build_exe.py` builds only
+> the thin desktop client. A releasable RD package must be built with
+> `scripts/build_release_package.py`, which also builds `RDServer.exe` and
+> assembles `server/app`, `server/platforms`, the curated Hongguo runtime,
+> the Frida agent, safe templates, and deployment/rollback documentation.
+> Production runs `RDServer.exe` as the standalone server and
+> `ResourceDownloader.exe` in `CLIENT_MODE=thin`; the old embedded client path
+> is development-only and is not a release topology.
+
 本指南针对桌面壳打包。架构为 **方案 2：瘦客户端 + 中转服务端**（见 [`DEVELOPMENT_PLAN.md`](../DEVELOPMENT_PLAN.md) §0.1）。
 
 - **生产推荐**：服务端独立部署 `server/run.py`；客户端 `CLIENT_MODE=thin` + `API_BASE`。  

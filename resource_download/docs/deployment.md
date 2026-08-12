@@ -1,5 +1,14 @@
 # ResourceDownloader 生产部署与发版指南 (Deployment Manual)
 
+> **T39 release-package authority:** The supported package topology is
+> `RDServer.exe` (standalone server) plus `ResourceDownloader.exe` (thin
+> client). The package is extracted to an independent directory and must not
+> use a source checkout, source virtual environment, or `PYTHONPATH`. The
+> legacy desktop-auto-start and source-Uvicorn examples below describe the
+> development/legacy topology only; for a release gate follow
+> `docs/release_package_deployment.md` and
+> `docs/release_package_rollback.md`.
+
 **版本号**: `1.0.0`  
 **适用范围**: Windows 单机桌面应用与本地中转服务端部署  
 **编写时间**: 2026-07-24  
