@@ -1,8 +1,8 @@
-# RD Server / Desktop Client 权威架构边界
+﻿# RD Server / Desktop Client 权威架构边界
 
-**文档状态：NORMATIVE / FROZEN**  
-**适用项目：Resource Download（RD）**  
-**生效日期：2026-08-12**  
+**文档状态：NORMATIVE / FROZEN**
+**适用项目：Resource Download（RD）**
+**生效日期：2026-08-12**
 **文档目的：作为后续产品、架构、API、客户端、服务端和发布验收的唯一职责边界基线。**
 
 ---

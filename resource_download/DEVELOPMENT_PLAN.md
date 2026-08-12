@@ -1,17 +1,17 @@
-# 多平台内容下载器 — 架构与计划定稿
+﻿# 多平台内容下载器 — 架构与计划定稿
 
-> **⚠️ 本文档历史架构章节已由权威文档覆盖。**  
-> **从 2026-08-12 起：[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md) 为 RD 架构最高优先级事实源（NORMATIVE / FROZEN）。**  
-> **本文档与 ARCHITECTURE_BOUNDARY.md 冲突时，以 ARCHITECTURE_BOUNDARY.md 为准。**  
+> **⚠️ 本文档历史架构章节已由权威文档覆盖。**
+> **从 2026-08-12 起：[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md) 为 RD 架构最高优先级事实源（NORMATIVE / FROZEN）。**
+> **本文档与 ARCHITECTURE_BOUNDARY.md 冲突时，以 ARCHITECTURE_BOUNDARY.md 为准。**
 >
-> **本文职责：锁定历史架构决策、非目标、API 原则记录。**  
-> **阶段进度 / 剩余 backlog → [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。**  
+> **本文职责：锁定历史架构决策、非目标、API 原则记录。**
+> **阶段进度 / 剩余 backlog → [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。**
 > 旧版 `design_plan.md` 中与本文冲突的部分（本机一体化、全离线无签名等）以本文覆盖。
 
-**定稿日期**：2026-07-18（客户端后置修订同日）  
-**文档修订**：  
-- 2026-07-27 — 进度以 POST_MVP_PLAN 为准（V1.0 主线已完成）  
-- 2026-07-27 — **冻结 client/server 边界与目录组织（§0.1）**  
+**定稿日期**：2026-07-18（客户端后置修订同日）
+**文档修订**：
+- 2026-07-27 — 进度以 POST_MVP_PLAN 为准（V1.0 主线已完成）
+- 2026-07-27 — **冻结 client/server 边界与目录组织（§0.1）**
 - 2026-08-12 — **[T41] 权威架构文档 ARCHITECTURE_BOUNDARY.md 纳入仓库，本文档向其对齐**
 
 ---
@@ -30,7 +30,7 @@
 
 ### 0.1 客户端 / 服务端边界（冻结约定）
 
-> **权威文件：[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**  
+> **权威文件：[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**
 > **本节为历史归档摘要。与权威文档冲突时，以权威文档为准。**
 
 #### 目录组织（冻结）
@@ -158,15 +158,15 @@ Client → RD Streaming Proxy → Upstream → Client → 本地文件
 
 ### 1.1 主里程碑
 
-1. **服务端**可独立部署：HTTP API + DownloadDescriptor + Streaming Proxy。  
-2. **番茄（MVP-F）**：URL/ID → 详情 → Resolve → DownloadDescriptor → 客户端下载 TXT。  
-3. **红果（MVP-H）**：搜索/详情 → Resolve → 解密 **MP4** → 客户端下载。  
+1. **服务端**可独立部署：HTTP API + DownloadDescriptor + Streaming Proxy。
+2. **番茄（MVP-F）**：URL/ID → 详情 → Resolve → DownloadDescriptor → 客户端下载 TXT。
+3. **红果（MVP-H）**：搜索/详情 → Resolve → 解密 **MP4** → 客户端下载。
 4. **`scripts/`** 覆盖上述端到端。
 
 ### 1.2 后置目标
 
-5. **Client Download Manager**：本地任务 / Queue / Progress / Retry / Local SQLite。  
-6. **Download Resolution API**：DownloadDescriptor / Streaming Proxy。  
+5. **Client Download Manager**：本地任务 / Queue / Progress / Retry / Local SQLite。
+6. **Download Resolution API**：DownloadDescriptor / Streaming Proxy。
 7. **Server Job / Automation 退出**：按 ARCHITECTURE_MIGRATION_INVENTORY.md 执行。
 
 ### 1.3 非目标（架构层面）
@@ -224,7 +224,7 @@ resource_download/
 
 ## 4. 分阶段计划（历史摘要 + 当前指针）
 
-> 细任务维护在 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。  
+> 细任务维护在 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。
 > T41 之后进入 T42 IMPLEMENTATION MIGRATION PLAN。
 
 ### 阶段回顾（完成状态）
@@ -257,12 +257,12 @@ resource_download/
 
 ## 6. 质量门槛
 
-1. 每平台至少 1 条 **脚本可跑的 E2E**（非仅单元测试）。  
-2. 红果 spade 真值测试保留。  
-3. 密钥/token/Cookie 不入库。  
-4. README / `scripts/README` 中的命令与真实行为一致。  
-5. **不以「客户端做好了」为服务端完成标准**；以脚本 E2E 为准。  
-6. **禁止用假成功掩盖 API 失败**。  
+1. 每平台至少 1 条 **脚本可跑的 E2E**（非仅单元测试）。
+2. 红果 spade 真值测试保留。
+3. 密钥/token/Cookie 不入库。
+4. README / `scripts/README` 中的命令与真实行为一致。
+5. **不以「客户端做好了」为服务端完成标准**；以脚本 E2E 为准。
+6. **禁止用假成功掩盖 API 失败**。
 
 ---
 

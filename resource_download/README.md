@@ -1,10 +1,10 @@
-# resource_download
+﻿# resource_download
 
-多平台内容下载（**方案 2**：托管服务端 + 完整本地下载产品）。  
+多平台内容下载（**方案 2**：托管服务端 + 完整本地下载产品）。
 **客户端不含 App 适配**；Fanqie/Hongguo 私有兼容、Frida、签名仅在服务端，随平台更新在服务端热修。
 
-> **架构基线**：自 2026-08-12 起，以  
-> [`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md) 为唯一权威边界文件。  
+> **架构基线**：自 2026-08-12 起，以
+> [`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md) 为唯一权威边界文件。
 > 文档状态：**NORMATIVE / FROZEN**。
 
 **当前代码版本**：`1.0.0`（`pyproject.toml` / `server/app/version.py`）
@@ -34,7 +34,7 @@ Desktop Client                           RD Server
                                             │ License Service (rd Tenant)
 ```
 
-> **RD Server 不保存下载文件，不管理用户下载任务，不做 Automation Scheduler。**  
+> **RD Server 不保存下载文件，不管理用户下载任务，不做 Automation Scheduler。**
 > **文件只落在 Desktop Client 本地。**
 
 ---
@@ -77,7 +77,7 @@ data/                   # 运行时
 
 ## 快速开始
 
-普通业务请求使用 Device Proof + ACTIVE License Context。API Key 仅用于运维边界，不能绕过 License。  
+普通业务请求使用 Device Proof + ACTIVE License Context。API Key 仅用于运维边界，不能绕过 License。
 Legacy User/JWT endpoints 为向后兼容 API，不是当前 Desktop 业务主链路。
 
 ### 1. 服务端（中转）
@@ -88,7 +88,7 @@ pip install -r requirements.txt
 python run.py
 ```
 
-默认：`http://127.0.0.1:8000`，开发 Key：`X-API-Key: dev-key-change-me`。  
+默认：`http://127.0.0.1:8000`，开发 Key：`X-API-Key: dev-key-change-me`。
 生产请配置强随机 `api_key` / `jwt_secret` 以及 `LICENSE_SERVICE_*` RD Service Credential，见 `docs/production.env.example`。
 
 ### 2. 桌面客户端

@@ -1,9 +1,9 @@
-# 阶段进度与 backlog（Post-MVP）
+﻿# 阶段进度与 backlog（Post-MVP）
 
-> **[T41 2026-08-12] 架构基线已冻结。**  
-> **权威架构文档：[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**  
-> 本文档与 ARCHITECTURE_BOUNDARY.md 冲突时，以 ARCHITECTURE_BOUNDARY.md 为准。  
-> Server 下载 Job、Server Automation Scheduler、Server 文件库等条目统一标记为  
+> **[T41 2026-08-12] 架构基线已冻结。**
+> **权威架构文档：[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**
+> 本文档与 ARCHITECTURE_BOUNDARY.md 冲突时，以 ARCHITECTURE_BOUNDARY.md 为准。
+> Server 下载 Job、Server Automation Scheduler、Server 文件库等条目统一标记为
 > `IMPLEMENTATION_MIGRATION_REQUIRED`，详见 [`docs/ARCHITECTURE_MIGRATION_INVENTORY.md`](./docs/ARCHITECTURE_MIGRATION_INVENTORY.md)。
 
 > **文档层级**（勿与其它文档抢「唯一权威」）:
@@ -22,14 +22,14 @@
 > | [`business_landing_architecture.md`](./business_landing_architecture.md) | **[Historical] 商业化蓝图总览**（旧 User/JWT/VIP 架构；以 ARCHITECTURE_BOUNDARY 为准） |
 > | [`docs/ARCHITECTURE_MIGRATION_INVENTORY.md`](./docs/ARCHITECTURE_MIGRATION_INVENTORY.md) | **代码迁移清单（T41 生成）** |
 >
-> **修订**: 2026-07-27（v2.0）；2026-08-12（T41 对齐架构基线）  
+> **修订**: 2026-07-27（v2.0）；2026-08-12（T41 对齐架构基线）
 > **代码版本**: `1.0.0`（`pyproject.toml` / `server/app/version.py`）
 
 ---
 
 ## 一、当前状态（一句话）
 
-> **工程与商业 V1.0 主线已完成**（阶段 0～C、D-0～D-4、E0～E6、CQ-01～06）。  
+> **工程与商业 V1.0 主线已完成**（阶段 0～C、D-0～D-4、E0～E6、CQ-01～06）。
 > 剩余工作以 **运维实跑、设备侧稳定性、文档/体验债、V1.1+ 外延** 为主，不再有未编码的 D/E 主切片。
 
 ---

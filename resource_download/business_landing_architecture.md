@@ -1,10 +1,10 @@
-# 资源下载器全局商业化落地设计规范（中继网关/订阅卡密版）
+﻿# 资源下载器全局商业化落地设计规范（中继网关/订阅卡密版）
 
 > **⚠️ [Historical / Legacy Evidence]**
 >
 > **本文为 D 阶段商业化规划历史文档，保留作为开发证据。**
 >
-> **从 2026-08-12 起，[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md) 为 RD 仅有架构权威文件（NORMATIVE / FROZEN）。**  
+> **从 2026-08-12 起，[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md) 为 RD 仅有架构权威文件（NORMATIVE / FROZEN）。**
 > 本文与 ARCHITECTURE_BOUNDARY.md 冲突时，以 ARCHITECTURE_BOUNDARY.md 为准。
 >
 > 本文中的 User/JWT/CardKey/VIP/JobManager/Automation 架构为**历史实现上下文**：
@@ -96,27 +96,27 @@ from sqlalchemy.orm import Session
 def execute_redeem(db: Session, username: str, card_code: str):
     # 开启悲观锁/行级锁，确保并发请求排队
     card = db.query(CardKey).filter(
-        CardKey.code == card_code, 
+        CardKey.code == card_code,
         CardKey.is_used == False
     ).with_for_update().first()
-    
+
     if not card:
         raise ValueError("卡密无效或已被他人兑换")
-        
+
     user = db.query(User).filter(User.username == username).with_for_update().first()
     if not user:
         raise ValueError("用户不存在")
-        
+
     # 状态转移
     now = datetime.now(timezone.utc)
     base_time = user.vip_expires_at if (user.vip_expires_at and user.vip_expires_at > now) else now
-    
+
     # 写入消费记录
     card.is_used = True
     card.used_by_username = user.username
     card.used_at = now
     user.vip_expires_at = base_time + timedelta(days=card.duration_days)
-    
+
     db.commit()
     return user.vip_expires_at
 ```
@@ -163,7 +163,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
             raise credentials_exception
     except jwt.PyJWTError:
         raise credentials_exception
-        
+
     user = db.query(User).filter(User.username == username).first()
     if user is None:
         raise credentials_exception

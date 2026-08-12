@@ -1,11 +1,11 @@
-# Relay API
+﻿# Relay API
 
 Base URL: `http://127.0.0.1:8000`
 
 > 契约以本文件 + 运行中的 OpenAPI（`/docs`）为准。
 
-> **[T41 2026-08-12] 架构基线冻结。**  
-> **权威架构文件：[`../docs/ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**  
+> **[T41 2026-08-12] 架构基线冻结。**
+> **权威架构文件：[`../docs/ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**
 >
 > API 分类方针：
 > - **KEEP_SERVER**：health / search / detail / discover / license / quota — 长期属于服务端
@@ -312,9 +312,9 @@ ByteVC2 编码，只用于诊断，不作为通用播放器可播放下载。
 
 ## POST /v1/jobs
 
-> **[DEPRECATED / MIGRATION_REQUIRED]**  
+> **[DEPRECATED / MIGRATION_REQUIRED]**
 > 当前实现由服务端创建和管理 Download Job。根据 [`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md) 架构边界，
-> **服务端不应持久化 Download Job**；目标由 Desktop Client DownloadManager 承担。  
+> **服务端不应持久化 Download Job**；目标由 Desktop Client DownloadManager 承担。
 > 本 API 在迁移期保留，待 Client Download Manager 建立后按计划废弃。
 
 放行条件为：RD User/JWT 身份、Device License `ACTIVE`、RD Quota 通过。License
@@ -382,10 +382,10 @@ POST /v1/jobs/{job_id}/retry
 
 ## 红果上新识别与自动入队
 
-> **[DEPRECATED / MIGRATION_REQUIRED]** — Server Automation Scheduler  
-> 根据 [`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md) 架构边界，  
-> **RD Server 不负责 Automation Scheduler、自动追更、定时热榜、定时上新。**  
-> 目标模式：Client Timer → RD API → 实时获取 → Client。  
+> **[DEPRECATED / MIGRATION_REQUIRED]** — Server Automation Scheduler
+> 根据 [`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md) 架构边界，
+> **RD Server 不负责 Automation Scheduler、自动追更、定时热榜、定时上新。**
+> 目标模式：Client Timer → RD API → 实时获取 → Client。
 > 本 API 组在迁移期保留，待 Client Timer 建立后标记退出服务端长期职责。
 
 ```http
@@ -418,7 +418,7 @@ POST /v1/automation/hongguo-new/scan
 
 ## GET /v1/jobs/{job_id}
 
-任务状态：`pending` \| `running` \| `success` \| `failed` \| `cancelled`。  
+任务状态：`pending` \| `running` \| `success` \| `failed` \| `cancelled`。
 成功时 `files[]` 含 `file_id`、`name`、`size`（`file_id` 多为相对 `outputs/` 的路径，可含 `/`）。
 
 ---
@@ -437,7 +437,7 @@ POST /v1/automation/hongguo-new/scan
 
 ## GET /v1/files
 
-> **[DEPRECATED / MIGRATION_REQUIRED]**  
+> **[DEPRECATED / MIGRATION_REQUIRED]**
 > 服务端不应有文件库。根据 [`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md) 架构边界，
 > **文件只属于 Desktop Client 本地**。本 API 在迁移期保留。
 
@@ -447,10 +447,10 @@ POST /v1/automation/hongguo-new/scan
 
 ## GET /v1/files/{file_id}
 
-> **[DEPRECATED / MIGRATION_REQUIRED]**  
+> **[DEPRECATED / MIGRATION_REQUIRED]**
 > 目标文件只在 Client 本地；服务端不应永久保存下载文件。本 API 在迁移期保留。
 
-**契约（E2E 依赖）**：下载产物二进制。  
+**契约（E2E 依赖）**：下载产物二进制。
 `file_id` 为 job 返回的相对路径（支持带 `/` 路径，如 `job_id/video.mp4`）。
 
 ---

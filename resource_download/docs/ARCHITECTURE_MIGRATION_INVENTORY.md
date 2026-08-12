@@ -1,16 +1,16 @@
 # RD 架构迁移清单（Architecture Migration Inventory）
 
-**文档版本**：T41 初版  
-**生成日期**：2026-08-12  
-**依据**：[`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）  
-**范围**：只读代码审计；本轮 **不执行** 任何 Action  
+**文档版本**：T41 初版
+**生成日期**：2026-08-12
+**依据**：[`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）
+**范围**：只读代码审计；本轮 **不执行** 任何 Action
 **下一步**：T42 IMPLEMENTATION MIGRATION PLAN
 
 ---
 
 ## 0. 说明
 
-本清单通过对 `resource_download/server/` 和 `resource_download/client/` 代码的只读扫描生成。  
+本清单通过对 `resource_download/server/` 和 `resource_download/client/` 代码的只读扫描生成。
 每项的 `Action` 描述目标方向，**本轮 T41 不执行这些 Action**。
 
 ### Action 定义
@@ -18,6 +18,7 @@
 | Action | 含义 |
 |--------|------|
 | `KEEP_SERVER` | 能力留在 RD Server，无需迁移 |
+| `KEEP_CLIENT` | 能力留在 Desktop Client，无需迁移 |
 | `MOVE_TO_CLIENT` | 能力应迁移到 Desktop Client |
 | `REFACTOR_SERVER` | 服务端需要重构以符合目标架构 |
 | `REMOVE` | 目标是最终删除（不是当前操作） |
@@ -126,7 +127,7 @@
 
 | ID | Current Component | Current Responsibility | Target Owner | Action | Dependencies | Risk |
 |----|-------------------|------------------------|--------------|--------|--------------|------|
-| C-001 | `client/desktop/main.py` `WindowApi.api_request` | 统一 HTTP 请求（带 Device Proof 签名）| **KEEP_CLIENT** | `KEEP_SERVER`→`KEEP_CLIENT` | device_proof.py | 低 |
+| C-001 | `client/desktop/main.py` `WindowApi.api_request` | 统一 HTTP 请求（带 Device Proof 签名）| **KEEP_CLIENT** | `KEEP_CLIENT` | device_proof.py | 低 |
 | C-002 | `client/desktop/device_identity.py` | Device Identity 生命周期（DPAPI ED25519）| **KEEP_CLIENT** | `KEEP_CLIENT` | Windows DPAPI | 低 |
 | C-003 | `client/desktop/device_proof.py` | LS-DEVICE-V3 Proof 生成 | **KEEP_CLIENT** | `KEEP_CLIENT` | license_service_client wheel | 低 |
 | C-004 | `client/desktop/main.py` `WindowApi.download_file` | `GET /v1/files/{id}` 文件下载（当前依赖 Server）| **CLIENT（迁移中）** | `MOVE_TO_CLIENT` | S-090 DownloadDescriptor | 高 |
@@ -162,16 +163,21 @@
 
 ## 3. 汇总统计
 
-| Action | 数量 |
-|--------|------|
-| `KEEP_SERVER` | 20 |
-| `MOVE_TO_CLIENT` | 9 |
-| `REFACTOR_SERVER` | 3 |
-| `REMOVE` | 0 |
-| `DEPRECATE_API` | 11 |
-| `ADD_CLIENT` | 12 |
-| `NEEDS_REVIEW` | 4 |
-| **合计** | **59** |
+以下计数通过对全部 65 个有 ID 编号的条目（S-xxx、C-xxx）逐行统计 Action 列得出。
+
+| Action | 数量 | 主要组件 |
+|--------|------|----------|
+| `KEEP_SERVER` | 23 | platforms/, license, quota, sign_pool, search/detail/discover API, media_cache, ORM |
+| `KEEP_CLIENT` | 3 | api_request, device_identity, device_proof |
+| `MOVE_TO_CLIENT` | 12 | JobManager, JobRecord, job JSON, outputs/, HongguoMonitorService, run_loop, automation JSON, download_file, Jobs 轮询, Files 列表, 下载触发, Automation UI |
+| `REFACTOR_SERVER` | 2 | Download Resolve API, Streaming Proxy |
+| `REMOVE` | 0 | — |
+| `DEPRECATE_API` | 12 | /v1/jobs(POST/GET/DELETE/retry/batch/queue), /v1/files(list/download/open), /v1/automation |
+| `ADD_CLIENT` | 12 | DownloadTask, Queue, Progress, Pause/Resume, Retry, SQLite, History, 断点续传, 文件命名, 文件索引, Client Timer, Notification |
+| `NEEDS_REVIEW` | 1 | apiFetch endpoint binding |
+| **合计** | **65** | |
+
+> 校验：23+3+12+2+0+12+12+1 = **65** ✅
 
 ---
 

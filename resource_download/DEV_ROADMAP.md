@@ -1,15 +1,15 @@
-# DEV_ROADMAP — MVP 历史执行记录
+﻿# DEV_ROADMAP — MVP 历史执行记录
 
-> **文档状态：归档。** 阶段进度与剩余 backlog 以 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md) 为准。  
-> 架构决策以 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md) 为准。  
-> **权威架构文件**：[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN，2026-08-12）。  
+> **文档状态：归档。** 阶段进度与剩余 backlog 以 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md) 为准。
+> 架构决策以 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md) 为准。
+> **权威架构文件**：[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN，2026-08-12）。
 > 商业 V1.0 完成态见 [`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) / [`docs/release_gate.md`](./docs/release_gate.md)。
 >
 > - 商业化蓝图：[business_landing_architecture.md](./business_landing_architecture.md)（Historical / Legacy Evidence）
 > - 历史设计存档：[design_plan.md](./design_plan.md)（Historical）
 >
-> 正文为 **MVP-H/F 完成时快照（约 2026-07-19）**；后续勿在此追加新任务。  
-> 商业化 / 阶段 D～E / CQ **不要**以本文「规划中」表述为准——已过时。  
+> 正文为 **MVP-H/F 完成时快照（约 2026-07-19）**；后续勿在此追加新任务。
+> 商业化 / 阶段 D～E / CQ **不要**以本文「规划中」表述为准——已过时。
 > **Server Job/Automation/File API 已标记为 IMPLEMENTATION_MIGRATION_REQUIRED，详见 ARCHITECTURE_MIGRATION_INVENTORY.md。**
 
 ---
@@ -251,8 +251,8 @@ python scripts/e2e_fanqie.py --id "<BOOK_ID>" --range 1-3 --options "{\"mode\":\
 
 ## 八、商业化（阶段 6 — 历史规划摘录）
 
-> **实现状态**：用户/JWT/卡密/VIP/限流配额/签名池/商业 V1.0 已在后续阶段完成。  
-> 以 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)、[`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) 为准。  
+> **实现状态**：用户/JWT/卡密/VIP/限流配额/签名池/商业 V1.0 已在后续阶段完成。
+> 以 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)、[`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) 为准。
 > 下文保留为 MVP 时期蓝图摘录，部分条目（如立刻上 PostgreSQL）**并非 V1.0 实际路径**。
 
 详见 [business_landing_architecture.md](./business_landing_architecture.md)。

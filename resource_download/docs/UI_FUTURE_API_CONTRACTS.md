@@ -1,15 +1,15 @@
-# 商业发现与批量下载 UI：后续 API 契约
+﻿# 商业发现与批量下载 UI：后续 API 契约
 
 > 状态：持续实施（P0 已于 2026-07-28 接入，P1 尚未实现）
-> 更新日期：2026-07-28  
+> 更新日期：2026-07-28
 > 原则：不阻塞当前 `GET /v1/discover`、搜索、详情和单任务下载接口；新增能力按优先级逐步交付。
 
-> **[T41 2026-08-12] 架构基线冻结。**  
-> **权威架构文件：[`../docs/ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**  
+> **[T41 2026-08-12] 架构基线冻结。**
+> **权威架构文件：[`../docs/ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**
 >
-> 下方 `/v1/automation/hongguo-new`（Server Automation Scheduler）根据架构边界：  
-> **状态：[DEPRECATED / MIGRATION_REQUIRED]**  
-> 目标模式：Client Timer → RD API → 实时获取 → Client。  
+> 下方 `/v1/automation/hongguo-new`（Server Automation Scheduler）根据架构边界：
+> **状态：[DEPRECATED / MIGRATION_REQUIRED]**
+> 目标模式：Client Timer → RD API → 实时获取 → Client。
 > 所有 P1 订阅/自动下载功能如实现，必须由 Client Timer 驱动而非 Server Scheduler。
 
 ## 1. UI 与接口映射
