@@ -1,25 +1,19 @@
 from __future__ import annotations
 
-from pathlib import Path
 import uuid
 
 from fastapi.testclient import TestClient
 
-from app.api import router as router_module
 from app.main import app
-from platforms.base import BasePlatform
 
 
-class _ResolvePlatform(BasePlatform):
+class _ResolvePlatform:
     name = "hongguo"
 
     async def search(self, query: str, page: int = 1, **kwargs):
         return []
 
     async def get_detail(self, item_id: str, **kwargs):
-        raise NotImplementedError
-
-    async def download(self, item_id: str, output_dir: Path, **kwargs):
         raise NotImplementedError
 
     async def resolve_download(self, resource_id: str, **kwargs):
@@ -36,8 +30,8 @@ class _ResolvePlatform(BasePlatform):
 
 
 def test_resolve_authorizes_before_platform_and_does_not_create_file(device_headers, monkeypatch):
-    output_dir = router_module.get_settings().outputs_dir
-    before = {path for path in output_dir.glob("**/*") if path.is_file()}
+    from app.api import router as router_module
+
     monkeypatch.setattr(router_module, "get_platform", lambda _name: _ResolvePlatform())
     with TestClient(app) as client:
         response = client.post(
@@ -49,7 +43,6 @@ def test_resolve_authorizes_before_platform_and_does_not_create_file(device_head
     payload = response.json()
     assert payload["descriptor"]["download_mode"] == "direct"
     assert payload["descriptors"][0]["url"].startswith("https://")
-    assert {path for path in output_dir.glob("**/*") if path.is_file()} == before
 
 
 def test_resolve_idempotent_replay_does_not_call_platform_again(device_headers, monkeypatch):
@@ -59,6 +52,8 @@ def test_resolve_idempotent_replay_does_not_call_platform_again(device_headers, 
         async def resolve_download(self, resource_id: str, **kwargs):
             calls.append(resource_id)
             return await super().resolve_download(resource_id, **kwargs)
+
+    from app.api import router as router_module
 
     monkeypatch.setattr(router_module, "get_platform", lambda _name: _Platform())
     with TestClient(app) as client:

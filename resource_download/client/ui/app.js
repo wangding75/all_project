@@ -524,7 +524,7 @@
       "/v1/hongguo/people",
       "/v1/license/status",
     ].includes(path)) return true;
-    return path.startsWith("/v1/automation/hongguo-new");
+    return false;
   }
 
   const licenseReasonMessages = {
@@ -710,25 +710,6 @@
         return { success: true, path: file.local_path || file.path };
       }
       toast(`正在传输到本机：${filename}`, "info", 2500);
-      if (window.pywebview && window.pywebview.api && window.pywebview.api.download_file) {
-        const result = await window.pywebview.api.download_file(
-          file.file_id,
-          filename,
-          state.accessToken || "",
-          state.apiKey || ""
-        );
-        if (!result || !result.success) {
-          throw new Error((result && result.message) || "客户端下载失败");
-        }
-        toast(`已保存到本机：${result.path}`, "success", 4500);
-        if (action === "play" || action === "folder") {
-          const opened = await window.pywebview.api.open_local_file(file.file_id, action);
-          if (!opened || !opened.success) {
-            throw new Error((opened && opened.message) || "无法打开本机文件");
-          }
-        }
-        return result;
-      }
 
       const result = await downloadFileInBrowser(file);
       toast(

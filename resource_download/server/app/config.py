@@ -65,16 +65,7 @@ class Settings(BaseSettings):
     # 频率限制与每日配额（阶段 D-4）
     rate_limit_per_minute: int = 60
     rate_limit_auth_per_minute: int = 10
-    free_jobs_per_day: int = 0
     vip_jobs_per_day: int = 50
-    max_concurrent_jobs: int = 5
-    max_queued_jobs: int = 100
-    max_history_jobs: int = 200
-
-    # Server-side launching is disabled by default; the desktop native bridge
-    # opens downloaded files on the local machine.
-    server_side_file_open: bool = False
-    allow_server_file_open: bool = False
 
     # License Service（RD 独立 Service Credential；私钥只从 Secret 注入）
     license_service_base_url: str = ""
@@ -122,14 +113,6 @@ class Settings(BaseSettings):
     sign_pool_health_interval_sec: int = 30
     sign_pool_lease_sec: int = 120
     sign_pool_max_fails: int = 3
-
-    @property
-    def jobs_dir(self) -> Path:
-        return self.data_dir / "jobs"
-
-    @property
-    def outputs_dir(self) -> Path:
-        return self.data_dir / "outputs"
 
     @property
     def sign_pool_config_path(self) -> Path:

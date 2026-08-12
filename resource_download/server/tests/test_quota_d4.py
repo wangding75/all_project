@@ -76,11 +76,22 @@ def reset_settings():
 
 # --- 测试用例 ---
 
-def test_quota_limit_after_license_active(client, db_session, device_headers):
+def test_quota_limit_after_license_active(client, db_session, device_headers, monkeypatch):
     # License ACTIVE 后仍由 RD 自己执行每日配额。
     # 2. 同上第三次 jobs -> 429，文案含配额/用尽
     get_settings().auth_mode = "dual"
     get_settings().vip_jobs_per_day = 2
+
+    class _QuotaPlatform:
+        async def resolve_download(self, resource_id, **kwargs):
+            return [{
+                "download_mode": "direct",
+                "resource_id": resource_id,
+                "url": "https://cdn.example.invalid/file.mp4",
+                "suggested_filename": "file.mp4",
+            }]
+
+    monkeypatch.setattr("app.api.router.get_platform", lambda _name: _QuotaPlatform())
 
     # 注册并登录用户
     client.post(
@@ -93,12 +104,12 @@ def test_quota_limit_after_license_active(client, db_session, device_headers):
     )
     token = login_resp.json()["access_token"]
 
-    jobs_body = {"platform": "fanqie", "id": "12345", "range": "1-1"}
+    jobs_body = {"platform": "fanqie", "resource_id": "12345", "range": "1-1"}
     headers = {"Authorization": f"Bearer {token}", **device_headers}
 
     # 第一次建任务 -> 成功
     resp1 = client.post(
-        "/v1/jobs",
+        "/v1/resolve",
         json=jobs_body,
         headers=headers,
     )
@@ -106,7 +117,7 @@ def test_quota_limit_after_license_active(client, db_session, device_headers):
 
     # 第二次建任务 -> 成功
     resp2 = client.post(
-        "/v1/jobs",
+        "/v1/resolve",
         json=jobs_body,
         headers=headers,
     )
@@ -114,7 +125,7 @@ def test_quota_limit_after_license_active(client, db_session, device_headers):
 
     # 第三次建任务 -> 429 今日下载配额已用尽
     resp3 = client.post(
-        "/v1/jobs",
+        "/v1/resolve",
         json=jobs_body,
         headers=headers,
     )
@@ -128,12 +139,12 @@ def test_quota_bypass_for_ops(client, device_headers):
     get_settings().api_key = "test-api-key"
     get_settings().vip_jobs_per_day = 1
 
-    jobs_body = {"platform": "fanqie", "id": "12345", "range": "1-1"}
+    jobs_body = {"platform": "fanqie", "resource_id": "12345", "range": "1-1"}
 
     # 使用 API Key 连续建 5 次任务 -> 应该全部通过，不计入/不拦截配额
     for _ in range(5):
         resp = client.post(
-            "/v1/jobs",
+            "/v1/resolve",
             json=jobs_body,
         headers={"X-API-Key": "test-api-key", **device_headers},
         )

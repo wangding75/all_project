@@ -100,7 +100,7 @@ def test_request_proof_binds_method_query_and_raw_body() -> None:
     service = DeviceProofService(manager)
     identity = service.identity()
     raw_body = b'{"a":1,"b":2}'
-    target = "/v1/jobs?x=1"
+    target = "/v1/resolve?x=1"
     proof = service.request_proof("POST", target, raw_body)
 
     def valid(method: str, request_target: str, body: bytes) -> bool:
@@ -118,36 +118,28 @@ def test_request_proof_binds_method_query_and_raw_body() -> None:
 
     assert valid("POST", target, raw_body)
     assert not valid("GET", target, raw_body)
-    assert not valid("POST", "/v1/jobs?x=2", raw_body)
+    assert not valid("POST", "/v1/resolve?x=2", raw_body)
     assert not valid("POST", target, b'{"a":2,"b":2}')
 
 
 def test_nonce_is_fresh_for_each_proof() -> None:
     service = DeviceProofService(DeviceIdentityManager(MemoryIdentityStore()))
-    nonces = {service.request_proof("POST", "/v1/jobs", b"")["nonce"] for _ in range(20)}
+    nonces = {service.request_proof("POST", "/v1/resolve", b"")["nonce"] for _ in range(20)}
     assert len(nonces) == 20
 
 
 def test_protected_scope_and_unprotected_scope_are_exact() -> None:
     protected = {
-        ("POST", "/v1/jobs"),
-        ("POST", "/v1/jobs/batch"),
-        ("POST", "/v1/jobs/queue/bulk/retry"),
-        ("POST", "/v1/jobs/job-1/retry"),
-        ("GET", "/v1/jobs"),
-        ("GET", "/v1/jobs/job-1"),
+        ("POST", "/v1/resolve"),
+        ("GET", "/v1/downloads/proxy/ticket"),
         ("GET", "/v1/search?q=x"),
         ("GET", "/v1/detail?id=x"),
-        ("GET", "/v1/files"),
-        ("GET", "/v1/files/job-1/file.txt"),
-        ("PUT", "/v1/automation/hongguo-new"),
-        ("POST", "/v1/automation/hongguo-new/scan"),
+        ("GET", "/v1/discover"),
     }
     for method, target in protected:
         assert is_protected_endpoint(method, target)
     for method, target in {
         ("POST", "/v1/auth/login"),
-        ("POST", "/v1/auth/redeem"),
         ("GET", "/health"),
     }:
         assert not is_protected_endpoint(method, target)
@@ -163,7 +155,7 @@ def test_http_layer_signs_protected_request_but_not_unprotected(monkeypatch) -> 
         return _Response({"ok": True})
 
     monkeypatch.setattr("client.desktop.http_client.urllib.request.urlopen", fake_urlopen)
-    client.request_json("POST", "/v1/jobs?x=1", '{"a":1}', protected=True)
+    client.request_json("POST", "/v1/resolve?x=1", '{"a":1}', protected=True)
     client.request_json("GET", "/v1/search?q=x", b"", protected=False)
     signed = _headers(calls[0])
     unsigned = _headers(calls[1])
@@ -190,7 +182,7 @@ def test_http_retry_regenerates_proof(monkeypatch) -> None:
         return _Response({"retry": "ok"})
 
     monkeypatch.setattr("client.desktop.http_client.urllib.request.urlopen", fake_urlopen)
-    assert client.request_json("POST", "/v1/jobs", '{"a":1}', protected=True) == {"retry": "ok"}
+    assert client.request_json("POST", "/v1/resolve", '{"a":1}', protected=True) == {"retry": "ok"}
     first = _headers(calls[0])
     second = _headers(calls[1])
     assert first["x-device-proof-nonce"] != second["x-device-proof-nonce"]

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from pathlib import Path
 from typing import Any
 
 from app.models import (
@@ -17,7 +16,7 @@ from app.models import (
     SearchItem,
     SegmentInfo,
 )
-from platforms.base import BasePlatform, ProgressCallback
+from platforms.base import BasePlatform
 from platforms.hongguo.bridge import (
     HongguoVendorError,
     call_with_session_recovery,
@@ -116,7 +115,6 @@ class HongguoPlatform(BasePlatform):
             from app.errors import format_platform_error
 
             raise RuntimeError(format_platform_error(exc)) from exc
-
     async def search(self, query: str, page: int = 1, **kwargs: Any) -> list[SearchItem]:
         def _run() -> list[SearchItem]:
             from platforms.hongguo.bridge import ensure_config
@@ -212,7 +210,6 @@ class HongguoPlatform(BasePlatform):
             from app.errors import format_platform_error
 
             raise RuntimeError(format_platform_error(exc)) from exc
-
     async def resolve_download(
         self,
         resource_id: str,
@@ -362,155 +359,3 @@ class HongguoPlatform(BasePlatform):
 
             raise RuntimeError(format_platform_error(exc)) from exc
 
-    async def download(
-        self,
-        item_id: str,
-        output_dir: Path,
-        *,
-        range_spec: str = "all",
-        options: dict[str, Any] | None = None,
-        progress: ProgressCallback | None = None,
-    ) -> list[Path]:
-        from app.options import split_job_options, validate_range_spec
-
-        persisted_options, runtime_options = split_job_options(PlatformName.hongguo, options)
-        options = {**persisted_options, **runtime_options}
-        range_spec = validate_range_spec(range_spec)
-        quality = str(options.get("quality") or "best")
-        concurrency = int(options.get("concurrency") or options.get("c") or 2)
-        download_cover = bool(options.get("download_cover"))
-        download_desc = bool(options.get("download_desc"))
-        allow_raw = bool(options.get("allow_raw"))
-        naming = options.get("naming") if isinstance(options.get("naming"), dict) else {}
-
-        def _run() -> list[Path]:
-            import re
-
-            from platforms.naming import format_segment_filename
-
-            H = load_hongguo_api()
-            ODL = load_offline_dl()
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            # 让上游下载落到我们的 job 目录.  This assignment and the
-            # vendor call must remain in one critical section (see above).
-            if progress:
-                progress(1.0, "prepare series")
-
-            # 可选：简介元数据
-            episode_titles: dict[int, str] = {}
-            if download_desc or download_cover or naming:
-                try:
-                    meta, eps = H.get_episodes(str(item_id))
-                    meta = meta or {}
-                    for position, episode in enumerate(eps or [], start=1):
-                        if isinstance(episode, dict):
-                            index = int(episode.get("index") or position)
-                            episode_titles[index] = str(
-                                episode.get("title") or f"第{index}集"
-                            )
-                    if download_desc:
-                        (output_dir / "简介.txt").write_text(
-                            f"标题：{meta.get('title') or item_id}\n"
-                            f"状态：{meta.get('status') or ''}\n"
-                            f"集数：{meta.get('episode_cnt') or ''}\n\n"
-                            f"{meta.get('desc') or meta.get('intro') or '暂无简介'}\n",
-                            encoding="utf-8",
-                        )
-                    if download_cover and meta.get("cover"):
-                        try:
-                            import urllib.request
-
-                            cover_url = str(meta["cover"])
-                            urllib.request.urlretrieve(cover_url, str(output_dir / "封面.jpg"))
-                        except Exception:
-                            (output_dir / "封面.url.txt").write_text(
-                                str(meta.get("cover") or ""), encoding="utf-8"
-                            )
-                except Exception:
-                    pass
-
-            # 复用上游整剧逻辑（内部签名+下载+解密）
-            # This critical section protects the vendor module globals while
-            # ``dl_series`` runs.
-            with _OFFLINE_DL_LOCK:
-                call_old_out = getattr(ODL, "OUT", None)
-                call_old_state = getattr(ODL, "STATE_DIR", None)
-                ODL.OUT = str(output_dir)
-                ODL.STATE_DIR = str(output_dir / ".state")
-                try:
-                    ODL.dl_series(
-                        str(item_id),
-                        rng=range_spec or "all",
-                        concurrency=max(1, concurrency),
-                        retry_rounds=int(options.get("retry") or 2),
-                        quality=quality,
-                    )
-                finally:
-                    if call_old_out is None:
-                        try:
-                            delattr(ODL, "OUT")
-                        except AttributeError:
-                            pass
-                    else:
-                        ODL.OUT = call_old_out
-                    if call_old_state is None:
-                        try:
-                            delattr(ODL, "STATE_DIR")
-                        except AttributeError:
-                            pass
-                    else:
-                        ODL.STATE_DIR = call_old_state
-
-            # 收集 mp4（排除 .enc）
-            paths = sorted(
-                p
-                for p in Path(output_dir).rglob("*.mp4")
-                if p.is_file() and not p.name.endswith(".enc.mp4") and p.stat().st_size > 0
-            )
-            playable_paths = [p for p in paths if not p.name.endswith(".raw.mp4")]
-            raw_paths = [p for p in paths if p.name.endswith(".raw.mp4")]
-            paths = playable_paths or (raw_paths if allow_raw else [])
-            if naming and paths:
-                renamed: list[Path] = []
-                for path in paths:
-                    match = re.search(r"第\s*0*(\d+)\s*集", path.stem)
-                    index = int(match.group(1)) if match else 0
-                    if index <= 0:
-                        renamed.append(path)
-                        continue
-                    target = path.with_name(
-                        format_segment_filename(
-                            index,
-                            episode_titles.get(index) or f"第{index}集",
-                            naming,
-                            ext=".raw.mp4" if path.name.endswith(".raw.mp4") else ".mp4",
-                        )
-                    )
-                    if target != path:
-                        target.unlink(missing_ok=True)
-                        path.replace(target)
-                    renamed.append(target)
-                paths = renamed
-            if progress:
-                progress(100.0, f"done {len(paths)} files")
-            if not paths:
-                if raw_paths:
-                    raise RuntimeError(
-                        f"hongguo quality {quality} uses proprietary ByteVC and produced only "
-                        "a diagnostic raw-decrypted file; choose 1080p for a playable MP4"
-                    )
-                raise RuntimeError(
-                    "hongguo download produced no mp4; check config.json + sign backend "
-                    f"(vendor={vendor_ready()})"
-                )
-            return paths
-
-        try:
-            return await asyncio.to_thread(call_with_session_recovery, _run)
-        except HongguoVendorError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            from app.errors import format_platform_error
-
-            raise RuntimeError(format_platform_error(exc)) from exc

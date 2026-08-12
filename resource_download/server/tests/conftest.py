@@ -166,24 +166,13 @@ class FakeMockPlatform(BasePlatform):
             ],
         )
 
-    async def create_job(self, item_id: str, range_spec: str, options: dict) -> dict:
-        return {"job_id": "mock_job_123", "status": "queued"}
-
-    async def download(
-        self,
-        item_id: str,
-        output_dir: Path,
-        *,
-        range_spec: str = "all",
-        options: dict[str, Any] | None = None,
-        progress: Callable[[float, str], None] | None = None,
-    ) -> list[Path]:
-        if progress:
-            progress(1.0, "Mock 下载完成")
-        dummy_file = output_dir / f"mock_{item_id}.mp4"
-        dummy_file.write_bytes(b"mock_bytes")
-        return [dummy_file]
-
+    async def resolve_download(self, resource_id: str, **kwargs) -> list[dict]:
+        return [{
+            "download_mode": "direct",
+            "resource_id": resource_id,
+            "url": "https://mock.local/file.mp4",
+            "suggested_filename": f"mock_{resource_id}.mp4",
+        }]
 
 @pytest.fixture
 def fake_platform():

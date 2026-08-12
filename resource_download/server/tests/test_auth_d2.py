@@ -139,7 +139,7 @@ def test_redeem_uses_license_result_without_touching_legacy_tables(
     assert len(license_gateway_for_tests.activations) == 1
 
 
-def test_jobs_require_active_device_license_even_with_legacy_vip_or_card(
+def test_resolve_requires_active_device_license_even_with_legacy_vip_or_card(
     client,
     db_session,
     device_headers,
@@ -155,10 +155,10 @@ def test_jobs_require_active_device_license_even_with_legacy_vip_or_card(
     user.vip_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)
     db_session.add(CardKey(code="LEGACY-CARD", duration_days=30, is_used=False))
     db_session.commit()
-    body = {"platform": "fanqie", "id": "12345", "range": "1-1"}
+    body = {"platform": "fanqie", "resource_id": "12345", "range": "1-1"}
 
     no_proof = client.post(
-        "/v1/jobs",
+        "/v1/resolve",
         headers={"Authorization": f"Bearer {token}"},
         json=body,
     )
@@ -172,7 +172,7 @@ def test_jobs_require_active_device_license_even_with_legacy_vip_or_card(
         "source": "remote",
     }
     expired = client.post(
-        "/v1/jobs",
+        "/v1/resolve",
         headers={"Authorization": f"Bearer {token}", **device_headers},
         json=body,
     )
@@ -186,21 +186,21 @@ def test_jobs_require_active_device_license_even_with_legacy_vip_or_card(
         "source": "remote",
     }
     allowed = client.post(
-        "/v1/jobs",
+        "/v1/resolve",
         headers={"Authorization": f"Bearer {token}", **device_headers},
         json=body,
     )
     assert allowed.status_code != 403
 
     api_key_allowed = client.post(
-        "/v1/jobs",
+        "/v1/resolve",
         headers={"X-API-Key": "test-api-key", **device_headers},
         json=body,
     )
     assert api_key_allowed.status_code != 403
 
     api_key_without_proof = client.post(
-        "/v1/jobs",
+        "/v1/resolve",
         headers={"X-API-Key": "test-api-key"},
         json=body,
     )
@@ -216,9 +216,9 @@ def test_guard_binds_raw_body_and_query_to_license_check(
     settings = get_settings()
     settings.auth_mode = "dev"
     settings.api_key = "test-api-key"
-    raw_body = b'{"platform":"fanqie","id":"raw-1","range":"1-1"}'
+    raw_body = b'{"platform":"fanqie","resource_id":"raw-1","range":"1-1"}'
     response = client.post(
-        "/v1/jobs?mode=full",
+        "/v1/resolve?mode=full",
         content=raw_body,
         headers={
             "X-API-Key": "test-api-key",
@@ -229,7 +229,7 @@ def test_guard_binds_raw_body_and_query_to_license_check(
     assert response.status_code != 403
     check = license_gateway_for_tests.requests[-1]
     assert check["raw_body"] == raw_body
-    assert check["request_target"] == "/v1/jobs?mode=full"
+    assert check["request_target"] == "/v1/resolve?mode=full"
 
 
 def test_guard_maps_invalid_replay_audience_and_unknown_stably(
@@ -240,7 +240,7 @@ def test_guard_maps_invalid_replay_audience_and_unknown_stably(
     settings = get_settings()
     settings.auth_mode = "dev"
     settings.api_key = "test-api-key"
-    body = {"platform": "fanqie", "id": "stable-1", "range": "1-1"}
+    body = {"platform": "fanqie", "resource_id": "stable-1", "range": "1-1"}
     headers = {"X-API-Key": "test-api-key", **device_headers}
 
     for reason in ("INVALID_DEVICE_PROOF", "DEVICE_PROOF_REPLAYED", "WRONG_AUDIENCE"):
@@ -250,7 +250,7 @@ def test_guard_maps_invalid_replay_audience_and_unknown_stably(
             "decision": "INACTIVE",
             "source": "remote",
         }
-        response = client.post("/v1/jobs", headers=headers, json=body)
+        response = client.post("/v1/resolve", headers=headers, json=body)
         assert response.status_code == 403
         assert response.json()["detail"] in {
             "DEVICE_PROOF_INVALID",
@@ -264,6 +264,6 @@ def test_guard_maps_invalid_replay_audience_and_unknown_stably(
         "decision": "UNKNOWN",
         "source": "fail_closed",
     }
-    unavailable = client.post("/v1/jobs", headers=headers, json=body)
+    unavailable = client.post("/v1/resolve", headers=headers, json=body)
     assert unavailable.status_code == 503
     assert unavailable.json()["detail"] == "LICENSE_SERVICE_TIMEOUT"

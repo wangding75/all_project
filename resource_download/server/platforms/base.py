@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any, Callable
 
 from app.models import DetailResponse, DiscoverItem, SearchItem
@@ -42,9 +41,8 @@ class BasePlatform(ABC):
     ) -> list[dict[str, Any]]:
         """Resolve platform-private media into stable server-side descriptors.
 
-        Implementations must not write to ``output_dir`` here.  The legacy
-        ``download`` method remains available until the migration reaches the
-        removal phase.
+        Implementations must not write to a server output directory here. The
+        descriptor is consumed by the Client DownloadManager.
         """
         raise NotImplementedError(f"{self.name} 暂未提供 Download Resolve")
 
@@ -57,16 +55,3 @@ class BasePlatform(ABC):
     ):
         """Yield proxy bytes without materializing a server-side file."""
         raise NotImplementedError(f"{self.name} 暂未提供 Streaming Proxy")
-
-    @abstractmethod
-    async def download(
-        self,
-        item_id: str,
-        output_dir: Path,
-        *,
-        range_spec: str = "all",
-        options: dict[str, Any] | None = None,
-        progress: ProgressCallback | None = None,
-    ) -> list[Path]:
-        """下载并导出到 output_dir，返回产物路径列表。"""
-        ...

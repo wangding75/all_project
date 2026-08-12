@@ -10,8 +10,6 @@ from sqlalchemy.orm import sessionmaker
 from app.auth import Identity
 from app.db import Base
 from app.idempotency import IdempotencyConflict, IdempotencyStore, request_fingerprint
-from app.jobs.manager import JobManager, JobRecord
-from app.models import PlatformName
 from app.models_orm import LicenseUsageDaily
 from app.quota import check_job_quota, increment_job_quota
 
@@ -68,26 +66,6 @@ def test_malformed_entitlement_fails_closed(quota_db):
         check_job_quota(identity, quota_db)
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "PLAN_ENTITLEMENT_INVALID"
-
-
-def test_job_owner_requires_license_and_device_pair(tmp_path):
-    from app.config import get_settings
-
-    settings = get_settings().model_copy(update={"data_dir": tmp_path})
-    manager = JobManager(settings)
-    record = JobRecord(
-        job_id="t26job",
-        platform=PlatformName.fanqie,
-        item_id="item",
-        range_spec="all",
-        options={},
-        owner_kind="license_device",
-        license_id="lic_t26",
-        device_id="dev_a",
-    )
-    assert manager.can_access_job(record, _identity(device_id="dev_a"))
-    assert not manager.can_access_job(record, _identity(device_id="dev_b"))
-    assert not manager.can_access_job(record, _identity(license_id="lic_other", device_id="dev_a"))
 
 
 def test_idempotency_scope_is_license_and_device_specific():

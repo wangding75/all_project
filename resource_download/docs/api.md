@@ -4,15 +4,15 @@ Base URL: `http://127.0.0.1:8000`
 
 > 契约以本文件 + 运行中的 OpenAPI（`/docs`）为准。
 
-> **[T41 2026-08-12] 架构基线冻结。**
+> **[T46 2026-08-12] 架构基线冻结并完成 Server 旧下载职责移除。**
 > **权威架构文件：[`../docs/ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**
 >
 > API 分类方针：
 > - **KEEP_SERVER**：health / search / detail / discover / license / quota — 长期属于服务端
-> - **REFACTOR_SERVER**：Download Resolve / Streaming Proxy — 目标形态，待实现
-> - **DEPRECATE_API**：`/v1/jobs`、`/v1/files`、`/v1/automation/*` — 目标由 Client 承担，本轮不删除
+> - **REFACTOR_SERVER**：Download Resolve / Streaming Proxy — 当前主链
+> - **REMOVED_API**：`/v1/jobs`、`/v1/files`、`/v1/automation/*` — T46 已从 RD Server 路由中移除
 >
-> `DEPRECATED` 接口在迁移期可以暂时存在，必须标记 `DEPRECATED / MIGRATION_REQUIRED`。
+> 下面旧接口段落仅保留为历史迁移记录；运行中的 OpenAPI 不再注册这些路由。
 
 ## RD Desktop Client cutover：Device Proof V3
 

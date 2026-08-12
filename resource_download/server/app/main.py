@@ -14,7 +14,6 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.api import api_router
 from app.config import get_settings
-from app.jobs import get_job_manager
 from app.sign_pool import SignPoolUnavailableError
 
 
@@ -54,8 +53,6 @@ async def lifespan(_app: FastAPI):
         os.environ["FRIDA_HOST"] = settings.frida_host
 
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    settings.jobs_dir.mkdir(parents=True, exist_ok=True)
-    settings.outputs_dir.mkdir(parents=True, exist_ok=True)
 
     # 初始化 SQLite 数据库
     from app.db import init_db
@@ -83,13 +80,6 @@ async def lifespan(_app: FastAPI):
                 "🚫 [T06 生产安全阻断] License Service SDK 配置无效，"
                 "生产服务拒绝启动；请检查 RD Service Credential 与 TLS 配置。"
             )
-
-    manager = get_job_manager()
-    await manager.load_jobs()
-    from app.automation import get_hongguo_monitor_service
-
-    monitor = get_hongguo_monitor_service()
-    monitor.start()
 
     if settings.sign_pool_enabled:
         from app.sign_pool import get_sign_pool
@@ -134,8 +124,6 @@ async def lifespan(_app: FastAPI):
 
     yield
     logging.info("服务端收到退出信号，开始执行优雅关机流程...")
-    await monitor.stop()
-    await manager.shutdown()
     from app.license_gateway import close_license_gateway
 
     close_license_gateway()

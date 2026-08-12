@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 from app.config import get_settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import JobResponse, JobStatus, PlatformName
+from app.models import PlatformName
 
 
 @pytest.fixture
@@ -84,50 +84,6 @@ def test_search_failure_has_explicit_status(commercial_client, monkeypatch) -> N
     assert payload["items"] == []
     assert payload["platform_status"]["fanqie"] == "RUNTIME_INCOMPATIBLE"
     assert "RUNTIME_INCOMPATIBLE" in payload["platform_errors"]["fanqie"]
-
-
-def test_idempotency_sequential_duplicate_is_one_job(commercial_client, device_headers, monkeypatch):
-    from app.api import router as router_module
-
-    class _FakeRecord:
-        def __init__(self, job_id: str):
-            self.job_id = job_id
-
-        def to_response(self):
-            return JobResponse(
-                job_id=self.job_id,
-                platform=PlatformName.hongguo,
-                item_id="series-t22",
-                status=JobStatus.pending,
-            )
-
-    class _FakeManager:
-        def __init__(self):
-            self.calls = 0
-
-        async def create_job(self, **_kwargs):
-            self.calls += 1
-            return _FakeRecord("job-t22-one")
-
-    fake = _FakeManager()
-    monkeypatch.setattr(router_module, "get_platform", lambda _name: object())
-    monkeypatch.setattr(router_module, "get_job_manager", lambda: fake)
-    body = {"platform": "hongguo", "id": "series-t22", "range": "1-1"}
-    headers = {"X-API-Key": "commercial-test-key", **device_headers, "Idempotency-Key": "t22-seq-1"}
-
-    first = commercial_client.post("/v1/jobs", json=body, headers=headers)
-    second = commercial_client.post("/v1/jobs", json=body, headers=headers)
-    assert first.status_code == second.status_code == 200
-    assert first.json()["job_id"] == second.json()["job_id"] == "job-t22-one"
-    assert fake.calls == 1
-
-    conflict = commercial_client.post(
-        "/v1/jobs",
-        json={**body, "id": "series-t22-other"},
-        headers=headers,
-    )
-    assert conflict.status_code == 409
-    assert conflict.json()["detail"] == "IDEMPOTENCY_CONFLICT"
 
 
 def test_idempotency_store_concurrent_duplicate_is_one_record() -> None:

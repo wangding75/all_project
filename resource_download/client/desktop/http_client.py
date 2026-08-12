@@ -13,9 +13,6 @@ from typing import Any
 from .device_proof import DeviceProofService
 
 
-_PROTECTED_JOB_RETRY = re.compile(r"^/v1/jobs/[^/]+/retry$")
-_PROTECTED_JOB_PATH = re.compile(r"^/v1/jobs(?:/.*)?$")
-_PROTECTED_FILE_PATH = re.compile(r"^/v1/files(?:/.*)?$")
 _PROTECTED_DOWNLOAD_PATH = re.compile(r"^/v1/downloads(?:/.*)?$")
 _PROTECTED_CONTENT_PATHS = {
     "/v1/search",
@@ -50,15 +47,11 @@ def is_protected_endpoint(method: str, request_target: str) -> bool:
     parsed = urllib.parse.urlsplit(request_target)
     path = parsed.path
     method = method.upper()
-    if (
-        _PROTECTED_JOB_PATH.fullmatch(path)
-        or _PROTECTED_FILE_PATH.fullmatch(path)
-        or _PROTECTED_DOWNLOAD_PATH.fullmatch(path)
-    ):
+    if _PROTECTED_DOWNLOAD_PATH.fullmatch(path):
         return True
     if path in _PROTECTED_CONTENT_PATHS:
         return True
-    return path.startswith("/v1/automation/hongguo-new")
+    return False
 
 
 def normalize_reason(status_code: int, detail: Any) -> str:

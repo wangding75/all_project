@@ -560,70 +560,6 @@ class WindowApi:
             log.exception("启动客户端更新失败")
             return {"success": False, "message": f"启动更新失败: {exc}"}
 
-    def download_file(
-        self,
-        file_id: str,
-        filename: str,
-        access_token: str = "",
-        api_key: str = "",
-    ) -> dict[str, object]:
-        """从服务端鉴权下载文件到客户机，使用 .part + replace 原子落盘。"""
-        if not file_id or file_id in {".", "/", "\\"}:
-            return {"success": False, "message": "无效的文件标识"}
-
-        encoded = "/".join(urllib.parse.quote(part, safe="") for part in file_id.replace("\\", "/").split("/"))
-        url = f"{self.api_base}/v1/files/{encoded}"
-        headers: dict[str, str] = {}
-        if access_token:
-            headers["Authorization"] = f"Bearer {access_token}"
-        elif api_key:
-            headers["X-API-Key"] = api_key
-        request_target = f"/v1/files/{encoded}"
-        try:
-            self.initialize_device_identity()
-            headers.update(self._proof_service.request_headers("GET", request_target, b""))
-        except DeviceIdentityError as exc:
-            return {"success": False, "message": exc.code, "reason": exc.code}
-
-        normalized_parts = [part for part in file_id.replace("\\", "/").split("/") if part]
-        job_folder = _safe_filename(normalized_parts[0]) if len(normalized_parts) > 1 else ""
-        target_dir = self._download_dir / job_folder if job_folder else self._download_dir
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / _safe_filename(filename or Path(file_id).name)
-        partial = target.with_name(f"{target.name}.part")
-        try:
-            request = urllib.request.Request(url, headers=headers, method="GET")
-            with urllib.request.urlopen(request, timeout=300) as response, partial.open("wb") as output:
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    output.write(chunk)
-                output.flush()
-                os.fsync(output.fileno())
-            partial.replace(target)
-            resolved = target.resolve()
-            self._local_files[file_id] = resolved
-            return {
-                "success": True,
-                "path": str(resolved),
-                "size": resolved.stat().st_size,
-                "message": f"已下载到本机: {resolved}",
-            }
-        except urllib.error.HTTPError as exc:
-            partial.unlink(missing_ok=True)
-            detail = f"HTTP {exc.code}"
-            try:
-                payload = json.loads(exc.read().decode("utf-8", errors="replace"))
-                detail = str(payload.get("detail") or detail)
-            except Exception:
-                pass
-            return {"success": False, "message": f"服务端拒绝下载: {detail}"}
-        except Exception as exc:
-            partial.unlink(missing_ok=True)
-            log.exception("客户端下载失败 file_id=%s", file_id)
-            return {"success": False, "message": f"下载到本机失败: {exc}"}
-
     def open_local_file(self, file_id: str, action: str = "play") -> dict[str, object]:
         path = self._local_files.get(file_id)
         if path is None:
@@ -702,8 +638,6 @@ def main() -> None:
             sys.exit(1)
 
         settings.data_dir.mkdir(parents=True, exist_ok=True)
-        settings.jobs_dir.mkdir(parents=True, exist_ok=True)
-        settings.outputs_dir.mkdir(parents=True, exist_ok=True)
 
         print(f"[START] embedded 服务 {host}:{port} ...")
         t = threading.Thread(target=start_embedded_server, args=(host, port), daemon=True)

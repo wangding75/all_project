@@ -35,12 +35,8 @@ def test_all_ordinary_business_surfaces_are_license_guarded():
         "/v1/batch/resolve",
         "/v1/image/recognize",
         "/v1/hongguo/people",
-        "/v1/jobs",
-        "/v1/jobs/{job_id}",
-        "/v1/jobs/summary",
-        "/v1/files",
-        "/v1/files/{file_id:path}",
-        "/v1/automation/hongguo-new",
+        "/v1/resolve",
+        "/v1/downloads/proxy/{token}",
     }
     assert expected <= guarded
 

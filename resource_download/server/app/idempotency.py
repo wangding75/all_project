@@ -1,8 +1,8 @@
-"""Short-lived, process-local idempotency records for Job creation.
+"""Short-lived, process-local idempotency records for Download Resolve.
 
 RD is intentionally a single-worker service.  A process-local store therefore
-closes the check/create/quota race without introducing a second durable secret
-store.  Only the sanitized Job response is retained, never request credentials.
+closes the check/resolve/quota race without introducing a second durable secret
+store. Only the sanitized resolve response is retained, never request credentials.
 """
 
 from __future__ import annotations

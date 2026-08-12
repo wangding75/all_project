@@ -9,4 +9,4 @@ def test_desktop_ui_download_data_source_is_client_owned():
     assert "list_local_files" in source
     assert "/v1/jobs" not in source
     assert "/v1/files" not in source
-    assert "download_file" in source  # legacy bridge remains a compatibility fallback
+    assert "download_file" not in source

@@ -18,7 +18,7 @@ if server_dir not in sys.path:
 
 from app.config import get_settings
 from app.db import Base, get_db
-from app.jobs.manager import JobManager, JobRecord, JobStatus, PlatformName
+from app.models import PlatformName
 from app.main import app
 from app.models import DetailResponse, SegmentInfo
 from platforms.fanqie.web_ssr import extract_initial_state
@@ -77,36 +77,6 @@ def test_extract_initial_state_raw_decode():
     data = extract_initial_state(html_sample)
     assert "common" in data
     assert data["reader"]["title"] == "章{一}"
-
-
-def test_job_manager_eviction(tmp_path):
-    """测试 JobManager 内存淘汰机制 (S-P2-9)。"""
-    async def _run_test():
-        settings = get_settings()
-        manager = JobManager(settings)
-
-        # 填充 210 个已完成任务
-        for i in range(210):
-            record = JobRecord(
-                job_id=f"job_{i:03d}",
-                platform=PlatformName.hongguo,
-                item_id="123",
-                range_spec="all",
-                options={},
-                status=JobStatus.success,
-                updated_at=f"2026-07-23T10:{i//60:02d}:{i%60:02d}Z",
-            )
-            manager._jobs[f"job_{i:03d}"] = record
-
-        # 触发新任务创建与淘汰
-        await manager.create_job(PlatformName.hongguo, "123", range_spec="all")
-
-        # 验证内存中任务数量不超过 200 (包含新建的任务)
-        assert len(manager._jobs) <= 200
-        # 验证最旧的任务 job_000 已被淘汰
-        assert "job_000" not in manager._jobs
-
-    asyncio.run(_run_test())
 
 
 def test_detail_pagination(client: TestClient):

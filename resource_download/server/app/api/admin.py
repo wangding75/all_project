@@ -11,7 +11,6 @@ from sqlalchemy import text
 from app.auth import Identity, require_ops
 from app.config import get_settings
 from app.db import get_db
-from app.jobs import get_job_manager
 from app.license_gateway import get_license_gateway
 from app.logger import metrics_tracker
 from app.models_orm import CardKey, UsageDaily, User
@@ -176,7 +175,7 @@ def admin_health(
     disk_free_bytes = 0
     disk_free_human = "0 B"
     try:
-        usage = shutil.disk_usage(settings.outputs_dir)
+        usage = shutil.disk_usage(settings.data_dir)
         disk_free_bytes = usage.free
         if disk_free_bytes >= 1024**3:
             disk_free_human = f"{disk_free_bytes / (1024**3):.2f} GB"
@@ -187,9 +186,8 @@ def admin_health(
     except Exception:
         pass
 
-    # 3. 统计当前活跃 Job
-    manager = get_job_manager()
-    active_jobs = len([j for j in manager._jobs.values() if j.status.value in ("pending", "running")])
+    # T46: Server has no user Download Job or file storage. Client owns these.
+    active_jobs = 0
 
     # 4. 签名池状态摘要
     sign_pool_summary = {"enabled": settings.sign_pool_enabled}

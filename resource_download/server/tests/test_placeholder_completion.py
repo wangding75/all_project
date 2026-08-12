@@ -9,7 +9,6 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
-from app.jobs.manager import JobManager
 from app.logger import metrics_tracker
 from app.main import app
 from app.models import PlatformName
@@ -61,25 +60,6 @@ def test_fanqie_discover_maps_real_home_rows(monkeypatch):
     assert items[0].platform == PlatformName.fanqie
     assert items[0].badge == "新"
     assert items[0].extra["update_time"] == "1785304000"
-
-
-def test_job_speed_is_measured_from_growing_output(tmp_path, monkeypatch):
-    from app.jobs import manager as manager_module
-
-    settings = Settings(data_dir=tmp_path)
-    manager = JobManager(settings)
-    job_dir = settings.outputs_dir / "job-speed"
-    job_dir.mkdir(parents=True)
-    media = job_dir / "episode.enc.mp4"
-    media.write_bytes(b"")
-    samples = iter((100.0, 102.0))
-    monkeypatch.setattr(manager_module.time, "monotonic", lambda: next(samples))
-
-    assert manager._measure_speed("user:1", ["job-speed"]) == 0
-    media.write_bytes(b"x" * (2 * 1024 * 1024))
-    speed = manager._measure_speed("user:1", ["job-speed"])
-    assert speed == 1024 * 1024
-    assert manager._format_speed(speed) == "1.0 MB/s"
 
 
 def test_http_requests_are_counted_automatically():

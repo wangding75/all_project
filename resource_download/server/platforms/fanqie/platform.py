@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
-import time
-from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
 from app.models import DetailResponse, DiscoverItem, PlatformName, SearchItem, SegmentInfo
-from platforms.base import BasePlatform, ProgressCallback
+from platforms.base import BasePlatform
 from platforms.fanqie import web_ssr
 
 
@@ -37,33 +34,6 @@ def _parse_range(range_spec: str, total: int) -> set[int] | None:
         else:
             selected.add(int(part))
     return selected
-
-
-def _atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> None:
-    """Write a complete download artifact and make it durable before return."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    try:
-        with tmp.open("w", encoding=encoding, newline="") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
-
-
-def _atomic_write_bytes(path: Path, content: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    try:
-        with tmp.open("wb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
 
 
 def _normalize_book_id(item_id: str) -> str:
@@ -303,178 +273,3 @@ class FanqiePlatform(BasePlatform):
                 cookie=cookie,
             )
             yield f"\n\n## {chapter_title}\n\n{content}\n".encode("utf-8")
-
-    async def download(
-        self,
-        item_id: str,
-        output_dir: Path,
-        *,
-        range_spec: str = "all",
-        options: dict[str, Any] | None = None,
-        progress: ProgressCallback | None = None,
-    ) -> list[Path]:
-        from app.options import split_job_options
-
-        persisted_options, runtime_options = split_job_options(PlatformName.fanqie, options)
-        options = {**persisted_options, **runtime_options}
-        cookie = options.get("cookie") or get_settings().fanqie_cookie or None
-        delay = float(options.get("delay", get_settings().fanqie_delay))
-        mode = str(options.get("mode", "web")).strip().lower()
-        if mode not in {"web", "app"}:
-            raise ValueError("mode must be web or app")
-        naming = options.get("naming") if isinstance(options.get("naming"), dict) else {}
-        download_cover = bool(options.get("download_cover"))
-        download_desc = bool(options.get("download_desc"))
-
-        def _run() -> list[Path]:
-            from platforms.naming import format_segment_filename
-
-            # App 模式：签名+解密均在 com.dragon.read 内完成，不依赖红果 App。
-            # Web 模式：公开页 + 字体映射，亦不依赖红果。
-            book_id = _normalize_book_id(item_id)
-            book_name, chapters, font_mapping, meta = web_ssr.get_book_page(book_id, cookie=cookie)
-            selected = _parse_range(range_spec, len(chapters))
-
-            safe_book_name = (web_ssr.sanitize_filename(book_name).strip(". ") or "book")[:120]
-            output_root = output_dir.resolve()
-            work_dir = (output_root / safe_book_name).resolve()
-            if not work_dir.is_relative_to(output_root):
-                raise RuntimeError("book name resolves outside output directory")
-            work_dir.mkdir(parents=True, exist_ok=True)
-
-            # 封面 / 简介（可选）
-            if download_desc:
-                try:
-                    desc_path = work_dir / "简介.txt"
-                    _atomic_write_text(
-                        desc_path,
-                        f"书名：{book_name}\n"
-                        f"作者：{meta.get('author') or ''}\n"
-                        f"分类：{meta.get('category') or ''}\n"
-                        f"章节数：{len(chapters)}\n\n"
-                        f"{meta.get('abstract') or '暂无简介'}\n",
-                        encoding="utf-8",
-                    )
-                except Exception:
-                    pass
-            if download_cover:
-                try:
-                    cover_url = str(meta.get("cover") or "")
-                    if not cover_url:
-                        raise RuntimeError("详情页未返回封面")
-                    cover_bytes = web_ssr.fetch_bytes(cover_url, cookie=cookie)
-                    if not cover_bytes:
-                        raise RuntimeError("封面响应为空")
-                    _atomic_write_bytes(work_dir / "封面.jpg", cover_bytes)
-                except Exception:
-                    pass
-
-            parts: list[str] = [f"# {book_name}\n"]
-            chapter_files: list[Path] = []
-            total = len(chapters)
-            done = 0
-            skipped = 0
-
-            oracle = None
-            if mode == "app":
-                from platforms.fanqie.app_content import resolve_key, resolve_version
-                from platforms.fanqie.crypt_oracle import FanqieCryptOracle
-
-                key = resolve_key()
-                ver = resolve_version()
-                oracle = FanqieCryptOracle()
-                oracle.attach()
-
-            try:
-                for i, ch in enumerate(chapters, start=1):
-                    if selected is not None and i not in selected:
-                        continue
-
-                    if mode == "web" and ch.get("is_locked"):
-                        skipped += 1
-                        parts.append(f"\n\n## {ch.get('title') or i}\n\n（已锁定，已跳过）\n")
-                        continue
-
-                    if progress:
-                        progress(done / max(total, 1) * 100.0, f"下载第 {i}/{total} 章")
-
-                    title = str(ch.get("title") or f"第 {i} 章")
-                    plain = ""
-
-                    if mode == "app":
-                        from platforms.fanqie import client as app_client
-                        from platforms.fanqie.app_content import html_to_text
-
-                        try:
-                            j = app_client.fetch_full(book_id, str(ch["item_id"]))
-                            data = j.get("data") or {}
-                            content = data.get("content") or ""
-                            if not content:
-                                raise RuntimeError(f"empty content: {j.get('message')}")
-
-                            assert oracle is not None
-                            r = oracle.decrypt_raw(content, key, ver)
-                            if (not r.ok or not r.text) and data.get("key_version"):
-                                try:
-                                    alt = int(data["key_version"])
-                                    if alt != ver:
-                                        r = oracle.decrypt_raw(content, key, alt)
-                                except Exception:
-                                    pass
-
-                            if not r.ok or not r.text:
-                                raise RuntimeError(f"decrypt failed: {r.error}")
-
-                            plain = html_to_text(r.text)
-                            parts.append(f"\n\n## {title}\n\n{plain}\n")
-                            done += 1
-                        except Exception as e:
-                            skipped += 1
-                            from app.errors import format_platform_error
-
-                            plain = f"App chapter download failed: {format_platform_error(e)}"
-                            parts.append(f"\n\n## {title}\n\n{plain}\n")
-                    else:
-                        title, content = web_ssr.download_chapter(
-                            str(ch["item_id"]), font_mapping, cookie=cookie
-                        )
-                        plain = content
-                        parts.append(f"\n\n## {title}\n\n{content}\n")
-                        done += 1
-
-                    # 按命名模板写单章 txt
-                    if plain:
-                        fname = format_segment_filename(i, title, naming, ext=".txt")
-                        ch_path = work_dir / fname
-                        _atomic_write_text(ch_path, f"{title}\n\n{plain}\n")
-                        chapter_files.append(ch_path)
-
-                    if i < total and delay > 0:
-                        time.sleep(delay)
-            finally:
-                if oracle:
-                    try:
-                        oracle.close()
-                    except Exception:
-                        pass
-                if mode == "app":
-                    from platforms.fanqie import client as app_client
-
-                    try:
-                        app_client.get_oracle().close()
-                    except Exception:
-                        pass
-
-            out_path = work_dir / f"{safe_book_name}.md"
-            _atomic_write_text(out_path, "".join(parts))
-            if progress:
-                progress(100.0, f"完成 {done} 章" + (f"，跳过 {skipped}" if skipped else ""))
-            # 优先返回分章文件，便于「打开目录/文件」
-            return [out_path]
-
-        try:
-            return await asyncio.to_thread(_run)
-        except Exception as exc:  # noqa: BLE001
-            from app.errors import format_platform_error
-
-            raise RuntimeError(format_platform_error(exc)) from exc

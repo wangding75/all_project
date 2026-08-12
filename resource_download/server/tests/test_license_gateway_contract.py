@@ -61,7 +61,7 @@ def test_sdk_cache_hit_still_verifies_current_proof_and_replay_guard():
     client = _sdk_client(handler, public_key=device_public)
     try:
         raw = b'{"a":1}'
-        target = "/v1/jobs?x=1"
+        target = "/v1/resolve?x=1"
         first = client.check_device_request(
             device_id=device_id,
             request_method="POST",
@@ -107,7 +107,7 @@ def test_sdk_cache_hit_still_verifies_current_proof_and_replay_guard():
         changed_query = client.check_device_request(
             device_id=device_id,
             request_method="POST",
-            request_target="/v1/jobs?x=2",
+            request_target="/v1/resolve?x=2",
             raw_body=raw,
             device_proof=_request_proof(device_private, target=target, body=raw),
         )
@@ -138,7 +138,7 @@ def test_sdk_cache_expiry_rechecks_license_service():
     client = _sdk_client(handler, public_key=device_public, ttl=1)
     try:
         raw = b"{}"
-        target = "/v1/jobs"
+        target = "/v1/resolve"
         for _ in range(2):
             result = client.check_device_request(
                 device_id=device_id,
@@ -181,7 +181,7 @@ def test_sdk_network_and_non_2xx_are_unknown_fail_closed():
         result = timeout_client.check_device_request(
             device_id="dev_" + "1" * 64,
             request_method="POST",
-            request_target="/v1/jobs",
+            request_target="/v1/resolve",
             raw_body=b"",
             device_proof={"timestamp": 1, "nonce": "nonce-1234567890", "signature": "sig"},
         )
@@ -204,7 +204,7 @@ def test_sdk_network_and_non_2xx_are_unknown_fail_closed():
         result = rejected_client.check_device_request(
             device_id="dev_" + "1" * 64,
             request_method="POST",
-            request_target="/v1/jobs",
+            request_target="/v1/resolve",
             raw_body=b"",
             device_proof={"timestamp": 1, "nonce": "nonce-1234567890", "signature": "sig"},
         )
@@ -231,24 +231,8 @@ def test_rd_license_guard_scope_covers_all_ordinary_business_routes():
         "/v1/batch/resolve",
         "/v1/image/recognize",
         "/v1/hongguo/people",
-        "/v1/jobs",
-        "/v1/jobs/batch",
-        "/v1/jobs",
-        "/v1/jobs/summary",
-        "/v1/jobs/queue",
-        "/v1/jobs/queue/pause",
-        "/v1/jobs/queue/resume",
-        "/v1/jobs/queue/reorder",
-        "/v1/jobs/queue/bulk",
-        "/v1/jobs/queue/bulk/retry",
-        "/v1/jobs/{job_id}/retry",
-        "/v1/jobs/{job_id}",
-        "/v1/automation/hongguo-new",
-        "/v1/automation/hongguo-new/scan",
-        "/v1/files",
-        "/v1/files/thumbnail",
-        "/v1/files/{file_id:path}",
-        "/v1/files/{file_id:path}/open",
+        "/v1/resolve",
+        "/v1/downloads/proxy/{token}",
     }
     guarded = {
         route.path

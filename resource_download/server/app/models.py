@@ -18,16 +18,6 @@ class DownloadMode(str, Enum):
     proxy = "proxy"
 
 
-class JobStatus(str, Enum):
-    pending = "pending"
-    paused = "paused"
-    running = "running"
-    cancelling = "cancelling"
-    success = "success"
-    failed = "failed"
-    cancelled = "cancelled"
-
-
 class SearchItem(BaseModel):
     id: str
     title: str
@@ -86,55 +76,6 @@ class DiscoverResponse(BaseModel):
     # live | unavailable
     data_mode: str = "unavailable"
     note: str = ""
-
-
-class BatchJobItem(BaseModel):
-    platform: PlatformName
-    id: str = Field(min_length=1)
-    range: str = "all"
-    options: dict[str, Any] = Field(default_factory=dict, max_length=32)
-
-    @model_validator(mode="after")
-    def validate_download_input(self):
-        from app.options import split_job_options, validate_range_spec
-
-        split_job_options(self.platform, self.options)
-        self.range = validate_range_spec(self.range)
-        return self
-
-
-class BatchJobCreateRequest(BaseModel):
-    items: list[BatchJobItem] = Field(min_length=1, max_length=100)
-    queue_mode: Literal["enqueue", "start_immediately"] = "enqueue"
-    duplicate_policy: Literal["skip_completed", "retry_failed", "create_anyway"] = (
-        "skip_completed"
-    )
-
-
-class BatchJobCreatedItem(BaseModel):
-    item_id: str
-    platform: PlatformName
-    job_id: str
-
-
-class BatchJobSkippedItem(BaseModel):
-    item_id: str
-    platform: PlatformName
-    reason: str
-    existing_job_id: str | None = None
-
-
-class BatchJobErrorItem(BaseModel):
-    item_id: str
-    platform: PlatformName
-    message: str
-
-
-class BatchJobCreateResponse(BaseModel):
-    batch_id: str
-    created: list[BatchJobCreatedItem] = Field(default_factory=list)
-    skipped: list[BatchJobSkippedItem] = Field(default_factory=list)
-    errors: list[BatchJobErrorItem] = Field(default_factory=list)
 
 
 class BatchResolveRequest(BaseModel):
@@ -275,49 +216,6 @@ class DownloadResolveResponse(BaseModel):
     idempotent_replay: bool = False
 
 
-class JobCreateRequest(BaseModel):
-    platform: PlatformName
-    id: str
-    """书 ID / 剧 ID，或番茄 page URL。"""
-    range: str = "all"
-    """all | 1-10 | 1,3,5"""
-    options: dict[str, Any] = Field(default_factory=dict, max_length=32)
-
-    @model_validator(mode="after")
-    def validate_download_input(self):
-        from app.options import split_job_options, validate_range_spec
-
-        split_job_options(self.platform, self.options)
-        self.range = validate_range_spec(self.range)
-        return self
-
-
-class JobFile(BaseModel):
-    file_id: str
-    name: str
-    size: int = 0
-    path: str | None = None
-    # Owner is copied from the parent Job during persistence migration.  It is
-    # never accepted as an authorization input from a client.
-    owner_kind: str | None = None
-    owner_user_id: int | None = None
-    license_id: str | None = None
-    device_id: str | None = None
-    legacy_unowned: bool = False
-
-
-class JobResponse(BaseModel):
-    job_id: str
-    platform: PlatformName
-    item_id: str
-    status: JobStatus
-    progress: float = 0.0
-    message: str = ""
-    error: str | None = None
-    files: list[JobFile] = Field(default_factory=list)
-    extra: dict[str, Any] = Field(default_factory=dict)
-
-
 class HealthDependencyItem(BaseModel):
     """单项依赖检查结果，供 UI 列表展示。"""
 
@@ -393,112 +291,3 @@ class RedeemResponse(BaseModel):
     # Deprecated display alias. It is not an authorization fact and is never
     # persisted back to User.vip_expires_at by the new activation flow.
     vip_expires_at: str | None = None
-
-
-
-class FileItemResponse(BaseModel):
-    file_id: str
-    title: str
-    media_type: str = "video/mp4"
-    platform: str = "hongguo"
-    size_bytes: int = 0
-    size_human: str = "0 B"
-    created_at: str = ""
-
-
-class FileListResponse(BaseModel):
-    total: int = 0
-    items: list[FileItemResponse] = Field(default_factory=list)
-
-
-class FileOpenRequest(BaseModel):
-    action: str = "play"
-
-
-class FileOpenResponse(BaseModel):
-    success: bool = True
-    message: str = ""
-
-
-class JobsSummaryResponse(BaseModel):
-    active_jobs: int = 0
-    completed_jobs: int = 0
-    total_speed_human: str = "0 B/s"
-    disk_free_human: str = "128.4 GB"
-
-
-class JobListResponse(BaseModel):
-    total: int = 0
-    page: int = 1
-    page_size: int = 20
-    items: list[JobResponse] = Field(default_factory=list)
-
-
-class QueueStateResponse(BaseModel):
-    paused: bool = False
-    max_concurrent_jobs: int = 1
-    running_count: int = 0
-    pending_count: int = 0
-    items: list[JobResponse] = Field(default_factory=list)
-
-
-class QueueReorderRequest(BaseModel):
-    job_ids: list[str] = Field(min_length=1, max_length=100)
-
-
-class QueueBulkRequest(BaseModel):
-    job_ids: list[str] = Field(min_length=1, max_length=100)
-
-
-class QueueBulkActionRequest(QueueBulkRequest):
-    action: Literal["pause", "resume", "cancel", "archive"]
-
-
-class QueueBulkResponse(BaseModel):
-    action: str
-    requested: int = 0
-    affected: int = 0
-    skipped: list[str] = Field(default_factory=list)
-
-
-class HongguoMonitorConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool = False
-    auto_enqueue: bool = False
-    interval_seconds: int = Field(default=60, ge=30, le=86400)
-    scan_limit: int = Field(default=50, ge=1, le=50)
-    min_episode_count: int = Field(default=0, ge=0, le=10000)
-    max_auto_enqueue_per_scan: int = Field(default=20, ge=1, le=50)
-    include_keywords: list[str] = Field(default_factory=list, max_length=20)
-    exclude_keywords: list[str] = Field(default_factory=list, max_length=20)
-    author_keywords: list[str] = Field(default_factory=list, max_length=20)
-    quality: str = "1080p"
-    concurrency: int = Field(default=2, ge=1, le=12)
-    download_cover: bool = False
-    download_desc: bool = False
-
-
-class HongguoMonitorLog(BaseModel):
-    timestamp: str
-    level: Literal["info", "warning", "error"] = "info"
-    message: str
-    detected: int = 0
-    enqueued: int = 0
-
-
-class HongguoMonitorStatus(HongguoMonitorConfig):
-    license_context_status: Literal["READY", "REAUTH_REQUIRED"] = "REAUTH_REQUIRED"
-    baseline_initialized: bool = False
-    known_count: int = 0
-    last_scan_at: str = ""
-    last_success_at: str = ""
-    last_error: str = ""
-    last_detected_count: int = 0
-    total_detected_count: int = 0
-    total_enqueued_count: int = 0
-    next_scan_at: str = ""
-    recent_items: list[DiscoverItem] = Field(default_factory=list)
-    logs: list[HongguoMonitorLog] = Field(default_factory=list)
-
-

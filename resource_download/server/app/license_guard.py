@@ -183,7 +183,7 @@ async def require_active_device_license(
                 "entitlement_schema_version": 1,
                 "entitlements": {
                     "quota.daily_jobs": int(get_settings().vip_jobs_per_day),
-                    "job.max_concurrency": int(get_settings().max_concurrent_jobs),
+                    "job.max_concurrency": 5,
                 },
                 "license_context_source": "legacy_compat",
             }

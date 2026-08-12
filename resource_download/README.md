@@ -48,7 +48,7 @@ Desktop Client                           RD Server
 | [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md) | 历史架构决策记录（部分内容已由 ARCHITECTURE_BOUNDARY 覆盖） |
 | [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md) | 历史阶段进度与 backlog（V1.0 已完成） |
 | [`client/README.md`](./client/README.md) | 桌面客户端启动方式 |
-| [`docs/api.md`](./docs/api.md) | HTTP API 契约（含旧 /v1/jobs、/v1/files 标记） |
+| [`docs/api.md`](./docs/api.md) | HTTP API 契约（T46 已移除旧 /v1/jobs、/v1/files、/v1/automation 主链） |
 | [`docs/hongguo_setup.md`](./docs/hongguo_setup.md) / [`docs/fanqie_app_setup.md`](./docs/fanqie_app_setup.md) | 平台环境（服务端） |
 | [`docs/deployment.md`](./docs/deployment.md) | 生产部署 |
 | [`docs/release.md`](./docs/release.md) | 打包说明 |

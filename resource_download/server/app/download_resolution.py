@@ -1,6 +1,6 @@
 """Download Resolve and short-lived proxy tickets.
 
-The module deliberately contains no file-system or JobFile state.  A proxy
+The module deliberately contains no file-system or server download-record state.  A proxy
 ticket only retains the platform request context for a short time so that a
 client can retry an already-authorized stream.
 """
