@@ -310,6 +310,26 @@ ByteVC2 编码，只用于诊断，不作为通用播放器可播放下载。
 
 ---
 
+## POST /v1/resolve
+
+受 Device Proof + License 保护的下载解析接口。服务端完成平台私有解析、Entitlement、Quota 和 Idempotency，返回一个或多个 `DownloadDescriptor`；文件只由 Desktop Client 下载到本地。
+
+请求示例：
+
+```json
+{
+  "platform": "hongguo",
+  "resource_id": "series-or-episode-id",
+  "title": "示例",
+  "media_type": "video/mp4",
+  "suggested_filename": "示例.mp4",
+  "range": "all",
+  "options": {}
+}
+```
+
+响应包含 `descriptor` 和 `descriptors`。`download_mode` 为 `direct` 时使用短期上游 URL；为 `proxy` 时使用 `/v1/downloads/proxy/{ticket}`。Proxy 只流式转发，不写入 Server `outputs/`，不创建 JobFile。
+
 ## POST /v1/jobs
 
 > **[DEPRECATED / MIGRATION_REQUIRED]**

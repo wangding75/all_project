@@ -238,6 +238,7 @@ T42 IMPLEMENTATION MIGRATION PLAN 将基于本清单制定：
 ## 8. 连续迁移执行状态
 
 | Task | Status | Delivered |
+| T44 execution note | PASS | Client UI and native bridge now use the Client DownloadManager/SQLite path; legacy Server Job/File responsibilities remain deferred to later migration tasks |
 |------|--------|-----------|
 | T42 | PASS | DownloadDescriptor、受保护 `/v1/resolve`、短生命周期 Streaming Proxy ticket、Client SQLite/Repository/Download Manager 基础设施；旧 Job/File/Automation 暂保留 |
 | T43 | PASS | Client queue/concurrency, progress, pause/resume, retry, cancel, restart recovery, SQLite history, local file validation/index, Client Timer foundation and UI compatibility bridge |

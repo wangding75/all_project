@@ -513,8 +513,8 @@
       path = new URL(endpoint, state.apiBase).pathname;
     } catch (_) {}
     const verb = String(method || "GET").toUpperCase();
-    if (/^\/v1\/jobs(?:\/.*)?$/.test(path)) return true;
-    if (/^\/v1\/files(?:\/.*)?$/.test(path)) return true;
+    if (/^\/v1\/resolve$/.test(path)) return true;
+    if (/^\/v1\/downloads(?:\/.*)?$/.test(path)) return true;
     if ([
       "/v1/search",
       "/v1/detail",
@@ -682,6 +682,17 @@
     throw new Error("DESKTOP_DEVICE_IDENTITY_REQUIRED");
   }
 
+  async function clientMethod(method, ...args) {
+    if (!window.pywebview || !window.pywebview.api || typeof window.pywebview.api[method] !== "function") {
+      throw apiError("DESKTOP_DEVICE_IDENTITY_REQUIRED");
+    }
+    const result = await window.pywebview.api[method](...args);
+    if (result && result.ok === false) {
+      throw apiError(result.reason || result.detail || result.message || "CLIENT_REQUEST_FAILED", result.status || 0);
+    }
+    return result && result.data !== undefined ? result.data : result;
+  }
+
   async function deliverFileLocal(file, action = "download") {
     if (!file || !file.file_id) {
       toast("文件信息不完整，无法下载", "error");
@@ -689,6 +700,15 @@
     }
     const filename = file.name || file.title || file.file_id.split("/").pop() || "download.bin";
     try {
+      if (file.local_path || file.path) {
+        if (action === "play" || action === "folder") {
+          const opened = await clientMethod("open_local_file", file.file_id || file.task_id, action);
+          if (!opened || !opened.success) throw new Error((opened && opened.message) || "无法打开本机文件");
+        } else {
+          toast(`文件已在本机：${file.local_path || file.path}`, "success", 3500);
+        }
+        return { success: true, path: file.local_path || file.path };
+      }
       toast(`正在传输到本机：${filename}`, "info", 2500);
       if (window.pywebview && window.pywebview.api && window.pywebview.api.download_file) {
         const result = await window.pywebview.api.download_file(
@@ -1363,28 +1383,24 @@
     let skipped = 0;
     let failed = 0;
     try {
-      for (let offset = 0; offset < selected.length; offset += 100) {
-        const chunk = selected.slice(offset, offset + 100);
-        const response = await apiFetch("/v1/jobs/batch", {
-          method: "POST",
-          body: JSON.stringify({
-            items: chunk.map((row) => ({
-              platform: platformOf(row.content),
-              id: String(row.content.id),
-              range: "all",
-              options: {
-                title: displayTitle(row.content),
-                source: "batch_import",
-                original_input: row.input,
-              },
-            })),
-            queue_mode: "enqueue",
-            duplicate_policy: "skip_completed",
-          }),
-        });
-        created += (response.created || []).length;
-        skipped += (response.skipped || []).length;
-        failed += (response.errors || []).length;
+      for (const row of selected) {
+        try {
+          const response = await clientMethod(
+            "resolve_and_download",
+            platformOf(row.content),
+            String(row.content.id),
+            displayTitle(row.content),
+            "application/octet-stream",
+            "",
+            "all",
+            { title: displayTitle(row.content), source: "batch_import", original_input: row.input },
+            state.accessToken || "",
+            state.apiKey || ""
+          );
+          created += (response.tasks || []).length;
+        } catch (_) {
+          failed += 1;
+        }
       }
       toast(
         `批量入队完成：创建 ${created}，跳过 ${skipped}，失败 ${failed}`,
@@ -2320,7 +2336,6 @@
       state.selectedPlatform ||
       (state.platform !== "all" ? state.platform : "hongguo");
     const options = buildJobOptions();
-    const idempotencyKey = `rd-${Date.now()}-${window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
     // 带上标题，任务列表展示用
     if (state.currentDetail && state.currentDetail.title) {
       options.title = state.currentDetail.title;
@@ -2329,19 +2344,21 @@
       state.downloadSubmitting = true;
       if (elements.btnDownloadAll) elements.btnDownloadAll.disabled = true;
       if (elements.btnDownloadSelected) elements.btnDownloadSelected.disabled = true;
-      const res = await apiFetch("/v1/jobs", {
-        method: "POST",
-        headers: { "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify({
-          platform: jobPlatform,
-          id: state.currentDetail.id,
-          range: rangeSpec,
-          options,
-        }),
-      });
-
-      toast(`下载任务已创建：${res.job_id}`, "success");
-      if (res.job_id) state.watchedJobSuccess[res.job_id] = false;
+      const res = await clientMethod(
+        "resolve_and_download",
+        jobPlatform,
+        state.currentDetail.id,
+        state.currentDetail.title || "",
+        jobPlatform === "hongguo" ? "video/mp4" : "text/markdown; charset=utf-8",
+        "",
+        rangeSpec,
+        options,
+        state.accessToken || "",
+        state.apiKey || ""
+      );
+      const task = res.task || (res.tasks && res.tasks[0]);
+      toast(`下载任务已创建：${task ? task.job_id : "本地队列"}`, "success");
+      if (task && task.job_id) state.watchedJobSuccess[task.job_id] = false;
       switchPage("page-jobs");
     } catch (e) {
       if (handleProtectedFailure(e, "任务创建失败")) return;
@@ -2366,11 +2383,10 @@
   // 7. 动态任务列表与状态轮询
   async function refreshJobsPage() {
     try {
-      const [summary, jobsRes, queue] = await Promise.all([
-        apiFetch("/v1/jobs/summary"),
-        apiFetch("/v1/jobs?page=1&page_size=50"),
-        apiFetch("/v1/jobs/queue"),
-      ]);
+      const snapshot = await clientMethod("get_download_state");
+      const summary = snapshot.summary || {};
+      const jobsRes = { items: snapshot.items || [] };
+      const queue = snapshot.queue || {};
       state.queueState = queue;
 
       if (elements.statActiveJobs) elements.statActiveJobs.textContent = summary.active_jobs;
@@ -2457,18 +2473,31 @@
       button.disabled = true;
     });
     try {
-      const endpoint =
-        action === "retry" ? "/v1/jobs/queue/bulk/retry" : "/v1/jobs/queue/bulk";
-      const body =
-        action === "retry" ? { job_ids: jobIds } : { job_ids: jobIds, action };
-      const response = await apiFetch(endpoint, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      const skipped = (response.skipped || []).length;
+      let affected = 0;
+      const skipped = [];
+      if (action === "pause" || action === "resume" || action === "cancel" || action === "retry") {
+        for (const jobId of jobIds) {
+          try {
+            const method = action === "pause" ? "pause_download" : action === "resume" ? "resume_download" : action === "cancel" ? "cancel_download" : "retry_download";
+            await clientMethod(method, jobId);
+            affected += 1;
+          } catch (_) {
+            skipped.push(jobId);
+          }
+        }
+      } else if (action === "archive") {
+        for (const jobId of jobIds) {
+          try {
+            await clientMethod("archive_download", jobId);
+            affected += 1;
+          } catch (_) {
+            skipped.push(jobId);
+          }
+        }
+      }
       toast(
-        `批量${action === "pause" ? "暂停" : action === "resume" ? "继续" : action === "retry" ? "重试" : action === "cancel" ? "取消" : "清理"}完成：成功 ${response.affected || 0}，跳过 ${skipped}`,
-        skipped ? "warning" : "success",
+        `批量${action === "pause" ? "暂停" : action === "resume" ? "继续" : action === "retry" ? "重试" : action === "cancel" ? "取消" : "清理"}完成：成功 ${affected}，跳过 ${skipped.length}`,
+        skipped.length ? "warning" : "success",
         4500
       );
       state.jobsSelected.clear();
@@ -2555,7 +2584,7 @@
       if (btnCancel) {
         btnCancel.addEventListener("click", async () => {
           try {
-            await apiFetch(`/v1/jobs/${job.job_id}`, { method: "DELETE" });
+            await clientMethod("cancel_download", job.job_id);
             refreshJobsPage();
           } catch (err) {
             toast(`取消任务失败: ${err.message}`, "error");
@@ -2592,7 +2621,7 @@
       if (btnRetry) {
         btnRetry.addEventListener("click", async () => {
           try {
-            await apiFetch(`/v1/jobs/${job.job_id}/retry`, { method: "POST" });
+            await clientMethod("retry_download", job.job_id);
             toast("任务已重新加入队列", "success");
             refreshJobsPage();
           } catch (error) {
@@ -2619,10 +2648,7 @@
     if (index < 0 || target < 0 || target >= items.length) return;
     [items[index], items[target]] = [items[target], items[index]];
     try {
-      await apiFetch("/v1/jobs/queue/reorder", {
-        method: "POST",
-        body: JSON.stringify({ job_ids: items.map((item) => item.job_id) }),
-      });
+      await clientMethod("reorder_download_queue", items.map((item) => item.job_id));
       await refreshJobsPage();
     } catch (error) {
       toast(`调整队列失败：${error.message}`, "error");
@@ -2632,10 +2658,7 @@
   async function toggleQueuePaused() {
     const resume = !!(state.queueState && state.queueState.paused);
     try {
-      const result = await apiFetch(
-        `/v1/jobs/queue/${resume ? "resume" : "pause"}`,
-        { method: "POST" }
-      );
+      const result = await clientMethod(resume ? "resume_download_queue" : "pause_download_queue");
       toast(
         resume
           ? `已恢复 ${result.affected || 0} 个等待任务`
@@ -2660,10 +2683,10 @@
     }
   }
 
-  // 8. 加载与过滤本地媒体库 (/v1/files)
+  // 8. 加载与过滤本地媒体库（Client SQLite）
   async function loadLocalFiles() {
     try {
-      const data = await apiFetch("/v1/files");
+      const data = await clientMethod("list_local_files");
       state.libraryFiles = data.items || [];
       renderLibraryGrid();
     } catch (e) {
@@ -2772,20 +2795,12 @@
   async function loadLibraryThumbnail(file, card) {
     const image = card && card.querySelector(".media-thumbnail-image");
     const placeholder = card && card.querySelector(".media-placeholder");
-    if (!image) return;
-    try {
-      const headers = {};
-      if (state.accessToken) headers.Authorization = `Bearer ${state.accessToken}`;
-      else if (state.apiKey) headers["X-API-Key"] = state.apiKey;
-      const url =
-        `${state.apiBase}/v1/files/thumbnail?file_id=${encodeURIComponent(file.file_id)}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) return;
-      const blob = await response.blob();
-      image.src = URL.createObjectURL(blob);
-      image.hidden = false;
-      if (placeholder) placeholder.hidden = true;
-    } catch (_) {}
+    // Local files are intentionally not re-uploaded or routed through Server.
+    // Keep the existing thumbnail placeholder when the native file bridge is
+    // not able to expose a local image URL to the WebView.
+    void file;
+    void image;
+    void placeholder;
   }
 
   async function syncNativeDownloadDirectory() {
@@ -3412,22 +3427,28 @@
         elements.btnHomeAddQueue.disabled = true;
         elements.btnHomeAddQueue.textContent = "正在加入…";
         try {
-          const result = await apiFetch("/v1/jobs/batch", {
-            method: "POST",
-            body: JSON.stringify({
-              items: selected.map((item) => ({
-                platform: platformOf(item),
-                id: String(item.id),
-                range: "all",
-                options: { title: displayTitle(item) },
-              })),
-              queue_mode: "enqueue",
-              duplicate_policy: "skip_completed",
-            }),
-          });
-          const created = (result.created || []).length;
-          const skipped = (result.skipped || []).length;
-          const failed = (result.errors || []).length;
+          let created = 0;
+          let skipped = 0;
+          let failed = 0;
+          for (const item of selected) {
+            try {
+              const result = await clientMethod(
+                "resolve_and_download",
+                platformOf(item),
+                String(item.id),
+                displayTitle(item),
+                platformOf(item) === "hongguo" ? "video/mp4" : "text/markdown; charset=utf-8",
+                "",
+                "all",
+                { title: displayTitle(item) },
+                state.accessToken || "",
+                state.apiKey || ""
+              );
+              created += (result.tasks || []).length;
+            } catch (_) {
+              failed += 1;
+            }
+          }
           toast(
             `批量任务已处理：创建 ${created}，跳过 ${skipped}，失败 ${failed}`,
             failed ? "warning" : "success",

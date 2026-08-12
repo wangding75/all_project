@@ -355,6 +355,13 @@ class WindowApi:
     def retry_download(self, task_id: str) -> dict[str, object]:
         return {"ok": True, "task": self._download_manager.as_job(self._download_manager.retry(task_id))}
 
+    def archive_download(self, task_id: str) -> dict[str, object]:
+        task = self._download_manager.repository.get(task_id)
+        if task is None or task.status not in {"success", "failed", "cancelled"}:
+            return {"ok": False, "reason": "CLIENT_TASK_NOT_TERMINAL"}
+        self._download_manager.repository.remove(task_id)
+        return {"ok": True, "task_id": task_id}
+
     def pause_download_queue(self) -> dict[str, object]:
         return self._download_manager.pause_queue()
 
@@ -543,6 +550,10 @@ class WindowApi:
 
     def open_local_file(self, file_id: str, action: str = "play") -> dict[str, object]:
         path = self._local_files.get(file_id)
+        if path is None:
+            task = self._download_manager.repository.get(file_id)
+            if task is not None:
+                path = Path(task.local_path)
         if path is None or not path.is_file():
             return {"success": False, "message": "本机文件不存在，请先下载"}
         try:

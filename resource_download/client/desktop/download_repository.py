@@ -154,8 +154,18 @@ class DownloadRepository:
                     "media_type": task.descriptor.media_type,
                     "platform": task.descriptor.platform,
                     "size_bytes": path.stat().st_size if exists else task.total_bytes,
+                    "size_human": self._size_human(path.stat().st_size if exists else task.total_bytes),
                     "exists": exists,
                     "created_at": task.completed_at or task.created_at,
                 }
             )
         return result
+
+    @staticmethod
+    def _size_human(size: int) -> str:
+        value = float(max(0, int(size)))
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if value < 1024 or unit == "TB":
+                return f"{value:.1f} {unit}"
+            value /= 1024
+        return "0.0 B"
