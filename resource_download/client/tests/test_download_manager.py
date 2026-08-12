@@ -112,3 +112,39 @@ def test_manager_supports_proxy_descriptor_and_queue_controls(tmp_path):
     assert manager.wait_for(second.task_id, timeout=10).status == "success"
     manager.shutdown()
     server.shutdown()
+
+
+def test_manager_exposes_local_file_index_for_completed_download(tmp_path):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    repo = DownloadRepository(tmp_path / "client.sqlite3")
+    manager = DownloadManager(repo, tmp_path / "downloads", max_concurrent=1)
+    task = manager.add_descriptor(
+        DownloadDescriptor(
+            platform="fixture",
+            resource_id="local-file-index",
+            title="Local file index",
+            suggested_filename="local.bin",
+            download_mode="direct",
+            url=f"http://127.0.0.1:{server.server_port}/local",
+        )
+    )
+    result = manager.wait_for(task.task_id, timeout=10)
+    assert result is not None and result.status == "success"
+    files = manager.local_files()
+    assert len(files) == 1
+    assert files[0]["file_id"] == task.task_id
+    assert files[0]["task_id"] == task.task_id
+    assert files[0]["title"] == "Local file index"
+    assert files[0]["name"] == "local.bin"
+    assert files[0]["path"] == result.local_path
+    assert files[0]["local_path"] == result.local_path
+    assert files[0]["media_type"] == "application/octet-stream"
+    assert files[0]["platform"] == "fixture"
+    assert files[0]["size_bytes"] == len(PAYLOAD)
+    assert files[0]["size_human"] == "29.0 KB"
+    assert files[0]["exists"] is True
+    assert files[0]["created_at"] == result.completed_at
+    manager.shutdown()
+    server.shutdown()

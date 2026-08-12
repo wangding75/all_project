@@ -245,5 +245,5 @@ T42 IMPLEMENTATION MIGRATION PLAN 将基于本清单制定：
 | T43 | PASS | Client queue/concurrency, progress, pause/resume, retry, cancel, restart recovery, SQLite history, local file validation/index, Client Timer foundation and UI compatibility bridge |
 | T44 | PENDING | — |
 | T45 | PENDING | — |
-| T46 | PASS | Server old Job/File/Automation responsibilities removed; Client Resolve/DownloadManager/SQLite chain retained; Device Proof, License Gateway, Entitlement, Quota, Idempotency, Fail-Closed, and no-legacy-route assertions passed. Commit: pending in this task. |
-| T47 | PENDING | — |
+| T46 | PASS | Server old Job/File/Automation responsibilities removed; Client Resolve/DownloadManager/SQLite chain retained; Device Proof, License Gateway, Entitlement, Quota, Idempotency, Fail-Closed, and no-legacy-route assertions passed. Commit: `2e264870fffb4791fea892fb41bb69df32fda766`. |
+| T47 | BLOCKED | New architecture release gate, real License/PostgreSQL/RD/Device Proof, Fanqie Resolve→Client DownloadManager→Client SQLite/History, Frida compatibility, build and full quality gate passed. Hongguo real Resolve/Download remained blocked by upstream `101000 service error` after bounded recovery retries; final receipt: `D:\githubtmp\T47_RD_SERVER_CLIENT_MIGRATION_REPORT.md`. |

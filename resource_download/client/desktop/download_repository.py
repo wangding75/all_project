@@ -147,7 +147,7 @@ class DownloadRepository:
                 {
                     "file_id": task.task_id,
                     "task_id": task.task_id,
-                    "title": task.title or task.descriptor.title or path.name,
+                    "title": task.descriptor.title or path.name,
                     "name": path.name,
                     "path": str(path),
                     "local_path": str(path),
