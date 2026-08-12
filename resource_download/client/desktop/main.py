@@ -49,6 +49,7 @@ from client.desktop.http_client import DesktopHttpClient, DesktopHttpError, is_p
 from client.desktop.download_manager import DownloadManager
 from client.desktop.download_models import DownloadDescriptor
 from client.desktop.download_repository import DownloadRepository
+from client.desktop.discovery_timer import ClientDiscoveryTimer
 
 # 客户端模式：thin（默认）| embedded（本机嵌服务，仅开发）
 CLIENT_MODE = os.environ.get("CLIENT_MODE", "thin").strip().lower()
@@ -112,6 +113,8 @@ class WindowApi:
         self.api_base = api_base.rstrip("/")
         self._download_dir = Path.home() / "Downloads" / "ResourceDownloader"
         self._local_files: dict[str, Path] = {}
+        self._last_access_token = ""
+        self._last_api_key = ""
         local_app_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / ".resource-downloader"))
         self._preferences_path = local_app_data / "ResourceDownloader" / "client.json"
         self._updates_dir = local_app_data / "ResourceDownloader" / "updates"
@@ -140,6 +143,50 @@ class WindowApi:
             max_concurrent=3,
             transport=self._build_download_transport(),
         )
+        self._discovery_timer = ClientDiscoveryTimer(
+            self._discovery_request,
+            self._discovery_resolve,
+            local_app_data / "ResourceDownloader",
+        )
+
+    def _discovery_request(
+        self,
+        request_target: str,
+        access_token: str,
+        api_key: str,
+    ) -> dict[str, object]:
+        result = self.api_request(
+            "GET",
+            request_target,
+            access_token=access_token,
+            api_key=api_key,
+        )
+        if not result.get("ok"):
+            raise DesktopHttpError(
+                int(result.get("status") or 503),
+                str(result.get("reason") or result.get("detail") or "CLIENT_DISCOVERY_REQUEST_FAILED"),
+            )
+        return dict(result.get("data") or {})
+
+    def _discovery_resolve(
+        self,
+        item: dict[str, object],
+        access_token: str,
+        api_key: str,
+    ) -> dict[str, object]:
+        platform = str(item.get("platform") or "hongguo")
+        media_type = "video/mp4" if platform == "hongguo" else "text/markdown; charset=utf-8"
+        return self.resolve_and_download(
+            platform,
+            str(item.get("id") or ""),
+            str(item.get("title") or ""),
+            media_type,
+            "",
+            "all",
+            {"source": "client_discovery_timer", "title": str(item.get("title") or "")},
+            access_token,
+            api_key,
+        )
 
     def _persist_preferences(self, *, remember_directory: bool) -> None:
         self._preferences_path.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +214,8 @@ class WindowApi:
                 self.is_maximized = True
 
     def close(self) -> None:
+        self._discovery_timer.shutdown()
+        self._download_manager.shutdown(wait=False)
         if self._window:
             self._window.destroy()
         print("[EXIT] 通过标题栏关闭按钮触发关闭程序。")
@@ -236,6 +285,8 @@ class WindowApi:
         idempotency_key: str = "",
     ) -> dict[str, object]:
         """Native bridge for UI API calls; protected endpoints are signed centrally."""
+        self._last_access_token = str(access_token or "")
+        self._last_api_key = str(api_key or "")
         try:
             if not isinstance(body, str):
                 raise ValueError("desktop API body must be serialized JSON text")
@@ -373,6 +424,31 @@ class WindowApi:
 
     def validate_local_files(self) -> dict[str, object]:
         return self._download_manager.validate_local_files()
+
+    def get_discovery_timer(self) -> dict[str, object]:
+        self._discovery_timer.set_credentials(
+            self._last_access_token,
+            self._last_api_key,
+        )
+        return self._discovery_timer.status()
+
+    def configure_discovery_timer(
+        self,
+        settings: dict[str, object],
+        access_token: str = "",
+        api_key: str = "",
+    ) -> dict[str, object]:
+        self._last_access_token = str(access_token or "")
+        self._last_api_key = str(api_key or "")
+        return self._discovery_timer.configure(settings, access_token, api_key)
+
+    def trigger_discovery_timer(
+        self,
+        access_token: str = "",
+        api_key: str = "",
+    ) -> dict[str, object]:
+        self._discovery_timer.set_credentials(access_token, api_key)
+        return self._discovery_timer.trigger_now()
 
     def redeem_license(self, card_code: str, access_token: str = "") -> dict[str, object]:
         """Create the Activation Proof and its body in one native, non-browser path."""
@@ -687,6 +763,8 @@ def main() -> None:
     api.bind(window)
 
     def on_closed() -> None:
+        api._discovery_timer.shutdown()
+        api._download_manager.shutdown(wait=False)
         print("[EXIT] 窗口关闭。")
         os._exit(0)
 

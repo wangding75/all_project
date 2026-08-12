@@ -161,7 +161,12 @@ search/detail、Job list/status/files、register/login、health 与 admin 不因
 ## T27 business authorization note
 
 All ordinary business endpoints (content discovery, search/detail, jobs, queue,
-files, and automation) require Device Proof and an ACTIVE License Context.
+files, and legacy automation controls) require Device Proof and an ACTIVE License Context.
+
+Client Discovery Timer uses the protected `GET /v1/discover` endpoint for hot/new
+polling. It persists timer state locally, applies retry/backoff locally, and
+optionally sends newly discovered items through Client `POST /v1/resolve`.
+Server Automation Scheduler is not part of the new Desktop Client main chain.
 Legacy register/login/me/redeem endpoints remain deprecated compatibility APIs;
 Desktop business requests do not require User/JWT authentication. API keys do
 not bypass the License Guard.

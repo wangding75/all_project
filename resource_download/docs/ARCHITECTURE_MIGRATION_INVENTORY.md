@@ -239,6 +239,7 @@ T42 IMPLEMENTATION MIGRATION PLAN 将基于本清单制定：
 
 | Task | Status | Delivered |
 | T44 execution note | PASS | Client UI and native bridge now use the Client DownloadManager/SQLite path; legacy Server Job/File responsibilities remain deferred to later migration tasks |
+| T45 execution note | PASS | Client Discovery Timer now owns persisted hot/new polling, non-reentrant backoff, local baseline/deduplication and optional Client Resolve auto-enqueue; Server Automation Scheduler is no longer used by Desktop UI |
 |------|--------|-----------|
 | T42 | PASS | DownloadDescriptor、受保护 `/v1/resolve`、短生命周期 Streaming Proxy ticket、Client SQLite/Repository/Download Manager 基础设施；旧 Job/File/Automation 暂保留 |
 | T43 | PASS | Client queue/concurrency, progress, pause/resume, retry, cancel, restart recovery, SQLite history, local file validation/index, Client Timer foundation and UI compatibility bridge |

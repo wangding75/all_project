@@ -51,8 +51,7 @@ raw body 的 SHA-256、时间戳和新 nonce。HTTP retry 会重新生成 Proof�
 - `POST /v1/jobs/batch`
 - `POST /v1/jobs/queue/bulk/retry`
 - `POST /v1/jobs/{job_id}/retry`
-- `PUT /v1/automation/hongguo-new`
-- `POST /v1/automation/hongguo-new/scan`
+- Client Discovery Timer：本地持久化 hot/new 轮询状态、非重入、错误 backoff 和可选自动入队；只调用受保护的 `/v1/discover`，不依赖 Server Scheduler。
 
 客户端只知道 RD `API_BASE`，不会直接调用 License Service，也不包含 RD Service
 Credential、License Service Credential、私钥、Admin API 或 Server SDK。

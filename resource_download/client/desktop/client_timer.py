@@ -99,6 +99,20 @@ class ClientTimer:
             self._in_flight.release()
         return True
 
+    @property
+    def running(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
+
+    def _next_delay(self) -> float:
+        if self.state.error_count <= 0:
+            return float(self.state.interval_seconds)
+        return float(
+            min(
+                self.max_backoff_seconds,
+                self.state.interval_seconds * (2 ** min(self.state.error_count, 8)),
+            )
+        )
+
     def poll_once(self) -> bool:
         if not self._in_flight.acquire(blocking=False):
             return False
@@ -134,9 +148,8 @@ class ClientTimer:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            self._wake.wait(timeout=self.state.interval_seconds)
+            self._wake.wait(timeout=self._next_delay())
             self._wake.clear()
             if self._stop.is_set() or not self.state.enabled:
                 continue
             self.poll_once()
-

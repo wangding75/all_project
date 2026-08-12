@@ -2902,7 +2902,7 @@
 
   async function loadHongguoMonitor() {
     try {
-      renderHongguoMonitor(await apiFetch("/v1/automation/hongguo-new"));
+      renderHongguoMonitor(await clientMethod("get_discovery_timer"));
     } catch (error) {
       if (elements.settingHgMonitorStatus) {
         elements.settingHgMonitorStatus.textContent = `无法读取上新策略：${error.message}`;
@@ -2927,12 +2927,13 @@
         .map((value) => value.trim())
         .filter(Boolean)
         .slice(0, 20);
-    const status = await apiFetch("/v1/automation/hongguo-new", {
-      method: "PUT",
-      body: JSON.stringify({
+    const status = await clientMethod(
+      "configure_discovery_timer",
+      {
         enabled: !!elements.settingHgMonitorEnabled.checked,
         auto_enqueue: !!elements.settingHgMonitorAutoQueue.checked,
         interval_seconds: interval,
+        limit,
         scan_limit: limit,
         min_episode_count: Math.min(
           10000,
@@ -2945,12 +2946,10 @@
         include_keywords: parseKeywords(elements.settingHgMonitorInclude),
         exclude_keywords: parseKeywords(elements.settingHgMonitorExclude),
         author_keywords: parseKeywords(elements.settingHgMonitorAuthors),
-        quality: "1080p",
-        concurrency: state.prefs.concurrency || 2,
-        download_cover: !!state.prefs.downloadCover,
-        download_desc: !!state.prefs.downloadDesc,
-      }),
-    });
+      },
+      state.accessToken || "",
+      state.apiKey || ""
+    );
     renderHongguoMonitor(status);
   }
 
@@ -2961,10 +2960,11 @@
     try {
       await saveHongguoMonitor();
       const before = !!(state.hongguoMonitor && state.hongguoMonitor.baseline_initialized);
-      const status = await apiFetch("/v1/automation/hongguo-new/scan", {
-        method: "POST",
-        timeoutMs: 90000,
-      });
+      const status = await clientMethod(
+        "trigger_discovery_timer",
+        state.accessToken || "",
+        state.apiKey || ""
+      );
       renderHongguoMonitor(status);
       if (!before && status.baseline_initialized) {
         toast("当前红果上新已建立为基线，后续新增资源才会触发自动入队", "success", 5000);
