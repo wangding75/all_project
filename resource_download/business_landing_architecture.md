@@ -1,15 +1,20 @@
 # 资源下载器全局商业化落地设计规范（中继网关/订阅卡密版）
 
-> **⚠️ 本文为商业化阶段规划蓝图，尚未实施编码。**
+> **⚠️ [Historical / Legacy Evidence]**
 >
-> 对应迭代：**POST_MVP_PLAN 阶段 D**。  
-> **阶段 D 技术切片**以 [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) 为准。  
-> **D-4+D-3 完成之后的商业产品全面开发**以 [`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md)（E0～E6）为准。  
-> 本文保留业务总览、表结构灵感与方案 B 鉴权示意。
+> **本文为 D 阶段商业化规划历史文档，保留作为开发证据。**
 >
-> 架构决策见 [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md)；当前任务见 [`POST_MVP_PLAN.md`](./POST_MVP_PLAN.md)。
+> **从 2026-08-12 起，[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md) 为 RD 仅有架构权威文件（NORMATIVE / FROZEN）。**  
+> 本文与 ARCHITECTURE_BOUNDARY.md 冲突时，以 ARCHITECTURE_BOUNDARY.md 为准。
 >
-> 当前生产代码仍为 **X-API-Key**；`POST /v1/auth/redeem` 为 Stub。阶段 D 编码前不得在 UI 假装 VIP 已可用。
+> 本文中的 User/JWT/CardKey/VIP/JobManager/Automation 架构为**历史实现上下文**：
+> - `User` 表和 `vip_expires_at`：**Legacy / Historical** — 商业授权已迁 License Service；`vip_expires_at` 不再是授权事实源
+> - `CardKey` 表：**Legacy / Historical** — 新 License Key 由 License Service 管理
+> - `JWT` 鉴权：**Legacy / Historical** — 当前 Desktop 业务主链路使用 Device Proof V3
+> - `JobManager` 服务端下载任务：**IMPLEMENTATION_MIGRATION_REQUIRED** — 目标由 Client Download Manager 承担
+> - `Automation Scheduler`：**IMPLEMENTATION_MIGRATION_REQUIRED** — 目标由 Client Timer 驱动
+>
+> **不得将本文描述的旧架构当作当前目标架构。**
 
 本规范详细定义了资源下载器向个人商业化过渡的系统架构、数据库实体、基于 **方案 B (路由级依赖注入)** 的统一鉴权方案，以及设备层（Redroid）部署规范。
 

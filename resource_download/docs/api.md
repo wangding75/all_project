@@ -4,6 +4,16 @@ Base URL: `http://127.0.0.1:8000`
 
 > 契约以本文件 + 运行中的 OpenAPI（`/docs`）为准。
 
+> **[T41 2026-08-12] 架构基线冻结。**  
+> **权威架构文件：[`../docs/ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**  
+>
+> API 分类方针：
+> - **KEEP_SERVER**：health / search / detail / discover / license / quota — 长期属于服务端
+> - **REFACTOR_SERVER**：Download Resolve / Streaming Proxy — 目标形态，待实现
+> - **DEPRECATE_API**：`/v1/jobs`、`/v1/files`、`/v1/automation/*` — 目标由 Client 承担，本轮不删除
+>
+> `DEPRECATED` 接口在迁移期可以暂时存在，必须标记 `DEPRECATED / MIGRATION_REQUIRED`。
+
 ## RD Desktop Client cutover：Device Proof V3
 
 正式 Desktop Client 使用 License Service `LS-DEVICE-V3`，通过 RD Server
@@ -302,6 +312,11 @@ ByteVC2 编码，只用于诊断，不作为通用播放器可播放下载。
 
 ## POST /v1/jobs
 
+> **[DEPRECATED / MIGRATION_REQUIRED]**  
+> 当前实现由服务端创建和管理 Download Job。根据 [`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md) 架构边界，
+> **服务端不应持久化 Download Job**；目标由 Desktop Client DownloadManager 承担。  
+> 本 API 在迁移期保留，待 Client Download Manager 建立后按计划废弃。
+
 放行条件为：RD User/JWT 身份、Device License `ACTIVE`、RD Quota 通过。License
 状态 `INACTIVE` 返回 **403**，License Service 不可用/超时/非 2xx 返回 **503**；
 任何情况下都不会回退到 `vip_expires_at`、CardKey 或 API Key bypass。
@@ -367,6 +382,12 @@ POST /v1/jobs/{job_id}/retry
 
 ## 红果上新识别与自动入队
 
+> **[DEPRECATED / MIGRATION_REQUIRED]** — Server Automation Scheduler  
+> 根据 [`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md) 架构边界，  
+> **RD Server 不负责 Automation Scheduler、自动追更、定时热榜、定时上新。**  
+> 目标模式：Client Timer → RD API → 实时获取 → Client。  
+> 本 API 组在迁移期保留，待 Client Timer 建立后标记退出服务端长期职责。
+
 ```http
 GET  /v1/automation/hongguo-new
 PUT  /v1/automation/hongguo-new
@@ -416,11 +437,18 @@ POST /v1/automation/hongguo-new/scan
 
 ## GET /v1/files
 
+> **[DEPRECATED / MIGRATION_REQUIRED]**  
+> 服务端不应有文件库。根据 [`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md) 架构边界，
+> **文件只属于 Desktop Client 本地**。本 API 在迁移期保留。
+
 本地产物列表（UI 资源库用）。递归扫描 `outputs/` 目录下的 `.mp4`, `.txt`, `.m4a` 文件。
 
 ---
 
 ## GET /v1/files/{file_id}
+
+> **[DEPRECATED / MIGRATION_REQUIRED]**  
+> 目标文件只在 Client 本地；服务端不应永久保存下载文件。本 API 在迁移期保留。
 
 **契约（E2E 依赖）**：下载产物二进制。  
 `file_id` 为 job 返回的相对路径（支持带 `/` 路径，如 `job_id/video.mp4`）。

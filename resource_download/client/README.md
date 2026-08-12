@@ -1,15 +1,27 @@
-# client — 瘦客户端（方案 2）
+# client — Desktop 客户端（方案 2）
 
-**职责**：产品壳。登录 / 激活 / VIP、连中转服务端下载、以后排行榜 / 热榜 / 上新等纯客户端功能。
+> **[T41 2026-08-12] 架构基线冻结。**  
+> **权威架构文件：[`../docs/ARCHITECTURE_BOUNDARY.md`](../docs/ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**
+
+**责任**：完整本地下载产品。包括：
+
+- 登录 / 激活 / VIP、连中转服务端下载
+- **DownloadTask / 下载队列 / 并发控制 / 进度 / 暂停 / 恢复 / 重试 / 断点续传**
+- **本地文件存储 / 文件命名 / 下载目录管理**
+- **本地 SQLite / 下载历史 / 本地文件索引**
+- **Client Timer / 定时刷新 / 热榜轮询 / 上新轮询**（代替 Server Automation）
+- 以后排行榜/热榜/上新等纯产品功能
 
 **禁止**：平台适配、Frida、签名解密、`vendor`、本机模拟器业务逻辑。  
-边界见仓库根目录 [`DEVELOPMENT_PLAN.md`](../DEVELOPMENT_PLAN.md) §0.1 冻结约定。
+边界见仓库根目录 [`docs/ARCHITECTURE_BOUNDARY.md`](../docs/ARCHITECTURE_BOUNDARY.md) （覆盖旧 DEVELOPMENT_PLAN.md §0.1）。
+
+> **自动下载端点状态：[DEPRECATED / MIGRATION_REQUIRED]**  
+> `PUT /v1/automation/hongguo-new` 和 `POST /v1/automation/hongguo-new/scan`  
+> 目标由 Client Timer 驱动，而非 Server Automation Scheduler。
 
 ## Device Proof V3（正式桌面路径）
 
 Windows Desktop Client 使用 License Service 固定的 `LS-DEVICE-V3` 和 rc4
-Python helper，当前算法为 `ED25519`。首次启动生成一对设备密钥；
-`device_id` 始终由 32-byte raw public key 的 SHA-256 派生为
 `dev_<64 lowercase hex>`，不会使用 UUID、MAC、MachineGuid、用户名或硬盘序列号。
 
 private key 只保存在当前 Windows 用户的 DPAPI 安全存储中：

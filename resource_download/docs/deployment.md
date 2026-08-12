@@ -9,6 +9,26 @@
 > `docs/release_package_deployment.md` and
 > `docs/release_package_rollback.md`.
 
+> **[T41 2026-08-12] 架构基线冻结。**  
+> **权威架构文件：[`ARCHITECTURE_BOUNDARY.md`](./ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**  
+>
+> **Server Runtime 启动前置确认**（参见 ARCHITECTURE_BOUNDARY.md §14）：  
+> 1. ADB 可用  
+> 2. 存在一台可用 Android Device  
+> 3. Android Boot Completed  
+> 4. Fanqie 已安装（com.dragon.read）  
+> 5. Hongguo 已安装（com.phoenix.read）  
+> 6. Frida / Runtime 基础能力存在  
+> 7. RD Control Database 可用  
+> 8. License Service 可访问  
+>
+> **历史固定端口 7555 / 16384 不得写成长期设备身份；ADB Port 可随模拟器重启变化。**  
+> **[Historical Evidence]：7555 / 16384 为早期开发备案记录，不得作为生产设备身份使用。**
+>
+> **`data/outputs/` 下载目录状态：[IMPLEMENTATION_MIGRATION_REQUIRED]**  
+> 当前服务端仍将下载文件落盘至 `data/outputs/`。根据架构边界，  
+> **目标文件只落在 Desktop Client 本地**；待 T42 迁移计划执行后消除服务端落盘路径。
+
 **版本号**: `1.0.0`  
 **适用范围**: Windows 单机桌面应用与本地中转服务端部署  
 **编写时间**: 2026-07-24  

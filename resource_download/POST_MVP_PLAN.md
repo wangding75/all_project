@@ -1,21 +1,28 @@
 # 阶段进度与 backlog（Post-MVP）
 
+> **[T41 2026-08-12] 架构基线已冻结。**  
+> **权威架构文档：[`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md)（NORMATIVE / FROZEN）**  
+> 本文档与 ARCHITECTURE_BOUNDARY.md 冲突时，以 ARCHITECTURE_BOUNDARY.md 为准。  
+> Server 下载 Job、Server Automation Scheduler、Server 文件库等条目统一标记为  
+> `IMPLEMENTATION_MIGRATION_REQUIRED`，详见 [`docs/ARCHITECTURE_MIGRATION_INVENTORY.md`](./docs/ARCHITECTURE_MIGRATION_INVENTORY.md)。
+
 > **文档层级**（勿与其它文档抢「唯一权威」）:
 >
 > | 文档 | 职责 |
 > |------|------|
-> | [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md) | **架构决策**（方案 2、非目标、API 契约原则）— 稳定少改 |
+> | [`docs/ARCHITECTURE_BOUNDARY.md`](./docs/ARCHITECTURE_BOUNDARY.md) | **⭐ 权威架构边界（NORMATIVE / FROZEN）** |
+> | [`DEVELOPMENT_PLAN.md`](./DEVELOPMENT_PLAN.md) | **历史架构决策**（方案 2、非目标、API 契约原则）— 已向 ARCHITECTURE_BOUNDARY 对齐 |
 > | **本文 `POST_MVP_PLAN.md`** | **阶段进度总览 + 剩余 backlog** — 随评审更新 |
 > | [`DEV_ROADMAP.md`](./DEV_ROADMAP.md) | **历史执行记录**（MVP-H/F 已完成任务归档） |
 > | [`docs/HANDOFF.md`](./docs/HANDOFF.md) | **逆向/运维知识**（签名、解密、设备坑）— 不写工程排期 |
 > | [`docs/release.md`](./docs/release.md) / [`docs/deployment.md`](./docs/deployment.md) | **打包与生产部署** |
 > | [`docs/release_gate.md`](./docs/release_gate.md) | **商业 V1.0 发版门禁 DoD** |
-> | [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | **阶段 D 技术底座**（D-0～D-4 全部完成 ✅） |
-> | [`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) | **商业产品 V1.0**（E0～E6 全部完成 ✅） |
-> | [`business_landing_architecture.md`](./business_landing_architecture.md) | **商业化蓝图总览** |
-> | [`代码质量修正计划任务书.md`](./代码质量修正计划任务书.md) | **CQ-01～06** 范围与验收（实施已完成） |
+> | [`docs/STAGE_D_PLAN.md`](./docs/STAGE_D_PLAN.md) | **[Historical] 阶段 D 技术底座**（D-0～D-4 全部完成 ✅） |
+> | [`docs/COMMERCIAL_V1_PLAN.md`](./docs/COMMERCIAL_V1_PLAN.md) | **[Historical] 商业产品 V1.0**（E0～E6 全部完成 ✅） |
+> | [`business_landing_architecture.md`](./business_landing_architecture.md) | **[Historical] 商业化蓝图总览**（旧 User/JWT/VIP 架构；以 ARCHITECTURE_BOUNDARY 为准） |
+> | [`docs/ARCHITECTURE_MIGRATION_INVENTORY.md`](./docs/ARCHITECTURE_MIGRATION_INVENTORY.md) | **代码迁移清单（T41 生成）** |
 >
-> **修订**: 2026-07-27（v2.0 — 对齐代码 `1.0.0` 完成态；主线归档，仅保留剩余项）  
+> **修订**: 2026-07-27（v2.0）；2026-08-12（T41 对齐架构基线）  
 > **代码版本**: `1.0.0`（`pyproject.toml` / `server/app/version.py`）
 
 ---
@@ -170,8 +177,10 @@ docs/sign_pool.md       ✅ 签名池
 
 | 债项 | 当前状态 | 何时还 |
 |------|----------|--------|
-| 进程内 `JobManager` | 单机可接受 | V1.1+ / Celery |
-| JSON Job 文件 | ✅ 恢复 + 原子写入 + 中断写回 | 可选迁 SQLite |
+| 进程内 `JobManager` | 单机可接受 | **IMPLEMENTATION_MIGRATION_REQUIRED**：目标由 Client Download Manager 承担 |
+| JSON Job 文件 | ✅ 恢复 + 原子写入 + 中断写回 | **IMPLEMENTATION_MIGRATION_REQUIRED**：Job 持久化目标迁 Client SQLite |
+| Server Automation Scheduler | 当前存在 `server/app/automation/` | **IMPLEMENTATION_MIGRATION_REQUIRED**：目标由 Client Timer 驱动 |
+| Server `/v1/files` 文件 API | 当前存在 | **DEPRECATE_API**：目标文件只在 Client 本地 |
 | 单并发 Frida | 有签名池抽象；本机仍受设备限制 | 扩池 + 运维 |
 | 全局 API Key | dev/运维旁路保留 | 生产用 dual/jwt_only |
 | 单元测试 | ✅ auth/quota/isolation/pool/CQ 等 | 持续补强 |
@@ -222,3 +231,4 @@ docs/sign_pool.md       ✅ 签名池
 | 2026-07-20 | v1.4 | D-0 落地 |
 | 2026-07-20 | v1.5 | D-1/D-2 完成态；新增 COMMERCIAL_V1_PLAN；明确 D-4→D-3→阶段 E |
 | 2026-07-27 | **v2.0** | 对齐 `1.0.0`：D-3/E0–E6/CQ 全部 ✅；本文改为进度总览 + 剩余 backlog；取消「D-3 待编码」等过期表述 |
+| 2026-08-12 | **v2.1** | [T41] 对齐 ARCHITECTURE_BOUNDARY.md：标记 Server Job/Automation/FileAPI 为 IMPLEMENTATION_MIGRATION_REQUIRED；更新文档层级表；添加架构基线冻结说明 |
