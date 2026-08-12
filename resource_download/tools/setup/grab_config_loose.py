@@ -11,7 +11,9 @@ from urllib.parse import parse_qsl, urlparse
 import frida
 
 ADB = r"D:\install\Netease\MuMu\nx_main\adb.exe"
-DEV = os.environ.get("ADB_DEVICE", "127.0.0.1:7555")
+from rd_device import resolve_device
+
+DEV = resolve_device()
 FRIDA_HOST = "127.0.0.1:27042"
 PKG = "com.phoenix.read"
 OUT = Path(__file__).resolve().parents[2] / "data" / "config" / "hongguo_config.json"

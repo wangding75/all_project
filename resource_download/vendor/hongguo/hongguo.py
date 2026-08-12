@@ -84,11 +84,17 @@ CFG_PATH = os.path.join(REPO_ROOT, "data", "config", "hongguo_config.json")
 CFG = json.load(open(CFG_PATH, encoding="utf-8"))
 # ADB 路径与设备可用环境变量覆盖(容器/Linux部署用); 默认本机 MuMu
 ADB = os.environ.get("ADB", r"D:\Program Files\Netease\MuMu Player 12\shell\adb.exe")
-DEV = os.environ.get("ADB_DEVICE", "127.0.0.1:16384")
+DEV = os.environ.get("ADB_DEVICE", "")
 FRIDA_HOST = os.environ.get("FRIDA_HOST", "127.0.0.1:27042")
 HOST = CFG["api_host"]
 OUT_DIR = os.path.join(HERE, "downloads")
 _pool = devicepool.load_pool(CFG["base_query"])   # 设备指纹池(DEVICE_POOL_SIZE>0 启用; 否则 None=单设备)
+
+
+def set_adb_device(serial):
+    """Update the target after MuMu endpoint rediscovery."""
+    global DEV
+    DEV = str(serial).strip()
 
 
 def rotate_device():
@@ -105,13 +111,42 @@ IMAGE_SHRINK = ("W3siaW1hZ2VfdHlwZSI6MywiaW1hZ2Vfd2lkdGgiOjkwMCwic2hyaW5rX3R5cGU
 class Oracle:
     """Frida 签名预言机"""
     def __init__(self):
-        pid = int(subprocess.run([ADB, "-s", DEV, "shell", "pidof", "com.phoenix.read"],
-                                 capture_output=True, text=True).stdout.split()[0])
+        # Hongguo rotates auxiliary/main PIDs during startup. Enumerate the
+        # current set and attach a live PID instead of pinning a stale result.
+        pids: list[int] = []
+        for _ in range(8):
+            result = subprocess.run(
+                [ADB, "-s", DEV, "shell", "pidof", "com.phoenix.read"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            pids = [int(value) for value in (result.stdout or "").split() if value.isdigit()]
+            if pids:
+                break
+            time.sleep(0.25)
+        if not pids:
+            raise RuntimeError("com.phoenix.read has no running PID")
         dev = frida.get_device_manager().add_remote_device(FRIDA_HOST)
-        self.session = dev.attach(pid)
-        self.script = self.session.create_script(
-            open(os.path.join(HERE, "frida", "oracle.js"), encoding="utf-8").read())
-        self.script.load()
+        source = open(os.path.join(HERE, "frida", "oracle.js"), encoding="utf-8").read()
+        last_error: Exception | None = None
+        for pid in pids:
+            try:
+                self.session = dev.attach(pid)
+                self.script = self.session.create_script(source)
+                self.script.load()
+                return
+            except Exception as exc:
+                last_error = exc
+                session = getattr(self, "session", None)
+                if session is not None:
+                    try:
+                        session.detach()
+                    except Exception:
+                        pass
+                time.sleep(0.2)
+        raise RuntimeError(f"unable to attach a live com.phoenix.read PID: {last_error}") from last_error
 
     def sign(self, url, headers):
         return self.script.exports_sync.sign(url, headers)
@@ -249,7 +284,21 @@ def _api_once(method, path, body, extra_query, signed=True):
     headers.pop("accept-encoding", None)
     SG.throttle.wait()                    # 节流
     r = http_request(method, url, data=data, headers=headers, timeout=30)
-    j = r.json()
+    if not r.ok:
+        preview = (r.text or "").replace("\r", " ").replace("\n", " ")[:240]
+        raise requests.HTTPError(
+            f"Hongguo upstream HTTP {r.status_code} content-type={r.headers.get('content-type', '')!r} "
+            f"body={preview!r}",
+            response=r,
+        )
+    try:
+        j = r.json()
+    except ValueError as exc:
+        preview = (r.text or "").replace("\r", " ").replace("\n", " ")[:240]
+        raise requests.RequestException(
+            f"Hongguo upstream returned non-JSON content-type={r.headers.get('content-type', '')!r} "
+            f"body={preview!r}"
+        ) from exc
     SG.check_response(j)                  # 风控/登录态识别
     return j
 

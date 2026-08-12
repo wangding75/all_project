@@ -106,7 +106,7 @@ GET /reading/reader/full/v
 - 番茄 App **不**再依赖红果签名 / `com.phoenix.read`。
 - 同一模拟器可同时开两个 App；共用 **一个** Frida agent 端口，**按不同 pid attach**。
 - 番茄代码路径 **禁止 pkill** 共用 agent，以免打断红果会话。
-- agent 可用 `frida-server` 或伪装名 `sys_hlpd`；通信：`FRIDA_HOST=127.0.0.1:27042`，RD 测试默认 `ADB_DEVICE=127.0.0.1:7555`。
+- agent 可用 `frida-server` 或伪装名 `sys_hlpd`；通信：`FRIDA_HOST=127.0.0.1:27042`，RD 目标通过 `MUMU_INSTANCE_NAME=RD测试` 动态发现。
 
 批量下番茄小说时：**只需番茄进程存活**（可后台）。下红果时只需红果侧环境就绪。
 
@@ -252,7 +252,7 @@ GET /reading/reader/full/v
 | 变量 | 含义 | 示例 |
 |------|------|------|
 | `ADB` | adb 路径 | `D:\install\Netease\MuMu\nx_main\adb.exe` |
-| `ADB_DEVICE` | RD 测试设备 | `127.0.0.1:7555` |
+| `ADB_DEVICE` | 可选 endpoint 一致性断言；留空自动发现 | 空 |
 | `FRIDA_HOST` | 代理端口 | `127.0.0.1:27042` |
 | `AGENT_BIN` | 伪装 agent 路径（可选） | `/data/local/tmp/sys_hlpd` |
 | `FANQIE_COOKIE` | Web 可选 Cookie | 一般不作主路径 |

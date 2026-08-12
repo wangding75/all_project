@@ -123,6 +123,9 @@ def _is_dead_frida_session(exc: BaseException) -> bool:
             "timed out trying to sync up with agent",
             "unable to communicate with remote frida-server",
             "unable to access process",
+            "no such process",
+            "unable to write to process memory",
+            "process is not responding",
         )
     )
 
@@ -147,16 +150,32 @@ def _reset_local_oracle() -> None:
 
 def _ensure_hongguo_runtime() -> None:
     from app.config import get_settings
+    from platforms.device_discovery import resolve_rd_test_device
     from platforms.runtime import ensure_app_running, probe_shared_agent
     from platforms.hongguo.frida_compat import ensure_compatible
 
+    settings = get_settings()
+    device = resolve_rd_test_device(force=True, settings=settings)
+    import os
+
+    # The upstream vendor reads ADB (not ADB_PATH). Keep both names in sync so
+    # a package deployment with MuMu's adb outside PATH cannot fail at import.
+    os.environ["ADB"] = str(settings.adb_path or os.environ.get("ADB") or "adb")
+    os.environ["ADB_DEVICE"] = device.serial
     ensure_compatible()
     agent = probe_shared_agent(try_start=True)
     if not agent.get("agent_running"):
         raise RuntimeError(agent.get("message") or "Frida agent unavailable")
-    app = ensure_app_running(get_settings().hongguo_pkg, try_start=True)
+    app = ensure_app_running(settings.hongguo_pkg, try_start=True)
     if not app.get("running"):
         raise RuntimeError(app.get("message") or "Hongguo App unavailable")
+    H = load_hongguo_api()
+    if getattr(H, "DEV", device.serial) != device.serial:
+        _reset_local_oracle()
+        if hasattr(H, "set_adb_device"):
+            H.set_adb_device(device.serial)
+        else:
+            H.DEV = device.serial
 
 
 def call_with_session_recovery(operation: Callable[[], T]) -> T:

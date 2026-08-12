@@ -1,8 +1,8 @@
 # Push and start sys_hlpd on MuMu (run after emulator is up + root)
 param(
     # 新版 MuMu 6.x 默认路径；旧版 Player 12 可用 -Adb 覆盖
-    [string]$Adb = "D:\install\Netease\MuMu\nx_main\adb.exe",
-    [string]$Device = "127.0.0.1:7555",
+    [string]$Adb = "adb",
+    [string]$Device = "",
     [string]$ExpectedVersion = "16.7.19"
 )
 
@@ -20,6 +20,16 @@ if (-not (Test-Path $ServerBin)) {
     Write-Error "missing $ServerBin"
 }
 
+if (-not $Device) {
+    $manager = if ($env:MUMU_MANAGER_PATH) { $env:MUMU_MANAGER_PATH } else { Join-Path ${env:ProgramFiles} 'Netease\MuMu Player 12\shell\MuMuManager.exe' }
+    if (-not (Test-Path -LiteralPath $manager -PathType Leaf)) { throw "MuMuManager.exe not found: $manager" }
+    $info = (& $manager info --vmindex all | ConvertFrom-Json)
+    $instanceName = if ($env:MUMU_INSTANCE_NAME) { $env:MUMU_INSTANCE_NAME } else { 'RD' + [char]0x6D4B + [char]0x8BD5 }
+    $targetInstances = @($info.PSObject.Properties.Value | Where-Object { $_.name -eq $instanceName })
+    if ($targetInstances.Count -ne 1) { throw "Expected exactly one MuMu instance named '$instanceName', found $($targetInstances.Count)." }
+    if ($targetInstances[0].player_state -ne 'start_finished' -or -not $targetInstances[0].is_android_started) { throw "$instanceName is not ready." }
+    $Device = "$($targetInstances[0].adb_host_ip):$($targetInstances[0].adb_port)"
+}
 Write-Host "connect $Device ..."
 & $Adb connect $Device | Out-Null
 

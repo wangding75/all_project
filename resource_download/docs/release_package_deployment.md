@@ -18,8 +18,10 @@ or adjacent development directory is required.
    credential, API key, JWT secret, and other deployment values through the
    process environment or the approved secret manager.  Do not commit or
    copy the resulting secret file into the release package.
-3. Set `ADB_DEVICE=127.0.0.1:7555`.  The SX test target `127.0.0.1:16384` is
-   not a supported release target.
+3. Leave `ADB_DEVICE` empty unless it is an explicit assertion of the endpoint
+   discovered for `MUMU_INSTANCE_NAME=RD测试`. The server queries MuMuManager
+   at startup and fails closed if the assertion does not match; no port is an
+   RD/SX identity.
 4. Install the package's pinned SDK/runtime prerequisites if the deployment
    profile uses the raw `server/` runtime.  The normal production path uses
    the included `RDServer.exe`, which contains the Python server runtime.

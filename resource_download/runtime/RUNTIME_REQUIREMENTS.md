@@ -9,7 +9,8 @@ license to run from a developer checkout.  If an operator selects the raw
 runtime profile, it must use only this package directory and the pinned SDK
 wheel in `sdk/`.
 
-Required external runtime services are PostgreSQL for License Service, an ADB
-device at `127.0.0.1:7555` for the RD test profile, and the configured
-License Service endpoint.  The release package does not contain credentials,
+Required external runtime services are PostgreSQL for License Service, the
+MuMu instance named by `MUMU_INSTANCE_NAME` (default `RD测试`, discovered via
+MuMuManager; its ADB endpoint is not fixed), and the configured License Service
+endpoint.  The release package does not contain credentials,
 cookies, session state, private keys, or activation codes.

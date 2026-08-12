@@ -11,7 +11,9 @@ sys.path.insert(0, str(ROOT / "server"))
 sys.path.insert(0, str(ROOT / "server" / ".venv" / "Lib" / "site-packages"))
 
 os.environ.setdefault("ADB", r"D:\install\Netease\MuMu\nx_main\adb.exe")
-os.environ.setdefault("ADB_DEVICE", "127.0.0.1:7555")
+from rd_device import resolve_device
+
+os.environ["ADB_DEVICE"] = resolve_device()
 os.environ.setdefault("FRIDA_HOST", "127.0.0.1:27042")
 
 from platforms.fanqie import client

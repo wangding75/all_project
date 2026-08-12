@@ -99,9 +99,11 @@ class Settings(BaseSettings):
 
     # ADB 与 Frida 配置（番茄 App 会话 / 书名搜索 / App 下载）
     adb_path: str = "adb"
-    # RD acceptance device.  Override explicitly for another local emulator;
-    # never silently fall back to the unrelated SX instance.
-    adb_device: str = "127.0.0.1:7555"  # RD 测试实例，务必与 adb devices 一致
+    # MuMu instance identity is authoritative. ADB_DEVICE is only an optional
+    # assertion and must match the endpoint discovered for that instance.
+    adb_device: str = ""
+    mumu_instance_name: str = "RD测试"
+    mumu_manager_path: str = ""
     frida_host: str = "127.0.0.1:27042"
     fanqie_pkg: str = "com.dragon.read"
     hongguo_pkg: str = "com.phoenix.read"

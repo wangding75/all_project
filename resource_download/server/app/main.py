@@ -30,13 +30,25 @@ async def lifespan(_app: FastAPI):
             f"本服务端仅支持单进程/单 Worker 模式运行 (WORKERS=1)，当前配置 WORKERS={settings.workers}"
         )
 
-    # 同步到环境变量，供 vendor/hongguo 等上游模块读取（它们读 ADB / ADB_DEVICE，不是 ADB_PATH）
+    # Resolve the named MuMu instance before any agent/App bootstrap. This is
+    # fail-closed: a stale endpoint or ambiguous instance must stop startup.
     import os
 
+    discovered_device = None
+    if settings.platform_probe_on_startup or settings.fanqie_probe_on_startup:
+        from platforms.device_discovery import resolve_rd_test_device
+
+        discovered_device = resolve_rd_test_device(force=True, settings=settings)
+        os.environ["RD_TEST_INSTANCE_NAME"] = discovered_device.instance_name
+        os.environ["RD_TEST_ADB_SERIAL"] = discovered_device.serial
+
+    # 同步到环境变量，供 vendor/hongguo 等上游模块读取（它们读 ADB / ADB_DEVICE，不是 ADB_PATH）
     if settings.adb_path:
         os.environ.setdefault("ADB", settings.adb_path)
         os.environ["ADB"] = settings.adb_path
-    if settings.adb_device:
+    if discovered_device:
+        os.environ["ADB_DEVICE"] = discovered_device.serial
+    elif settings.adb_device:
         os.environ["ADB_DEVICE"] = settings.adb_device
     if settings.frida_host:
         os.environ["FRIDA_HOST"] = settings.frida_host

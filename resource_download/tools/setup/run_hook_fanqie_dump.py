@@ -14,7 +14,9 @@ OUT = ROOT / "tmp" / "fanqie_probe" / "crypt_dump"
 OUT.mkdir(parents=True, exist_ok=True)
 
 os.environ.setdefault("ADB", r"D:\install\Netease\MuMu\nx_main\adb.exe")
-os.environ.setdefault("ADB_DEVICE", "127.0.0.1:7555")
+from rd_device import resolve_device
+
+os.environ["ADB_DEVICE"] = resolve_device()
 os.environ.setdefault("FRIDA_HOST", "127.0.0.1:27042")
 os.environ["PYTHONUNBUFFERED"] = "1"
 

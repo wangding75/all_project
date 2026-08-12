@@ -16,12 +16,32 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import frida
 
 ADB = os.environ.get("ADB", r"D:\Program Files\Netease\MuMu Player 12\shell\adb.exe")
-DEV = os.environ.get("ADB_DEVICE", "127.0.0.1:16384")
+DEV = os.environ.get("ADB_DEVICE", "")
 FRIDA_HOST = os.environ.get("FRIDA_HOST", "127.0.0.1:27042")
 FRIDA_BIN = os.environ.get("FRIDA_BIN", "/data/local/tmp/frida-server")
 PKG = "com.phoenix.read"
 PORT = int(os.environ.get("SIGN_PORT", "8001"))
 ORACLE_JS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frida", "oracle.js")
+
+
+def refresh_device():
+    """Resolve RD测试 before reconnect; never reuse a stale port."""
+    global DEV
+    try:
+        from platforms.device_discovery import discover_rd_test_device
+
+        device = discover_rd_test_device(
+            adb=ADB,
+            instance_name=os.environ.get("MUMU_INSTANCE_NAME", "RD测试"),
+            explicit_serial=os.environ.get("ADB_DEVICE", ""),
+            manager=os.environ.get("MUMU_MANAGER_PATH") or None,
+        )
+        DEV = device.serial
+        os.environ["ADB_DEVICE"] = DEV
+    except ImportError:
+        if not DEV:
+            raise
+    return DEV
 
 _lock = threading.Lock()        # 串行化 frida 调用
 _script = None
@@ -31,6 +51,7 @@ _detached = threading.Event()   # 会话断开标志
 
 
 def adb(*args, timeout=30):
+    refresh_device()
     return subprocess.run([ADB, "-s", DEV] + list(args), capture_output=True, text=True, timeout=timeout)
 
 

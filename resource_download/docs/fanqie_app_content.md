@@ -28,7 +28,7 @@
 1. MuMu 模拟器，番茄 `com.dragon.read`（**无需**安装/打开红果）  
 2. `/data/local/tmp/frida-server`（或 `AGENT_BIN=sys_hlpd` 伪装副本）  
 3. 与红果同机时：**共用 agent、分 pid attach**；番茄路径不会杀 agent  
-4. host：`ADB`、`ADB_DEVICE=127.0.0.1:7555`、`FRIDA_HOST=127.0.0.1:27042`
+4. host：`ADB`、`MUMU_INSTANCE_NAME=RD测试`、`FRIDA_HOST=127.0.0.1:27042`；ADB serial 由 discovery 取得。
 5. Python：`server/.venv` + 与 agent 匹配的 frida
 
 ## 回归
@@ -36,7 +36,7 @@
 ```powershell
 $env:AGENT_BIN="/data/local/tmp/sys_hlpd"
 $env:ADB="D:\install\Netease\MuMu\nx_main\adb.exe"
-$env:ADB_DEVICE="127.0.0.1:7555"
+$env:MUMU_INSTANCE_NAME="RD测试"
 $env:FRIDA_HOST="127.0.0.1:27042"
 .\server\.venv\Scripts\python.exe -u tools\setup\test_fanqie_crypt_oracle.py
 ```

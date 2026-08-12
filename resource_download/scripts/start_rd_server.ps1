@@ -4,8 +4,7 @@ $serverExe = Join-Path $packageRoot 'RDServer.exe'
 if (-not (Test-Path -LiteralPath $serverExe -PathType Leaf)) {
     throw "RDServer.exe is missing from the release package: $serverExe"
 }
-if ($env:ADB_DEVICE -and $env:ADB_DEVICE -eq '127.0.0.1:16384') {
-    throw 'SX target 127.0.0.1:16384 is not permitted for the RD release gate.'
-}
-if (-not $env:ADB_DEVICE) { $env:ADB_DEVICE = '127.0.0.1:7555' }
+if (-not $env:MUMU_INSTANCE_NAME) { $env:MUMU_INSTANCE_NAME = 'RD' + [char]0x6D4B + [char]0x8BD5 }
+# RDServer performs fail-closed MuMuManager discovery during runtime bootstrap.
+# Do not inject a historical ADB port here.
 Start-Process -FilePath $serverExe -WorkingDirectory $packageRoot

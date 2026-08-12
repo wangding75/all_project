@@ -4,12 +4,15 @@ from __future__ import annotations
 import subprocess
 import sys
 import time
+import os
 from pathlib import Path
 
 import frida
 
-ADB = r"D:\install\Netease\MuMu\nx_main\adb.exe"
-DEV = "127.0.0.1:7555"
+ADB = os.environ.get("ADB", "adb")
+from rd_device import resolve_device
+
+DEV = resolve_device()
 FRIDA_HOST = "127.0.0.1:27042"
 PKG = "com.phoenix.read"
 ORACLE_JS = Path(__file__).resolve().parents[2] / "vendor" / "hongguo" / "frida" / "oracle.js"

@@ -55,7 +55,11 @@ rpc.exports = {
                         if (!done) {
                             var u = url.toString();
                             var hasTicket = h.containsKey("x-ss-req-ticket") || h.containsKey("X-SS-REQ-TICKET");
-                            if (u.indexOf("fqnovel.com") >= 0 && u.indexOf("device_id=") >= 0 && hasTicket) {
+                            // Only retain a real content API request.  applog/
+                            // telemetry endpoints also carry device_id and a
+                            // ticket but cannot bootstrap the content client.
+                            if (u.indexOf("fqnovel.com") >= 0 && u.indexOf("/reading/") >= 0 &&
+                                u.indexOf("device_id=") >= 0 && hasTicket) {
                                 done = true;
                                 var obj = { url: u, headers: mapToObj(h) };
                                 ov.implementation = null;  // 复原

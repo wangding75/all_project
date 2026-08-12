@@ -1,7 +1,7 @@
 """Grab config for Fanqie: attach to com.dragon.read, grab a real signed request.
 
 用法:
-  $env:ADB="adb"; $env:ADB_DEVICE="127.0.0.1:7555"
+  $env:ADB="adb"; $env:MUMU_INSTANCE_NAME="RD测试"
   python tools/setup/grab_fanqie_config.py
 """
 from __future__ import annotations
@@ -19,7 +19,9 @@ from urllib.parse import parse_qsl, urlparse
 import frida
 
 ADB = os.environ.get("ADB", "adb")
-DEV = os.environ.get("ADB_DEVICE", "127.0.0.1:7555")
+from rd_device import resolve_device
+
+DEV = resolve_device()
 FRIDA_HOST = os.environ.get("FRIDA_HOST", "127.0.0.1:27042")
 PKG = os.environ.get("FANQIE_PKG", "com.dragon.read")
 

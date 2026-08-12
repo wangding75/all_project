@@ -35,6 +35,7 @@ hiddenimports = sorted(
             "app.license_gateway",
             "app.security_boot",
             "platforms.registry",
+            "platforms.device_discovery",
             "platforms.readiness",
             "platforms.runtime",
         ]

@@ -55,7 +55,11 @@ rpc.exports = {
                         if (!done) {
                             var u = url.toString();
                             var hasTicket = h.containsKey("x-ss-req-ticket") || h.containsKey("X-SS-REQ-TICKET");
-                            if (u.indexOf("fqnovel.com") >= 0 && u.indexOf("device_id=") >= 0 && hasTicket) {
+                            // Ignore applog/telemetry requests.  They carry the
+                            // same device query but are not usable content API
+                            // sessions; require a real /reading/ endpoint.
+                            if (u.indexOf("fqnovel.com") >= 0 && u.indexOf("/reading/") >= 0 &&
+                                u.indexOf("device_id=") >= 0 && hasTicket) {
                                 done = true;
                                 var obj = { url: u, headers: mapToObj(h) };
                                 ov.implementation = null;  // 复原,不再观察

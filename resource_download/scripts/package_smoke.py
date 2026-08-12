@@ -151,7 +151,10 @@ def _clean_child_env(port: int, state_dir: Path) -> dict[str, str]:
             "API_KEY": "package-smoke-" + secrets.token_hex(12),
             "JWT_SECRET": "package-smoke-jwt-" + secrets.token_hex(16),
             "AUTH_MODE": "dual",
-            "ADB_DEVICE": "127.0.0.1:7555",
+            # Platform probes are disabled for package smoke. Keep the target
+            # empty so this fixture cannot encode a historical port.
+            "ADB_DEVICE": "",
+            "MUMU_INSTANCE_NAME": "RD测试",
             "PLATFORM_PROBE_ON_STARTUP": "false",
             "FANQIE_PROBE_ON_STARTUP": "false",
             "FANQIE_TRY_START_AGENT": "false",

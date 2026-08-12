@@ -112,8 +112,19 @@ def all_key_candidates(dump_path):
                     seen.add(h); keys.append(h)
     return keys
 
-ADB = r"D:\Program Files\Netease\MuMu Player 12\shell\adb.exe"
-DEV = "127.0.0.1:16384"
+ADB = os.environ.get("ADB", "adb")
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_SERVER_DIR = _REPO_ROOT / "server"
+if str(_SERVER_DIR) not in sys.path:
+    sys.path.insert(0, str(_SERVER_DIR))
+from platforms.device_discovery import discover_rd_test_device  # noqa: E402
+
+_DISCOVERED = discover_rd_test_device(
+    adb=ADB,
+    instance_name=os.environ.get("MUMU_INSTANCE_NAME", "RD" + chr(0x6D4B) + chr(0x8BD5)),
+    explicit_serial=os.environ.get("ADB_DEVICE", ""),
+)
+DEV = _DISCOVERED.serial
 EXCL = ["dalvik", ".art]", ".vdex", ".oat", ".odex", "gralloc", "Ashmem", "ashmem",
         "jit-cache", "boot-", "framework", "/dev/", "mali", "kgsl", "dmabuf",
         ".jar", ".apk", "[stack", "linker", "[vdso", "[vvar"]

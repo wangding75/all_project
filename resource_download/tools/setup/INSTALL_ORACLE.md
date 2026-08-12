@@ -19,7 +19,7 @@
 |----|-----|
 | 安装目录 | `D:\install\Netease\MuMu` |
 | adb | `D:\install\Netease\MuMu\nx_main\adb.exe` |
-| 设备 | `127.0.0.1:7555`（已连通，RD 测试实例） |
+| 设备 | 由 MuMuManager 按 `MUMU_INSTANCE_NAME=RD测试` 动态发现（不要写死端口） |
 | Android | **15** / abi **x86_64** |
 | root | 用 `adb root`（`su` 命令可能不存在） |
 | frida-server | 已推送并可运行（需 `adb root` 后启动） |

@@ -25,7 +25,11 @@ def adb_bin() -> str:
 
 
 def adb_device() -> str:
-    return os.environ.get("ADB_DEVICE", _settings().adb_device)
+    from platforms.device_discovery import resolve_rd_test_device
+
+    current = resolve_rd_test_device(settings=_settings())
+    os.environ["ADB_DEVICE"] = current.serial
+    return current.serial
 
 
 def frida_host() -> str:
@@ -57,7 +61,11 @@ def adb(*args: str, timeout: int = 40) -> subprocess.CompletedProcess[str]:
 
 
 def connect() -> None:
-    subprocess.run([adb_bin(), "connect", adb_device()], capture_output=True)
+    from platforms.device_discovery import resolve_rd_test_device
+
+    current = resolve_rd_test_device(force=True, settings=_settings())
+    os.environ["ADB_DEVICE"] = current.serial
+    subprocess.run([adb_bin(), "connect", current.serial], capture_output=True)
 
 
 def pidof(name: str) -> str | None:
