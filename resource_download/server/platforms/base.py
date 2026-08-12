@@ -32,6 +32,32 @@ class BasePlatform(ABC):
         """返回平台真实发现内容；未支持的平台显式抛出，供聚合层降级。"""
         raise NotImplementedError(f"{self.name} 暂未提供 {kind} 发现数据")
 
+    async def resolve_download(
+        self,
+        resource_id: str,
+        *,
+        title: str = "",
+        range_spec: str = "all",
+        options: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Resolve platform-private media into stable server-side descriptors.
+
+        Implementations must not write to ``output_dir`` here.  The legacy
+        ``download`` method remains available until the migration reaches the
+        removal phase.
+        """
+        raise NotImplementedError(f"{self.name} 暂未提供 Download Resolve")
+
+    async def stream_download(
+        self,
+        resource_id: str,
+        *,
+        range_spec: str = "all",
+        options: dict[str, Any] | None = None,
+    ):
+        """Yield proxy bytes without materializing a server-side file."""
+        raise NotImplementedError(f"{self.name} 暂未提供 Streaming Proxy")
+
     @abstractmethod
     async def download(
         self,

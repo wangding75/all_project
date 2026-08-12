@@ -243,6 +243,67 @@ class FanqiePlatform(BasePlatform):
 
             raise RuntimeError(format_platform_error(exc)) from exc
 
+    async def resolve_download(
+        self,
+        resource_id: str,
+        *,
+        title: str = "",
+        range_spec: str = "all",
+        options: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Issue a short-lived proxy descriptor for server-side text resolve.
+
+        Fanqie chapter decoding stays in this adapter.  The client receives a
+        plain streamed text response and never receives App cookies, Session,
+        signing or Frida state.
+        """
+        detail = await self.get_detail(resource_id, **(options or {}))
+        return [
+            {
+                "platform": self.name,
+                "resource_id": detail.id,
+                "title": title or detail.title,
+                "media_type": "text/markdown; charset=utf-8",
+                "suggested_filename": f"{title or detail.title}.md",
+                "download_mode": "proxy",
+                "range_supported": False,
+                "extra": {"chapter_count": len(detail.segments)},
+            }
+        ]
+
+    async def stream_download(
+        self,
+        resource_id: str,
+        *,
+        range_spec: str = "all",
+        options: dict[str, Any] | None = None,
+    ):
+        """Stream Fanqie chapters without creating a server-side output file."""
+        options = dict(options or {})
+
+        def _prepare():
+            book_id = _normalize_book_id(resource_id)
+            book_name, chapters, font_mapping, _meta = web_ssr.get_book_page(
+                book_id,
+                cookie=options.get("cookie") or get_settings().fanqie_cookie or None,
+            )
+            selected = _parse_range(range_spec, len(chapters))
+            return book_name, chapters, font_mapping, selected
+
+        book_name, chapters, font_mapping, selected = await asyncio.to_thread(_prepare)
+        yield f"# {book_name}\n".encode("utf-8")
+        cookie = options.get("cookie") or get_settings().fanqie_cookie or None
+        for index, chapter in enumerate(chapters, start=1):
+            if selected is not None and index not in selected:
+                continue
+            chapter_title, content = await asyncio.to_thread(
+                web_ssr.download_chapter,
+                str(chapter["item_id"]),
+                font_mapping,
+                cookie=cookie,
+            )
+            yield f"\n\n## {chapter_title}\n\n{content}\n".encode("utf-8")
+
     async def download(
         self,
         item_id: str,

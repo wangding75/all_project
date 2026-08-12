@@ -13,6 +13,11 @@ class PlatformName(str, Enum):
     hongguo = "hongguo"
 
 
+class DownloadMode(str, Enum):
+    direct = "direct"
+    proxy = "proxy"
+
+
 class JobStatus(str, Enum):
     pending = "pending"
     paused = "paused"
@@ -210,6 +215,64 @@ class DetailResponse(BaseModel):
     desc: str | None = None
     segments: list[SegmentInfo] = Field(default_factory=list)
     extra: dict[str, Any] = Field(default_factory=dict)
+
+
+class DownloadResolveRequest(BaseModel):
+    """Stable, platform-neutral input for one client download request."""
+
+    platform: PlatformName
+    resource_id: str = Field(min_length=1, max_length=512)
+    title: str = ""
+    media_type: str = "application/octet-stream"
+    suggested_filename: str = ""
+    range: str = "all"
+    options: dict[str, Any] = Field(default_factory=dict, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_download_input(self):
+        from app.options import split_job_options, validate_range_spec
+
+        split_job_options(self.platform, self.options)
+        self.range = validate_range_spec(self.range)
+        return self
+
+
+class DownloadDescriptor(BaseModel):
+    """The only download contract exposed to Desktop Client."""
+
+    platform: PlatformName
+    resource_id: str
+    title: str = ""
+    media_type: str = "application/octet-stream"
+    suggested_filename: str = "download.bin"
+    expires_at: str | None = None
+    download_mode: DownloadMode
+    url: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    proxy_url: str | None = None
+    request_token: str | None = None
+    size_bytes: int | None = Field(default=None, ge=0)
+    range_supported: bool | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_transport(self):
+        if self.download_mode == DownloadMode.direct and not self.url:
+            raise ValueError("direct download descriptor requires url")
+        if self.download_mode == DownloadMode.proxy and not self.proxy_url:
+            raise ValueError("proxy download descriptor requires proxy_url")
+        if self.url and not self.url.startswith(("http://", "https://")):
+            raise ValueError("download url must be absolute http(s)")
+        return self
+
+
+class DownloadResolveResponse(BaseModel):
+    """Resolve result; ``descriptors`` supports a series/range without changing UI."""
+
+    descriptor: DownloadDescriptor | None = None
+    descriptors: list[DownloadDescriptor] = Field(default_factory=list)
+    quota: dict[str, Any] = Field(default_factory=dict)
+    idempotent_replay: bool = False
 
 
 class JobCreateRequest(BaseModel):

@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app import __version__
 from app.auth import Identity, require_identity
@@ -23,6 +23,7 @@ from app.idempotency import (
 from app.jobs import get_job_manager
 from app.license_guard import require_active_device_license
 from app.license_gateway import LicenseGateway, get_license_gateway
+from app.download_resolution import normalize_platform_resolution, proxy_ticket_store
 from app.models import (
     BatchJobCreateRequest,
     BatchJobCreateResponse,
@@ -34,6 +35,8 @@ from app.models import (
     BatchResolveResponse,
     BatchResolvedItem,
     DetailResponse,
+    DownloadResolveRequest,
+    DownloadResolveResponse,
     FileItemResponse,
     FileListResponse,
     FileOpenRequest,
@@ -717,6 +720,149 @@ def _read_idempotency_key(request: Request) -> str:
     if len(key) > 128:
         raise HTTPException(status_code=400, detail="Idempotency-Key is too long")
     return key
+
+
+@api_router.post("/v1/resolve", response_model=DownloadResolveResponse)
+async def resolve_download(
+    body: DownloadResolveRequest,
+    request: Request,
+    identity: Identity = Depends(require_active_device_license),
+    db: Session = Depends(get_db),
+) -> DownloadResolveResponse:
+    """Authorize and resolve one client-owned download without server storage."""
+    try:
+        platform = get_platform(body.platform)
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=sanitize_error_text(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=sanitize_error_text(exc)) from exc
+
+    idempotency_key = _read_idempotency_key(request)
+    idempotency_entry = None
+    scope = _idempotency_scope(identity)
+    fingerprint = request_fingerprint(body.model_dump(mode="json"))
+    if idempotency_key:
+        try:
+            leader, idempotency_entry = idempotency_store.begin(
+                scope,
+                idempotency_key,
+                fingerprint,
+                db=db,
+            )
+        except IdempotencyConflict as exc:
+            raise HTTPException(status_code=409, detail="IDEMPOTENCY_CONFLICT") from exc
+        if not leader:
+            import asyncio
+
+            try:
+                cached = await asyncio.to_thread(idempotency_store.wait, idempotency_entry)
+            except IdempotencyInProgress as exc:
+                raise HTTPException(status_code=409, detail="IDEMPOTENCY_IN_PROGRESS") from exc
+            if cached is None:
+                raise HTTPException(status_code=409, detail="IDEMPOTENCY_IN_PROGRESS")
+            return DownloadResolveResponse.model_validate(cached).model_copy(update={"idempotent_replay": True})
+
+    from app.quota import check_job_quota, get_license_usage, increment_job_quota, release_job_quota
+
+    reserved = False
+    try:
+        check_job_quota(identity, db)
+        reserved = True
+        resolved = await platform.resolve_download(
+            body.resource_id,
+            title=body.title,
+            range_spec=body.range,
+            options=body.options,
+        )
+        descriptors = await normalize_platform_resolution(
+            platform=body.platform,
+            resource_id=body.resource_id,
+            title=body.title,
+            media_type=body.media_type,
+            suggested_filename=body.suggested_filename,
+            range_spec=body.range,
+            options=body.options,
+            resolved=resolved,
+        )
+        increment_job_quota(identity, db)
+        reserved = False
+        response = DownloadResolveResponse(
+            descriptor=descriptors[0],
+            descriptors=descriptors,
+            quota=get_license_usage(identity, db),
+        )
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.complete(scope, idempotency_key, idempotency_entry, response.model_dump(mode="json"), db=db)
+        return response
+    except HTTPException:
+        if reserved:
+            release_job_quota(identity)
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.fail(scope, idempotency_key, idempotency_entry, db=db)
+        raise
+    except NotImplementedError as exc:
+        if reserved:
+            release_job_quota(identity)
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.fail(scope, idempotency_key, idempotency_entry, db=db)
+        raise HTTPException(status_code=501, detail=sanitize_error_text(exc)) from exc
+    except ValueError as exc:
+        if reserved:
+            release_job_quota(identity)
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.fail(scope, idempotency_key, idempotency_entry, db=db)
+        raise HTTPException(status_code=422, detail=sanitize_error_text(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        if reserved:
+            release_job_quota(identity)
+        if idempotency_key and idempotency_entry is not None:
+            idempotency_store.fail(scope, idempotency_key, idempotency_entry, db=db)
+        raise HTTPException(status_code=502, detail=f"download resolve failed: {format_platform_error(exc)}") from exc
+
+
+@api_router.get("/v1/downloads/proxy/{token}")
+async def stream_download_proxy(
+    token: str,
+    request: Request,
+    _: Identity = Depends(require_active_device_license),
+):
+    """Stream a platform response; this route never writes server download files."""
+    ticket = proxy_ticket_store.get(token)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="DOWNLOAD_TICKET_EXPIRED")
+
+    import httpx
+
+    if ticket.upstream_url:
+        forwarded = {
+            key: value
+            for key, value in ticket.upstream_headers.items()
+            if key.lower() not in {"host", "content-length", "cookie", "authorization"}
+        }
+        range_header = request.headers.get("range")
+        if range_header:
+            forwarded["Range"] = range_header
+
+        async def _upstream():
+            async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
+                async with client.stream("GET", ticket.upstream_url, headers=forwarded) as response:
+                    if response.status_code >= 400:
+                        raise HTTPException(status_code=502, detail="UPSTREAM_DOWNLOAD_UNAVAILABLE")
+                    async for chunk in response.aiter_bytes(1024 * 1024):
+                        yield chunk
+
+        return StreamingResponse(_upstream(), media_type="application/octet-stream")
+
+    try:
+        platform = get_platform(ticket.platform)
+        content = platform.stream_download(
+            ticket.resource_id,
+            range_spec=ticket.range_spec,
+            options=ticket.options,
+        )
+    except (KeyError, NotImplementedError) as exc:
+        raise HTTPException(status_code=501, detail=sanitize_error_text(exc)) from exc
+    return StreamingResponse(content, media_type="application/octet-stream")
 
 
 @api_router.post("/v1/jobs", response_model=JobResponse)

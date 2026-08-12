@@ -83,10 +83,10 @@ def check_dependency_layering():
 def run_pytest_suite():
     """Phase 5: 全量 pytest 自动化测试套件回归"""
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(ROOT_DIR / "server")
+    env["PYTHONPATH"] = os.pathsep.join((str(ROOT_DIR / "server"), str(ROOT_DIR)))
     # 防止 test_quality_gate_execution -> quality_gate -> pytest 无限递归。
     env["QUALITY_GATE_ACTIVE"] = "1"
-    cmd = [sys.executable, "-m", "pytest", "server/tests"]
+    cmd = [sys.executable, "-m", "pytest", "server/tests", "client/tests"]
     result = subprocess.run(cmd, cwd=str(ROOT_DIR), env=env)
     if result.returncode != 0:
         raise RuntimeError(f"pytest 自动化测试套件存在失败, exit_code={result.returncode}")

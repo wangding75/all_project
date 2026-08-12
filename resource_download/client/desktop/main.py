@@ -46,6 +46,9 @@ else:
 from client.desktop.device_identity import DeviceIdentityError, DeviceIdentityManager
 from client.desktop.device_proof import DeviceProofService
 from client.desktop.http_client import DesktopHttpClient, DesktopHttpError, is_protected_endpoint
+from client.desktop.download_manager import DownloadManager
+from client.desktop.download_models import DownloadDescriptor
+from client.desktop.download_repository import DownloadRepository
 
 # 客户端模式：thin（默认）| embedded（本机嵌服务，仅开发）
 CLIENT_MODE = os.environ.get("CLIENT_MODE", "thin").strip().lower()
@@ -115,6 +118,7 @@ class WindowApi:
         self._identity_manager = DeviceIdentityManager()
         self._proof_service = DeviceProofService(self._identity_manager)
         self._http_client = DesktopHttpClient(self.api_base, self._proof_service, max_retries=1)
+        self._download_repository = DownloadRepository(local_app_data / "ResourceDownloader" / "downloads.sqlite3")
         self._install_id = ""
         try:
             if self._preferences_path.is_file():
@@ -130,6 +134,12 @@ class WindowApi:
 
             self._install_id = uuid.uuid4().hex
             self._persist_preferences(remember_directory=False)
+        self._download_manager = DownloadManager(
+            self._download_repository,
+            self._download_dir,
+            max_concurrent=3,
+            transport=self._build_download_transport(),
+        )
 
     def _persist_preferences(self, *, remember_directory: bool) -> None:
         self._preferences_path.parent.mkdir(parents=True, exist_ok=True)
@@ -248,6 +258,103 @@ class WindowApi:
         except (TypeError, ValueError) as exc:
             return {"ok": False, "status": 0, "detail": str(exc), "reason": "CLIENT_REQUEST_INVALID"}
 
+    def _build_download_transport(self):
+        from client.desktop.download_transport import HttpDownloadTransport
+
+        return HttpDownloadTransport(headers_factory=self._download_headers)
+
+    def _download_headers(self, method: str, url: str, headers: dict[str, str]) -> dict[str, str]:
+        """Sign only RD proxy URLs; direct CDN requests stay platform-neutral."""
+        parsed = urllib.parse.urlsplit(url)
+        api_parsed = urllib.parse.urlsplit(self.api_base)
+        if parsed.scheme != api_parsed.scheme or parsed.netloc != api_parsed.netloc:
+            return headers
+        request_target = parsed.path or "/"
+        if parsed.query:
+            request_target += f"?{parsed.query}"
+        if not request_target.startswith("/v1/downloads/"):
+            return headers
+        signed = dict(headers)
+        signed.update(self._proof_service.request_headers(method, request_target, b""))
+        return signed
+
+    def resolve_and_download(
+        self,
+        platform: str,
+        resource_id: str,
+        title: str = "",
+        media_type: str = "application/octet-stream",
+        suggested_filename: str = "",
+        range_spec: str = "all",
+        options: dict | None = None,
+        access_token: str = "",
+        api_key: str = "",
+    ) -> dict[str, object]:
+        """Resolve through RD, then enqueue only local Client tasks."""
+        payload = {
+            "platform": platform,
+            "resource_id": resource_id,
+            "title": title,
+            "media_type": media_type,
+            "suggested_filename": suggested_filename,
+            "range": range_spec,
+            "options": dict(options or {}),
+        }
+        result = self.api_request(
+            "POST",
+            "/v1/resolve",
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            access_token=access_token,
+            api_key=api_key,
+            idempotency_key=f"client-{self._install_id}-{resource_id}-{range_spec}",
+        )
+        if not result.get("ok"):
+            return result
+        data = result.get("data") or {}
+        raw_descriptors = data.get("descriptors") or ([data["descriptor"]] if data.get("descriptor") else [])
+        tasks = []
+        for raw in raw_descriptors:
+            descriptor = DownloadDescriptor.from_mapping(dict(raw))
+            if descriptor.download_mode == "proxy" and descriptor.proxy_url and descriptor.proxy_url.startswith("/"):
+                descriptor.proxy_url = f"{self.api_base}{descriptor.proxy_url}"
+            task = self._download_manager.add_descriptor(descriptor)
+            tasks.append(self._download_manager.as_job(task))
+        return {
+            "ok": True,
+            "data": {
+                "tasks": tasks,
+                "task": tasks[0] if tasks else None,
+                "descriptors": raw_descriptors,
+                "quota": data.get("quota") or {},
+            },
+        }
+
+    def get_download_state(self) -> dict[str, object]:
+        tasks = [self._download_manager.as_job(task) for task in self._download_manager.list_tasks()]
+        return {
+            "summary": self._download_manager.summary(),
+            "queue": self._download_manager.queue_state(),
+            "items": tasks,
+        }
+
+    def list_download_history(self) -> dict[str, object]:
+        return {"items": [self._download_manager.as_job(task) for task in self._download_manager.history()]}
+
+    def list_local_files(self) -> dict[str, object]:
+        return {"total": len(self._download_manager.local_files()), "items": self._download_manager.local_files()}
+
+    def pause_download(self, task_id: str) -> dict[str, object]:
+        return {"ok": True, "task": self._download_manager.as_job(self._download_manager.pause(task_id))}
+
+    def resume_download(self, task_id: str) -> dict[str, object]:
+        return {"ok": True, "task": self._download_manager.as_job(self._download_manager.resume(task_id))}
+
+    def cancel_download(self, task_id: str) -> dict[str, object]:
+        return {"ok": True, "task": self._download_manager.as_job(self._download_manager.cancel(task_id))}
+
+    def retry_download(self, task_id: str) -> dict[str, object]:
+        return {"ok": True, "task": self._download_manager.as_job(self._download_manager.retry(task_id))}
+
     def redeem_license(self, card_code: str, access_token: str = "") -> dict[str, object]:
         """Create the Activation Proof and its body in one native, non-browser path."""
         if not isinstance(card_code, str) or not card_code.strip():
@@ -293,6 +400,7 @@ class WindowApi:
             chosen = Path(selected[0]).expanduser().resolve()
             chosen.mkdir(parents=True, exist_ok=True)
             self._download_dir = chosen
+            self._download_manager.download_directory = chosen
             self._persist_preferences(remember_directory=bool(remember))
             return {"success": True, "path": str(chosen)}
         except Exception as exc:

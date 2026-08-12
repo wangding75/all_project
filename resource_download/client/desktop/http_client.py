@@ -16,6 +16,7 @@ from .device_proof import DeviceProofService
 _PROTECTED_JOB_RETRY = re.compile(r"^/v1/jobs/[^/]+/retry$")
 _PROTECTED_JOB_PATH = re.compile(r"^/v1/jobs(?:/.*)?$")
 _PROTECTED_FILE_PATH = re.compile(r"^/v1/files(?:/.*)?$")
+_PROTECTED_DOWNLOAD_PATH = re.compile(r"^/v1/downloads(?:/.*)?$")
 _PROTECTED_CONTENT_PATHS = {
     "/v1/search",
     "/v1/detail",
@@ -24,6 +25,7 @@ _PROTECTED_CONTENT_PATHS = {
     "/v1/image/recognize",
     "/v1/hongguo/people",
     "/v1/license/status",
+    "/v1/resolve",
 }
 _RETRYABLE_HTTP = {408, 425, 429, 500, 502, 503, 504}
 _KNOWN_LICENSE_REASONS = {
@@ -48,7 +50,11 @@ def is_protected_endpoint(method: str, request_target: str) -> bool:
     parsed = urllib.parse.urlsplit(request_target)
     path = parsed.path
     method = method.upper()
-    if _PROTECTED_JOB_PATH.fullmatch(path) or _PROTECTED_FILE_PATH.fullmatch(path):
+    if (
+        _PROTECTED_JOB_PATH.fullmatch(path)
+        or _PROTECTED_FILE_PATH.fullmatch(path)
+        or _PROTECTED_DOWNLOAD_PATH.fullmatch(path)
+    ):
         return True
     if path in _PROTECTED_CONTENT_PATHS:
         return True

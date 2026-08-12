@@ -213,6 +213,86 @@ class HongguoPlatform(BasePlatform):
 
             raise RuntimeError(format_platform_error(exc)) from exc
 
+    async def resolve_download(
+        self,
+        resource_id: str,
+        *,
+        title: str = "",
+        range_spec: str = "all",
+        options: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Resolve Hongguo episodes to short-lived CDN descriptors.
+
+        All Hongguo API/signing/runtime work remains in this server adapter;
+        the Desktop Client only receives a temporary URL and safe metadata.
+        The legacy file-producing ``download`` method is intentionally not
+        called by this path.
+        """
+        from app.options import validate_range_spec
+
+        range_spec = validate_range_spec(range_spec)
+        options = dict(options or {})
+
+        def _run() -> list[dict[str, Any]]:
+            H = load_hongguo_api()
+            meta, episodes = H.get_episodes(str(resource_id))
+            meta = meta or {}
+            rows = list(episodes or [])
+            selected: set[int] | None = None
+            if range_spec not in {"", "all", "*"}:
+                selected = set()
+                for part in range_spec.split(","):
+                    if "-" in part:
+                        start, end = (int(value) for value in part.split("-", 1))
+                        selected.update(range(min(start, end), max(start, end) + 1))
+                    else:
+                        selected.add(int(part))
+            chosen: list[dict[str, Any]] = []
+            for position, episode in enumerate(rows, start=1):
+                if not isinstance(episode, dict):
+                    continue
+                index = int(episode.get("index") or position)
+                if selected is not None and index not in selected:
+                    continue
+                vid = str(episode.get("vid") or episode.get("video_id") or episode.get("id") or "")
+                if vid:
+                    chosen.append({"index": index, "vid": vid, "title": str(episode.get("title") or f"第{index}集")})
+            if not chosen and str(resource_id).strip():
+                chosen = [{"index": 1, "vid": str(resource_id), "title": title or "资源"}]
+            urls = H.get_video_urls([item["vid"] for item in chosen])
+            result: list[dict[str, Any]] = []
+            for item in chosen:
+                info = dict(urls.get(item["vid"]) or {})
+                url = str(info.get("url") or "")
+                if not url:
+                    continue
+                safe_title = title or str(meta.get("title") or resource_id)
+                result.append(
+                    {
+                        "platform": self.name,
+                        "resource_id": item["vid"],
+                        "title": safe_title,
+                        "media_type": "video/mp4",
+                        "suggested_filename": f"{safe_title}_第{item['index']:03d}集.mp4",
+                        "download_mode": "direct",
+                        "url": url,
+                        "headers": {"User-Agent": "ResourceDownloader/Client"},
+                        "size_bytes": info.get("size") or None,
+                        "range_supported": True,
+                        "extra": {"episode_index": item["index"], "definition": info.get("definition")},
+                    }
+                )
+            return result
+
+        try:
+            return await asyncio.to_thread(call_with_session_recovery, _run)
+        except HongguoVendorError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            from app.errors import format_platform_error
+
+            raise RuntimeError(format_platform_error(exc)) from exc
+
     async def get_people_index(
         self,
         *,

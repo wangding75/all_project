@@ -234,3 +234,14 @@ T42 IMPLEMENTATION MIGRATION PLAN 将基于本清单制定：
 ---
 
 *本文档随迁移执行更新。本轮 T41 不修改任何业务代码。*
+
+## 8. 连续迁移执行状态
+
+| Task | Status | Delivered |
+|------|--------|-----------|
+| T42 | PASS | DownloadDescriptor、受保护 `/v1/resolve`、短生命周期 Streaming Proxy ticket、Client SQLite/Repository/Download Manager 基础设施；旧 Job/File/Automation 暂保留 |
+| T43 | PENDING | — |
+| T44 | PENDING | — |
+| T45 | PENDING | — |
+| T46 | PENDING | — |
+| T47 | PENDING | — |
