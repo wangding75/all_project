@@ -56,9 +56,18 @@ class DownloadRepository:
                     completed_at TEXT,
                     retry_count INTEGER NOT NULL DEFAULT 0,
                     max_retries INTEGER NOT NULL DEFAULT 2,
-                    error TEXT
+                    error TEXT,
+                    queue_position INTEGER NOT NULL DEFAULT 0
                 )"""
             )
+            columns = {
+                str(row[1])
+                for row in self._connection.execute("PRAGMA table_info(download_tasks)").fetchall()
+            }
+            if "queue_position" not in columns:
+                self._connection.execute(
+                    "ALTER TABLE download_tasks ADD COLUMN queue_position INTEGER NOT NULL DEFAULT 0"
+                )
             self._connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_download_tasks_status_created "
                 "ON download_tasks(status, created_at)"
@@ -106,7 +115,7 @@ class DownloadRepository:
         if values:
             query += f" WHERE status IN ({', '.join('?' for _ in values)})"
             params.extend(values)
-        query += " ORDER BY created_at ASC, task_id ASC"
+        query += " ORDER BY queue_position ASC, created_at ASC, task_id ASC"
         with self._lock:
             rows = self._connection.execute(query, params).fetchall()
         return [DownloadTask.from_record(dict(row)) for row in rows]

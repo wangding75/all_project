@@ -42,6 +42,9 @@ class DownloadManager:
         self._done: dict[str, threading.Event] = {}
         self._lock = threading.RLock()
         self._stopped = False
+        self._queue_paused = False
+        self._queue_gate = threading.Event()
+        self._queue_gate.set()
         self._workers: list[threading.Thread] = []
         self.repository.recover_interrupted()
         if autostart:
@@ -61,6 +64,7 @@ class DownloadManager:
     def shutdown(self, *, wait: bool = True) -> None:
         with self._lock:
             self._stopped = True
+            self._queue_gate.set()
             for event in self._cancel.values():
                 event.set()
         if wait:
@@ -112,6 +116,8 @@ class DownloadManager:
             target = target_dir / f"{stem} ({index}){suffix}"
             index += 1
         task = DownloadTask.new(descriptor, str(target), max_retries=max_retries)
+        existing_queue = self.repository.list(statuses=("pending", "paused"))
+        task.queue_position = max((item.queue_position for item in existing_queue), default=0) + 1
         self.repository.upsert(task)
         self._cancel[task.task_id] = threading.Event()
         self._pause[task.task_id] = threading.Event()
@@ -124,7 +130,7 @@ class DownloadManager:
         task = self._require(task_id)
         with self._lock:
             self._pause.setdefault(task_id, threading.Event()).set()
-            if task.status == "pending":
+            if task.status in {"pending", "running"}:
                 task.status = "paused"
             elif task.status == "running":
                 task.status = "paused"
@@ -165,6 +171,53 @@ class DownloadManager:
             self._enqueue_id(task_id)
         return task
 
+    def pause_queue(self) -> dict[str, Any]:
+        with self._lock:
+            self._queue_paused = True
+            self._queue_gate.clear()
+            affected = 0
+            for task in self.repository.list(statuses=("pending", "running")):
+                self._pause.setdefault(task.task_id, threading.Event()).set()
+                task.status = "paused"
+                self.repository.upsert(task)
+                affected += 1
+            return {"paused": True, "affected": affected}
+
+    def resume_queue(self) -> dict[str, Any]:
+        with self._lock:
+            self._queue_paused = False
+            self._queue_gate.set()
+            affected = 0
+            for task in self.repository.list(statuses=("paused",)):
+                self._pause.setdefault(task.task_id, threading.Event()).clear()
+                task.status = "pending"
+                self.repository.upsert(task)
+                self._enqueue_id(task.task_id)
+                affected += 1
+            return {"paused": False, "affected": affected}
+
+    def reorder(self, task_ids: list[str]) -> dict[str, Any]:
+        requested = [str(task_id) for task_id in task_ids]
+        affected = 0
+        for position, task_id in enumerate(requested, start=1):
+            task = self.repository.get(task_id)
+            if task is None or task.status not in {"pending", "paused"}:
+                continue
+            task.queue_position = position
+            self.repository.upsert(task)
+            affected += 1
+        return {"requested": len(requested), "affected": affected}
+
+    def validate_local_files(self) -> dict[str, Any]:
+        missing: list[str] = []
+        for task in self.repository.list(statuses=("success",)):
+            if not Path(task.local_path).is_file():
+                task.status = "failed"
+                task.error = "LOCAL_FILE_MISSING"
+                self.repository.upsert(task)
+                missing.append(task.task_id)
+        return {"checked": len(self.repository.list()), "missing": missing}
+
     def wait_for(self, task_id: str, timeout: float = 30.0) -> DownloadTask | None:
         task = self._require(task_id)
         event = self._done.setdefault(task_id, threading.Event())
@@ -196,7 +249,7 @@ class DownloadManager:
         pending = [task for task in tasks if task.status in {"pending", "paused"}]
         running = sum(task.status == "running" for task in tasks)
         return {
-            "paused": False,
+            "paused": self._queue_paused,
             "max_concurrent_jobs": self.max_concurrent,
             "running_count": running,
             "pending_count": len(pending),
@@ -233,6 +286,7 @@ class DownloadManager:
                 "downloaded_bytes": task.downloaded_bytes,
                 "total_bytes": task.total_bytes,
                 "retry_count": task.retry_count,
+                "queue_position": task.queue_position,
             },
         }
 
@@ -246,6 +300,8 @@ class DownloadManager:
         while True:
             if self._stopped and self._queue.empty():
                 return
+            if not self._queue_gate.wait(timeout=0.2):
+                continue
             try:
                 task_id = self._queue.get(timeout=0.2)
             except queue.Empty:

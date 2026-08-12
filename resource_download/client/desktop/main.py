@@ -355,6 +355,18 @@ class WindowApi:
     def retry_download(self, task_id: str) -> dict[str, object]:
         return {"ok": True, "task": self._download_manager.as_job(self._download_manager.retry(task_id))}
 
+    def pause_download_queue(self) -> dict[str, object]:
+        return self._download_manager.pause_queue()
+
+    def resume_download_queue(self) -> dict[str, object]:
+        return self._download_manager.resume_queue()
+
+    def reorder_download_queue(self, task_ids: list[str]) -> dict[str, object]:
+        return self._download_manager.reorder([str(task_id) for task_id in task_ids])
+
+    def validate_local_files(self) -> dict[str, object]:
+        return self._download_manager.validate_local_files()
+
     def redeem_license(self, card_code: str, access_token: str = "") -> dict[str, object]:
         """Create the Activation Proof and its body in one native, non-browser path."""
         if not isinstance(card_code, str) or not card_code.strip():

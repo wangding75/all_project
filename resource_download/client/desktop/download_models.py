@@ -77,6 +77,7 @@ class DownloadTask:
     retry_count: int = 0
     max_retries: int = 2
     error: str | None = None
+    queue_position: int = 0
 
     @classmethod
     def new(
@@ -126,6 +127,7 @@ class DownloadTask:
             "retry_count": self.retry_count,
             "max_retries": self.max_retries,
             "error": self.error,
+            "queue_position": self.queue_position,
         }
 
     @classmethod
@@ -160,4 +162,5 @@ class DownloadTask:
             retry_count=int(row.get("retry_count") or 0),
             max_retries=int(row.get("max_retries") or 0),
             error=row.get("error"),
+            queue_position=int(row.get("queue_position") or 0),
         )

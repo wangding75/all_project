@@ -19,6 +19,13 @@
 > `PUT /v1/automation/hongguo-new` 和 `POST /v1/automation/hongguo-new/scan`
 > 目标由 Client Timer 驱动，而非 Server Automation Scheduler。
 
+T42–T43 已落地的本地能力位于 `desktop/download_manager.py`、
+`desktop/download_repository.py`、`desktop/download_transport.py` 和
+`desktop/client_timer.py`。SQLite 数据库默认位于当前 Windows 用户的
+`%LOCALAPPDATA%\ResourceDownloader\downloads.sqlite3`；下载中的文件使用
+`.part` 后缀，完成后才原子改名。重启会把 `running` 任务恢复为 `pending`，并
+保留 `.part` 以便在上游支持 Range 时续传。
+
 ## Device Proof V3（正式桌面路径）
 
 Windows Desktop Client 使用 License Service 固定的 `LS-DEVICE-V3` 和 rc4
@@ -39,6 +46,8 @@ raw body 的 SHA-256、时间戳和新 nonce。HTTP retry 会重新生成 Proof�
 当前自动签名范围严格为：
 
 - `POST /v1/jobs`
+- `POST /v1/resolve`
+- `GET /v1/downloads/proxy/{ticket}`
 - `POST /v1/jobs/batch`
 - `POST /v1/jobs/queue/bulk/retry`
 - `POST /v1/jobs/{job_id}/retry`

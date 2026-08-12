@@ -76,3 +76,39 @@ def test_manager_resume_from_part_file(tmp_path):
     assert part.endswith(".part")
     assert manager.repository.get(task.task_id).status == "pending"
     manager.shutdown(wait=False)
+
+
+def test_manager_supports_proxy_descriptor_and_queue_controls(tmp_path):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    repo = DownloadRepository(tmp_path / "client.sqlite3")
+    manager = DownloadManager(repo, tmp_path / "downloads", max_concurrent=1)
+    first = manager.add_descriptor(
+        DownloadDescriptor(
+            platform="fixture",
+            resource_id="proxy-1",
+            suggested_filename="proxy.bin",
+            download_mode="proxy",
+            proxy_url=f"http://127.0.0.1:{server.server_port}/proxy",
+        )
+    )
+    second = manager.add_descriptor(
+        DownloadDescriptor(
+            platform="fixture",
+            resource_id="proxy-2",
+            suggested_filename="proxy-2.bin",
+            download_mode="proxy",
+            proxy_url=f"http://127.0.0.1:{server.server_port}/proxy-2",
+        ),
+        enqueue=False,
+    )
+    paused = manager.pause_queue()
+    assert paused["paused"] is True
+    assert manager.queue_state()["paused"] is True
+    manager.resume_queue()
+    manager.enqueue(second.task_id)
+    assert manager.wait_for(first.task_id, timeout=10).status == "success"
+    assert manager.wait_for(second.task_id, timeout=10).status == "success"
+    manager.shutdown()
+    server.shutdown()
