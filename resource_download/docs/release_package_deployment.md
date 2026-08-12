@@ -1,4 +1,4 @@
-# T39 RD Release Package Deployment
+# T47 RD Release Package Deployment
 
 This package is a standalone deployment artifact.  The supported production
 topology is:
@@ -12,7 +12,7 @@ or adjacent development directory is required.
 
 ## Deployment
 
-1. Extract `RD-1.0.0-T39.zip` into a new deployment directory.
+1. Extract `RD-1.0.0-T47.zip` into a new deployment directory.
 2. Copy `config/production.env.example` to a protected operator-managed
    secret location and provide the License Service endpoint, service
    credential, API key, JWT secret, and other deployment values through the
@@ -51,7 +51,7 @@ release report.
 Run the package smoke before any business test:
 
 ```powershell
-python scripts/package_smoke.py .\RD-1.0.0-T39.zip
+python scripts/package_smoke.py .\RD-1.0.0-T47.zip
 ```
 
 The smoke extracts to a fresh temporary directory, verifies required files,

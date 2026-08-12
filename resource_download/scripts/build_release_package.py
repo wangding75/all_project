@@ -1,4 +1,4 @@
-"""Build a complete, self-contained T39 RD release package.
+"""Build a complete, self-contained T47 RD release package.
 
 This is the only supported RD release assembly path.  It builds both the thin
 desktop client and the standalone server, then copies a curated runtime tree
@@ -22,8 +22,9 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 RD_VERSION = "1.0.0"
-PACKAGE_NAME = f"RD-{RD_VERSION}-T39.zip"
-LICENSE_PACKAGE_NAME = "LicenseService-1.0.0-rc2-T39.zip"
+RELEASE_NAME = "T47"
+PACKAGE_NAME = f"RD-{RD_VERSION}-{RELEASE_NAME}.zip"
+LICENSE_PACKAGE_NAME = f"LicenseService-1.0.0-rc2-{RELEASE_NAME}.zip"
 
 VENDOR_TOP_LEVEL = (
     "hongguo.py",
@@ -197,7 +198,7 @@ def assemble_package(package_root: Path) -> dict[str, object]:
 
     files = audit_package_tree(package_root)
     metadata = {
-        "release": "T39",
+        "release": RELEASE_NAME,
         "rd_version": RD_VERSION,
         "source_head": git_head(),
         "architecture": "standalone RDServer.exe + thin ResourceDownloader.exe",
@@ -218,12 +219,12 @@ def assemble_package(package_root: Path) -> dict[str, object]:
     }
     manifest_path = package_root / "VERSION_MANIFEST.md"
     # Add the manifest, then rewrite it with the final count including itself.
-    manifest_path.write_text("# RD T39 Package Manifest\n", encoding="utf-8")
+    manifest_path.write_text(f"# RD {RELEASE_NAME} Package Manifest\n", encoding="utf-8")
     files = audit_package_tree(package_root)
     metadata["package_file_count"] = len(files)
     manifest_path.write_text(
-        "# RD T39 Package Manifest\n\n"
-        f"- Release: T39\n- RD version: {RD_VERSION}\n"
+        f"# RD {RELEASE_NAME} Package Manifest\n\n"
+        f"- Release: {RELEASE_NAME}\n- RD version: {RD_VERSION}\n"
         f"- RD source HEAD: `{metadata['source_head']}`\n"
         f"- Architecture: `{metadata['architecture']}`\n"
         f"- Package file count: {metadata['package_file_count']}\n"
@@ -286,10 +287,10 @@ def build_release(release_root: Path, license_package: Path) -> dict[str, object
     ls_hash = sha256(ls_zip)
     release_root.mkdir(parents=True, exist_ok=True)
     (release_root / "RELEASE_MANIFEST.md").write_text(
-        "# T39 Release Manifest\n\n"
+        f"# {RELEASE_NAME} Release Manifest\n\n"
         "## Release decision\n\n"
-        "This is an RC deployment rehearsal because the License Service artifact "
-        "is intentionally unchanged at `1.0.0-rc2`.  It is not Production GA.\n\n"
+        "This is the T47 RC deployment verification. The License Service artifact "
+        "is intentionally unchanged at `1.0.0-rc2`; the RD package is the T47 artifact.\n\n"
         f"- RD version: `{RD_VERSION}`\n"
         f"- RD source HEAD: `{metadata['source_head']}`\n"
         "- License Service version: `1.0.0-rc2`\n"
@@ -304,7 +305,7 @@ def build_release(release_root: Path, license_package: Path) -> dict[str, object
         encoding="utf-8",
     )
     (release_root / "RELEASE_ACCEPTANCE_SUMMARY.md").write_text(
-        "# T39 Release Acceptance Summary\n\n"
+        f"# {RELEASE_NAME} Release Acceptance Summary\n\n"
         "Build and package assembly completed.  The formal package smoke and "
         "full deployment gate are recorded after they run against this exact ZIP.\n\n"
         "- RD build: PASS\n"
@@ -312,7 +313,7 @@ def build_release(release_root: Path, license_package: Path) -> dict[str, object
         "- Required-file audit: PASS\n"
         "- Forbidden-file/secret audit: PASS\n"
         "- Package smoke: PENDING\n"
-        "- Full T38 re-run: PENDING\n",
+        "- Full T47 re-run: PENDING\n",
         encoding="utf-8",
     )
     write_sha256sums(release_root)
@@ -333,7 +334,7 @@ def main() -> int:
     parser.add_argument("--release-root", type=Path)
     args = parser.parse_args()
     timestamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
-    release_root = (args.release_root or (ROOT_DIR.parent.parent / f"T39_RELEASE_{timestamp}")).resolve()
+    release_root = (args.release_root or (ROOT_DIR.parent.parent / f"{RELEASE_NAME}_RELEASE_{timestamp}")).resolve()
     result = build_release(release_root, args.license_package.resolve())
     for key, value in result.items():
         print(f"{key.upper()}={value}")

@@ -1,6 +1,6 @@
 # 客户端打包与发布说明 (Release Manual)
 
-> **T39 authoritative packaging contract:** `scripts/build_exe.py` builds only
+> **T47 authoritative packaging contract:** `scripts/build_exe.py` builds only
 > the thin desktop client. A releasable RD package must be built with
 > `scripts/build_release_package.py`, which also builds `RDServer.exe` and
 > assembles `server/app`, `server/platforms`, the curated Hongguo runtime,

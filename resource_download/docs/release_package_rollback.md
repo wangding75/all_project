@@ -1,4 +1,4 @@
-# T39 RD Release Package Rollback
+# T47 RD Release Package Rollback
 
 Rollback is performed by package directory, not by copying files from a
 source checkout.

@@ -1,6 +1,6 @@
 ﻿# ResourceDownloader 生产部署与发版指南 (Deployment Manual)
 
-> **T39 release-package authority:** The supported package topology is
+> **T47 release-package authority:** The supported package topology is
 > `RDServer.exe` (standalone server) plus `ResourceDownloader.exe` (thin
 > client). The package is extracted to an independent directory and must not
 > use a source checkout, source virtual environment, or `PYTHONPATH`. The
