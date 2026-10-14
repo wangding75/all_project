@@ -132,8 +132,6 @@ class DownloadManager:
             self._pause.setdefault(task_id, threading.Event()).set()
             if task.status in {"pending", "running"}:
                 task.status = "paused"
-            elif task.status == "running":
-                task.status = "paused"
             self.repository.upsert(task)
         return task
 

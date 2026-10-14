@@ -114,6 +114,13 @@ class Settings(BaseSettings):
     sign_pool_lease_sec: int = 120
     sign_pool_max_fails: int = 3
 
+    # Cover images are a bounded, short-lived server-side presentation cache.
+    # Downloaded media and client files never use this cache.
+    cover_cache_ttl_seconds: int = 86400
+    cover_cache_max_files: int = 512
+    cover_cache_max_bytes: int = 64 * 1024 * 1024
+    cover_cache_max_entries: int = 2048
+
     @property
     def sign_pool_config_path(self) -> Path:
         p = Path(self.sign_pool_config)

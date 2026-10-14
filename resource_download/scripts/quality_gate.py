@@ -7,6 +7,7 @@ import sys
 import py_compile
 import subprocess
 import hashlib
+import tempfile
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -87,7 +88,11 @@ def run_pytest_suite():
     # 防止 test_quality_gate_execution -> quality_gate -> pytest 无限递归。
     env["QUALITY_GATE_ACTIVE"] = "1"
     cmd = [sys.executable, "-m", "pytest", "server/tests", "client/tests"]
-    result = subprocess.run(cmd, cwd=str(ROOT_DIR), env=env)
+    # A release gate is reproducible and must not inherit quota/idempotency
+    # state from a developer's previous server run.
+    with tempfile.TemporaryDirectory(prefix="rd-quality-gate-") as test_data_dir:
+        env["DATA_DIR"] = test_data_dir
+        result = subprocess.run(cmd, cwd=str(ROOT_DIR), env=env)
     if result.returncode != 0:
         raise RuntimeError(f"pytest 自动化测试套件存在失败, exit_code={result.returncode}")
 

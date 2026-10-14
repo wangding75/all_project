@@ -8,10 +8,6 @@ server/.venv/
 vendor/hongguo/config.json
 vendor/hongguo/downloads/
 vendor/hongguo/**/__pycache__/
-data/jobs/*
-!data/jobs/.gitkeep
-data/outputs/*
-!data/outputs/.gitkeep
 data/cache/
 data/e2e_downloads/
 data/*.db
@@ -28,6 +24,8 @@ dist/
 # 运行期生成的动态会话配置目录（包含敏感 token，勿提交）
 data/config/
 data/cache/
+data/jobs/*
+data/outputs/*
 
 # 调试与注入二进制文件（大文件，勿提交）
 tools/setup/frida-server*

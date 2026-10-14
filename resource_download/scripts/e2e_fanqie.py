@@ -9,6 +9,9 @@
 
 from __future__ import annotations
 
+# ARCHIVED: this migration-era runner targets the removed server job/file
+# contract and is not a T47 release gate.
+
 import argparse
 import sys
 import time

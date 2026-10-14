@@ -2,7 +2,10 @@
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$env:PYTHONPATH = "server"
+$repoRoot = Split-Path -Parent $scriptDir
+$env:PYTHONPATH = Join-Path $repoRoot "server"
+Push-Location $repoRoot
+try {
 
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "Step 1: Running smoke_health.py" -ForegroundColor Cyan
@@ -14,23 +17,17 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "`n==========================================" -ForegroundColor Cyan
-Write-Host "Step 2: Running e2e_fanqie.py" -ForegroundColor Cyan
+Write-Host "Step 2: Running deterministic quality gate" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
-python "$scriptDir\e2e_fanqie.py"
+python "$scriptDir\quality_gate.py"
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "e2e_fanqie.py failed with exit code $LASTEXITCODE"
-    exit $LASTEXITCODE
-}
-
-Write-Host "`n==========================================" -ForegroundColor Cyan
-Write-Host "Step 3: Running e2e_hongguo.py" -ForegroundColor Cyan
-Write-Host "==========================================" -ForegroundColor Cyan
-python "$scriptDir\e2e_hongguo.py"
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "e2e_hongguo.py failed with exit code $LASTEXITCODE"
+    Write-Error "quality_gate.py failed with exit code $LASTEXITCODE"
     exit $LASTEXITCODE
 }
 
 Write-Host "`n==========================================" -ForegroundColor Green
-Write-Host "All CI smoke and E2E checks passed!" -ForegroundColor Green
+Write-Host "CI smoke and deterministic quality checks passed!" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Green
+} finally {
+    Pop-Location
+}

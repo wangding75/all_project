@@ -39,6 +39,10 @@ def test_release_gate_server_owns_platform_resolution_but_not_download_storage()
     models_source = (app_root / "models.py").read_text(encoding="utf-8")
     assert "jobs_dir" not in config_source
     assert "outputs_dir" not in config_source
+    assert "cover_cache_ttl_seconds" in config_source
+    assert "cover_cache_max_files" in config_source
+    assert "cover_cache_max_bytes" in config_source
+    assert "cover_cache_max_entries" in config_source
     assert "class JobFile" not in models_source
     assert "class JobResponse" not in models_source
 

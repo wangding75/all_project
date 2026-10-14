@@ -39,12 +39,13 @@ release gate starts the packaged server executable.
 
 ## Runtime data and secrets
 
-`data/app.db`, `data/jobs/`, `data/outputs/`, and platform session files are
-deployment state, not release inputs.  Create them at runtime and protect
-them with the deployment account.  Real cookies, session tokens, activation
-codes, private keys, service credentials, and master keys must be injected by
-the secret manager and must never be placed in this ZIP, Git, logs, or a
-release report.
+`data/app.db`, the bounded `data/cache/covers/` presentation cache, and
+platform session files are deployment state, not release inputs. The server
+does not create `data/jobs/` or `data/outputs/`: downloads and download history
+belong to the Desktop Client. Protect server state with the deployment
+account. Real cookies, session tokens, activation codes, private keys, service
+credentials, and master keys must be injected by the secret manager and must
+never be placed in this ZIP, Git, logs, or a release report.
 
 ## Release gate smoke
 

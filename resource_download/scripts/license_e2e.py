@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Real HTTP RD -> License Service integration E2E.
+"""ARCHIVED: historical License Service integration E2E.
+
+This runner targets migration-era server job/automation routes. It is not a
+release gate for the frozen T47 resolve + client-owned download contract.
 
 All business assertions in this runner use the RD HTTP API.  The optional
 PostgreSQL helper is only for local fixture preparation (rebinding the

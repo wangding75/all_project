@@ -2,7 +2,9 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PYTHONPATH="server"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+export PYTHONPATH="${REPO_ROOT}/server"
+cd "${REPO_ROOT}"
 
 echo "=========================================="
 echo "Step 1: Running smoke_health.py"
@@ -11,17 +13,11 @@ python3 "${SCRIPT_DIR}/smoke_health.py"
 
 echo ""
 echo "=========================================="
-echo "Step 2: Running e2e_fanqie.py"
+echo "Step 2: Running deterministic quality gate"
 echo "=========================================="
-python3 "${SCRIPT_DIR}/e2e_fanqie.py"
+python3 "${SCRIPT_DIR}/quality_gate.py"
 
 echo ""
 echo "=========================================="
-echo "Step 3: Running e2e_hongguo.py"
-echo "=========================================="
-python3 "${SCRIPT_DIR}/e2e_hongguo.py"
-
-echo ""
-echo "=========================================="
-echo "All CI smoke and E2E checks passed!"
+echo "CI smoke and deterministic quality checks passed!"
 echo "=========================================="

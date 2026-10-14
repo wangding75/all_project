@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import os
 import sys
+import atexit
+import shutil
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock
 import pytest
+
+# Tests must never consume or mutate a developer's real RD control database.
+# Set DATA_DIR before importing app.main/app.db because the engine is created at
+# module import time.
+_test_data_dir = Path(tempfile.mkdtemp(prefix="rd-pytest-"))
+os.environ.setdefault("DATA_DIR", str(_test_data_dir))
+atexit.register(shutil.rmtree, _test_data_dir, ignore_errors=True)
 
 # 确保导入路径包含 server 目录
 server_dir = Path(__file__).resolve().parent.parent / "server"

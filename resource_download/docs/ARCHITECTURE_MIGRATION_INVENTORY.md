@@ -13,6 +13,7 @@ and resumable client-side download state.
 | Area | T47 disposition | Evidence |
 | --- | --- | --- |
 | Server file storage | **CLOSED — NONE** | No server output/file-storage path in the release boundary; server full tests and quality gate pass. |
+| Cover presentation cache | **RESOLVED — BOUNDED** | `server/app/media_cache.py` prunes TTL, file-count and byte limits; it is only used for cover presentation and never for downloads. |
 | JobFile / JobManager | **CLOSED — NONE** | No server JobFile or JobManager runtime dependency. |
 | Server Download Job | **CLOSED — NONE** | `/v1/resolve` returns client-consumable descriptors; no server download-job queue. |
 | Server Automation Scheduler | **CLOSED — NONE** | No background scheduler; Client Timer performs active polling. |
